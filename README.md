@@ -2,24 +2,48 @@
 
 This project was built with [Lovable](https://lovable.dev).
 
-## Build with Lovable
+## Project structure
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+```
+MMS/
+├── frontend/            # TanStack / React UI (existing screens)
+├── backend/
+│   ├── core/            # Shared Oracle/config/auth (miso-5.0 pattern)
+│   └── mms/             # FastAPI MMS API (Orbat-style service)
+└── docs/ARCHITECTURE.md
+```
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+### Frontend
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
+cd frontend
 npm i
 npm run dev
 ```
+
+Or from repo root:
+
+```sh
+npm run dev
+```
+
+### Backend
+
+```sh
+cd backend
+pip install -r requirements.txt
+pip install -e ./core
+pip install -e ./mms
+cd mms
+python -m uvicorn main:app --reload --port 8001
+```
+
+Or from repo root: `npm run dev:backend`
+
+API: `http://localhost:8001/api/v1/health`  
+Vite proxies `/api/v1` → backend during frontend `npm run dev`.
 
 ## Built with
 
@@ -27,3 +51,4 @@ npm run dev
 - TypeScript
 - React
 - Tailwind CSS
+- FastAPI + SQLAlchemy + Oracle (`backend/`)

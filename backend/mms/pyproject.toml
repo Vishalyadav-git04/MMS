@@ -1,0 +1,25 @@
+[project]
+name = "miso-mms"
+version = "0.1.0"
+description = "MISO 5.0 MMS service (Master List / Material Management)"
+requires-python = ">=3.11"
+dependencies = [
+    "miso-core",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "oracledb>=2.0",
+    "alembic>=1.13",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.4"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

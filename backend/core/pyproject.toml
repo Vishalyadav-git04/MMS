@@ -1,0 +1,20 @@
+[project]
+name = "miso-core"
+version = "0.1.0"
+description = "MISO 5.0 shared core library (config, db, auth, audit, logging, utils)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "oracledb>=2.0",
+    "python-json-logger>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*"]

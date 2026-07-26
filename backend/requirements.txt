@@ -1,0 +1,23 @@
+# MISO 5.0 — backend runtime dependencies (all services).
+# Covers the shared `core` library and every module service (ORBAT, etc.).
+#
+#   pip install -r requirements.txt
+#   pip install -e ./core          # make `core` importable (editable)
+#
+# Pins are lower bounds; regenerate a locked set with `pip freeze` for prod.
+
+# --- Web framework & server ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# --- Data / validation ---
+pydantic>=2.6
+pydantic-settings>=2.2
+
+# --- Database (Oracle 26.1) ---
+oracledb>=2.0
+SQLAlchemy>=2.0
+alembic>=1.13
+
+# --- Logging ---
+python-json-logger>=2.0
