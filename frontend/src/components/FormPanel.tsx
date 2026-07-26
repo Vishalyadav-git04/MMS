@@ -33,7 +33,7 @@ export function FormPanel({
       <div
         className={cn(
           "compact-form p-2 sm:p-3",
-          fill ? "min-h-0 flex-1 overflow-hidden" : "overflow-visible",
+          fill ? "min-h-0 flex-1 overflow-y-auto" : "overflow-visible",
         )}
       >
         {children}

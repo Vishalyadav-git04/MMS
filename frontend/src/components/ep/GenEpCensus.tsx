@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
+interface SubDomainSuggestion {
+  id: string;
+  equipment_domain_id: string;
+  sub_domain_id: number;
+  sub_domain_name: string;
+  eqpt_cat?: string | null;
+}
+
 interface FullForm {
+  subDomainId: string;
   subDomainName: string;
   censusNo: string;
   authLetterNo: string;
@@ -38,6 +48,7 @@ interface FullForm {
 }
 
 const emptyForm: FullForm = {
+  subDomainId: "",
   subDomainName: "",
   censusNo: "",
   authLetterNo: "",
@@ -63,29 +74,132 @@ const emptyForm: FullForm = {
 };
 
 export function GenEpCensus() {
-  const [subDomainName, setSubDomainName] = useState("");
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<SubDomainSuggestion[]>([]);
+  const [selected, setSelected] = useState<SubDomainSuggestion | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [showFull, setShowFull] = useState(false);
   const [form, setForm] = useState<FullForm>(emptyForm);
+  const [busy, setBusy] = useState(false);
+  const blurTimer = useRef<number | null>(null);
 
-  const handleGenerate = () => {
-    if (!subDomainName.trim()) {
-      toast.error("Sub Domain Name is required");
+  useEffect(() => {
+    if (selected && query === selected.sub_domain_name) {
+      setSuggestions([]);
       return;
     }
-    const generated = `EP-${Date.now().toString().slice(-6)}`;
-    setForm({
-      ...emptyForm,
-      subDomainName,
-      censusNo: generated,
-    });
-    setShowFull(true);
-    toast.success(`Census No ${generated} generated`);
-  };
+    const q = query.trim();
+    if (q.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<SubDomainSuggestion[]>(
+        `/ep/sub-domain-master/search?sub_domain_name=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => setSuggestions(rows.slice(0, 10)))
+        .catch(() => setSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [query, selected]);
 
   const handleClear = () => {
-    setSubDomainName("");
+    setQuery("");
+    setSelected(null);
+    setSuggestions([]);
     setShowFull(false);
     setForm(emptyForm);
+  };
+
+  const pickSuggestion = (row: SubDomainSuggestion) => {
+    setSelected(row);
+    setQuery(row.sub_domain_name);
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  const handleGenerate = async () => {
+    if (!selected) {
+      toast.error("Select a Sub Domain from the suggestions");
+      return;
+    }
+    setBusy(true);
+    try {
+      const generated = await api<{
+        census_no: string;
+        sub_domain_id: string;
+        sub_domain_name: string;
+        domain_id: string;
+      }>("/ep/gen-census/generate", {
+        method: "POST",
+        body: JSON.stringify({ sub_domain_id: selected.id }),
+      });
+      setForm({
+        ...emptyForm,
+        subDomainId: generated.sub_domain_id,
+        subDomainName: generated.sub_domain_name,
+        censusNo: generated.census_no,
+      });
+      setShowFull(true);
+      toast.success(`Census No ${generated.census_no} generated`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Generate failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (
+      !form.subDomainId ||
+      !form.censusNo ||
+      !form.authLetterNo.trim() ||
+      !form.date ||
+      !form.catPartNo.trim() ||
+      !form.accountingUnit ||
+      !form.briefDescription.trim() ||
+      !form.itemStatus ||
+      !form.itemCategory ||
+      !form.classOfEqpt
+    ) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/ep/gen-census/", {
+        method: "POST",
+        body: JSON.stringify({
+          sub_domain_id: form.subDomainId,
+          census_no: form.censusNo,
+          auth_letter_no: form.authLetterNo,
+          auth_date: form.date,
+          cat_part_no: form.catPartNo,
+          accounting_unit: form.accountingUnit,
+          brief_description: form.briefDescription,
+          item_status: form.itemStatus,
+          item_category: form.itemCategory,
+          class_of_equipment: form.classOfEqpt,
+          country: form.countryOfOrigin || null,
+          nodal_directorate: form.nodalDte || null,
+          equipment_category: form.eqptCategory || null,
+          year_of_induction: form.yearOfInduction || null,
+          digest_category: form.digestCategory || null,
+          cost: form.cost || null,
+          manufacturing_agency: form.manufacturingAgency || null,
+          ahsp_agency: form.ahspAgency || null,
+          nato_stock_no: form.natoStockNo || null,
+          defence_catalogue_no: form.defCatalogueNo || null,
+          remarks: form.remarks || null,
+        }),
+      });
+      toast.success("EP Census saved successfully");
+      handleClear();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (showFull) {
@@ -93,7 +207,8 @@ export function GenEpCensus() {
       <MlccsEpForm
         form={form}
         setForm={setForm}
-        onSave={() => toast.success("EP Census saved successfully")}
+        busy={busy}
+        onSave={() => void handleSave()}
         onClear={handleClear}
         onCancel={() => setShowFull(false)}
       />
@@ -105,24 +220,61 @@ export function GenEpCensus() {
       title="Master List of Controlled and Census Stores (MLCCS) EP"
       footer={
         <>
-          <Button onClick={handleGenerate}>Generate Census No</Button>
-          <Button variant="secondary" onClick={handleClear}>
+          <Button disabled={busy} onClick={() => void handleGenerate()}>
+            Generate Census No
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
-          <Button variant="destructive" onClick={() => toast("Cancelled")}>
+          <Button variant="destructive" disabled={busy} onClick={handleClear}>
             Cancel
           </Button>
         </>
       }
     >
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-3xl mx-auto relative">
         <FormRow label="Sub Domain Name" required>
           <Input
             placeholder="Search..."
-            value={subDomainName}
-            onChange={(e) => setSubDomainName(e.target.value)}
+            value={query}
+            disabled={busy}
+            autoComplete="off"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelected(null);
+              setShowSuggestions(true);
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => {
+              blurTimer.current = window.setTimeout(
+                () => setShowSuggestions(false),
+                150,
+              );
+            }}
           />
         </FormRow>
+        {showSuggestions && suggestions.length > 0 && (
+          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
+            {suggestions.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    pickSuggestion(row);
+                  }}
+                >
+                  <span>{row.sub_domain_name}</span>
+                  {row.eqpt_cat ? (
+                    <span className="text-xs text-muted-foreground">{row.eqpt_cat}</span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </FormPanel>
   );
@@ -131,12 +283,14 @@ export function GenEpCensus() {
 function MlccsEpForm({
   form,
   setForm,
+  busy,
   onSave,
   onClear,
   onCancel,
 }: {
   form: FullForm;
   setForm: (f: FullForm) => void;
+  busy: boolean;
   onSave: () => void;
   onClear: () => void;
   onCancel: () => void;
@@ -150,52 +304,36 @@ function MlccsEpForm({
       fill
       footer={
         <>
-          <Button variant="secondary" onClick={onClear}>
+          <Button variant="secondary" disabled={busy} onClick={onClear}>
             Clear
           </Button>
           <Button
             className="bg-success hover:bg-success/90 text-success-foreground"
+            disabled={busy}
             onClick={onSave}
           >
             Save
           </Button>
-          <Button variant="destructive" onClick={onCancel}>
+          <Button variant="destructive" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>
         </>
       }
     >
-      <div className="space-y-2 text-xs">
-        <FormRow label="Sub Domain Name" required>
-          <Select
-            value={form.subDomainName}
-            onValueChange={(v) => upd("subDomainName", v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="-" />
-            </SelectTrigger>
-            <SelectContent>
-              {[form.subDomainName, "Optics", "Radar", "Sensors"]
-                .filter((v, i, arr) => v && arr.indexOf(v) === i)
-                .map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </FormRow>
-
-        <FormRow label="Census No" required>
-          <Input value={form.censusNo} disabled />
-        </FormRow>
-
-        <FormGrid>
+      <div className="space-y-1.5 text-xs">
+        <FormGrid cols={4}>
+          <FormRow label="Sub Domain Name" required>
+            <Input value={form.subDomainName} disabled />
+          </FormRow>
+          <FormRow label="Census No" required>
+            <Input value={form.censusNo} disabled />
+          </FormRow>
           <FormRow label="Auth/Letter No" required>
             <Input
               value={form.authLetterNo}
               onChange={(e) => upd("authLetterNo", e.target.value)}
               placeholder="Enter Auth/Letter No.."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Date" required>
@@ -203,6 +341,7 @@ function MlccsEpForm({
               type="date"
               value={form.date}
               onChange={(e) => upd("date", e.target.value)}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Cat/Part No" required>
@@ -210,6 +349,7 @@ function MlccsEpForm({
               value={form.catPartNo}
               onChange={(e) => upd("catPartNo", e.target.value)}
               placeholder="Enter Cat/Part No.."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Accounting Unit" required>
@@ -217,32 +357,23 @@ function MlccsEpForm({
               value={form.accountingUnit}
               onChange={(v) => upd("accountingUnit", v)}
               options={["NOS", "KG", "LTR", "MTR"]}
+              disabled={busy}
             />
           </FormRow>
-        </FormGrid>
-
-        <FormRow label="Brief Description" required>
-          <Textarea
-            rows={2}
-            value={form.briefDescription}
-            onChange={(e) => upd("briefDescription", e.target.value)}
-            placeholder="Enter Brief Description.."
-          />
-        </FormRow>
-
-        <FormGrid>
           <FormRow label="Item Status" required>
             <SelectField
               value={form.itemStatus}
               onChange={(v) => upd("itemStatus", v)}
               options={["CUR", "OBS", "PHS"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Item Category" required>
             <SelectField
               value={form.itemCategory}
               onChange={(v) => upd("itemCategory", v)}
-              options={["Weapon", "Ammunition", "Vehicle", "Communication"]}
+              options={["Weapon", "Ammo", "Vehicle", "Comms"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Class of Eqpt" required>
@@ -250,6 +381,7 @@ function MlccsEpForm({
               value={form.classOfEqpt}
               onChange={(v) => upd("classOfEqpt", v)}
               options={["Class I", "Class II", "Class III"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Country of Origin">
@@ -257,6 +389,7 @@ function MlccsEpForm({
               value={form.countryOfOrigin}
               onChange={(e) => upd("countryOfOrigin", e.target.value)}
               placeholder="Search.."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Nodal Dte">
@@ -264,6 +397,7 @@ function MlccsEpForm({
               value={form.nodalDte}
               onChange={(v) => upd("nodalDte", v)}
               options={["DGOS", "DGAS", "DGEME"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Eqpt Category">
@@ -271,6 +405,7 @@ function MlccsEpForm({
               value={form.eqptCategory}
               onChange={(v) => upd("eqptCategory", v)}
               options={["A", "B", "C"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Incl in AIH">
@@ -278,12 +413,14 @@ function MlccsEpForm({
               value={form.inclInAih}
               onChange={(v) => upd("inclInAih", v)}
               options={["Yes", "No"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Year of Induction">
             <Input
               value={form.yearOfInduction}
               onChange={(e) => upd("yearOfInduction", e.target.value)}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Digest Category">
@@ -291,6 +428,7 @@ function MlccsEpForm({
               value={form.digestCategory}
               onChange={(v) => upd("digestCategory", v)}
               options={["Cat-I", "Cat-II"]}
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Cost (Rs.)">
@@ -298,6 +436,7 @@ function MlccsEpForm({
               value={form.cost}
               onChange={(e) => upd("cost", e.target.value)}
               placeholder="Enter Cost.."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Manufacturing Agency">
@@ -305,6 +444,7 @@ function MlccsEpForm({
               value={form.manufacturingAgency}
               onChange={(e) => upd("manufacturingAgency", e.target.value)}
               placeholder="Enter Man. Agency.."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="AHSP Agency">
@@ -312,6 +452,7 @@ function MlccsEpForm({
               value={form.ahspAgency}
               onChange={(e) => upd("ahspAgency", e.target.value)}
               placeholder="Enter AHSP Agency..."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="NATO Stock No(NSN)">
@@ -319,6 +460,7 @@ function MlccsEpForm({
               value={form.natoStockNo}
               onChange={(e) => upd("natoStockNo", e.target.value)}
               placeholder="Enter No..."
+              disabled={busy}
             />
           </FormRow>
           <FormRow label="Def Catalogue No(DCAN)">
@@ -326,18 +468,28 @@ function MlccsEpForm({
               value={form.defCatalogueNo}
               onChange={(e) => upd("defCatalogueNo", e.target.value)}
               placeholder="Enter No..."
+              disabled={busy}
+            />
+          </FormRow>
+          <FormRow label="Brief Description" required className="sm:col-span-2 lg:col-span-2">
+            <Textarea
+              rows={2}
+              value={form.briefDescription}
+              onChange={(e) => upd("briefDescription", e.target.value)}
+              placeholder="Enter Brief Description.."
+              disabled={busy}
+            />
+          </FormRow>
+          <FormRow label="Remarks" className="sm:col-span-2 lg:col-span-2">
+            <Textarea
+              rows={2}
+              value={form.remarks}
+              onChange={(e) => upd("remarks", e.target.value)}
+              placeholder="Enter Your Remarks..."
+              disabled={busy}
             />
           </FormRow>
         </FormGrid>
-
-        <FormRow label="Remarks">
-          <Textarea
-            rows={2}
-            value={form.remarks}
-            onChange={(e) => upd("remarks", e.target.value)}
-            placeholder="Enter Your Remarks..."
-          />
-        </FormRow>
       </div>
     </FormPanel>
   );
@@ -348,14 +500,16 @@ function SelectField({
   onChange,
   options,
   placeholder = "--Select--",
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: string[];
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

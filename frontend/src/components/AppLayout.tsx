@@ -10,6 +10,8 @@ import {
   Menu,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
+import { isAdmin } from "@/lib/auth";
 
 export type ModuleId = "dashboard" | "weapon" | "it-asset";
 export type WeaponSub =
@@ -57,6 +59,21 @@ interface Props {
 
 export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, logout } = useAuth();
+  const admin = isAdmin(user);
+
+  const nav = NAV.map((item) => {
+    if (item.id !== "weapon" || !item.children) return item;
+    return {
+      ...item,
+      children: admin
+        ? item.children
+        : item.children.filter((c) => c.id !== "mms-admin"),
+    };
+  });
+
+  const displayName = (user?.displayName || user?.username || "User").toUpperCase();
+  const roleLabel = user?.role ?? "UNIT";
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -75,9 +92,9 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">VISHAL</div>
+                <div className="truncate text-sm font-semibold">{displayName}</div>
                 <div className="text-xs text-sidebar-foreground/60">
-                  Session: <span className="text-sidebar-primary">59:47</span>
+                  Role: <span className="text-sidebar-primary">{roleLabel}</span>
                 </div>
               </div>
             )}
@@ -104,7 +121,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const Icon = item.icon;
             const isActive = active === item.id;
             return (
@@ -201,7 +218,11 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
                   {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                 </div>
               </div>
-              <button className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:opacity-90">
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:opacity-90"
+              >
                 <LogOut className="h-3.5 w-3.5" />
                 Logout
               </button>

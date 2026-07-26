@@ -1,16 +1,23 @@
 """Capture MLCCS Details — MMS Admin.
 
-Master List of Controlled and Census Stores. Supports Add New Eqpt
-(generate census) and Modify Census (lookup + update) flows.
+Persists to Oracle table MMS_MLCCS_EQUIPMENT_MASTER.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.deps import get_db_session, get_principal
+from app.models import DomainValue, MlccsEquipmentMaster
+from core.auth.principal import Principal
+from core.utils.ids import new_id
 
 router = APIRouter(
     prefix="/admin/capture-mlccs-details",
@@ -29,6 +36,7 @@ class LookupCensusRequest(BaseModel):
 
 
 class MlccsRecord(BaseModel):
+    id: str | None = None
     cos_section: str | None = None
     census_no: str | None = None
     nomenclature: str | None = None
@@ -56,47 +64,130 @@ class MlccsRecord(BaseModel):
     remarks: str | None = None
 
 
-# In-memory sample store until Oracle models/services are wired.
-_SAMPLE: dict[str, dict[str, Any]] = {
-    "CN-2026-0001": {
-        "cos_section": "COS-01",
-        "census_no": "CN-2026-0001",
-        "nomenclature": "Rifle 5.56 mm",
-        "auth_letter_no": "AUTH/2024/112",
-        "auth_date": date(2024, 6, 15),
-        "prf_group": "GRP-A",
-        "item_code": "IC-1001",
-        "cat_part_no": "CP-556-01",
-        "accounting_unit": "NOS",
-        "brief_description": "Standard issue infantry rifle",
-        "item_status": "CUR",
-        "item_category": "CAT-1",
-        "class_of_eqpt": "A",
-        "country_of_origin": "IND",
-        "nodal_dte": "DTE-1",
-        "eqpt_category": "EQ-1",
-        "incl_in_aih": "Y",
-        "year_of_induction": "2024",
-        "digest_category": "DIG-1",
-        "cost_rs": "45000",
-        "manufacturing_agency": "OFB",
-        "ahsp_agency": "AHSP-North",
-        "nato_stock_no": "1005-00-000-0001",
-        "def_catalogue_no": "DCAN-556",
-        "remarks": "Sample prefilled record for modify flow",
-    }
-}
+def _parse_cost(value: str | None) -> Decimal | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid cost value: {value}")
+
+
+def _to_record(row: MlccsEquipmentMaster) -> MlccsRecord:
+    auth_date = row.auth_date.date() if isinstance(row.auth_date, datetime) else row.auth_date
+    return MlccsRecord(
+        id=row.id,
+        cos_section=row.cos_sec,
+        census_no=row.census_no,
+        nomenclature=row.nomen,
+        auth_letter_no=row.auth_lett_no,
+        auth_date=auth_date,
+        prf_group=row.prf_group,
+        item_code=row.item_code,
+        cat_part_no=row.cat_part_no,
+        accounting_unit=row.au or "NOS",
+        brief_description=row.brief_desc,
+        item_status=row.item_status or "CUR",
+        item_category=row.item_category,
+        class_of_eqpt=row.class_category,
+        country_of_origin=row.origin_country,
+        nodal_dte=row.dte_category,
+        eqpt_category=row.dte_eqpt_category,
+        incl_in_aih=row.active_status,
+        year_of_induction=row.induc_year,
+        digest_category=row.digest_category,
+        cost_rs=str(row.cost) if row.cost is not None else None,
+        manufacturing_agency=row.manuf_agency,
+        ahsp_agency=row.ahsp_agency,
+        nato_stock_no=row.nato_stk_no,
+        def_catalogue_no=row.def_cat_no_dcan,
+        remarks=row.remarks,
+    )
+
+
+def _apply_body(
+    row: MlccsEquipmentMaster,
+    body: MlccsRecord,
+    *,
+    is_new: bool,
+    actor: str,
+) -> None:
+    now = datetime.now()
+    row.cos_sec = (body.cos_section or "")[:10] or None
+    row.census_no = (body.census_no or "")[:9] or None
+    row.nomen = body.nomenclature
+    row.auth_lett_no = body.auth_letter_no
+    row.auth_date = datetime.combine(body.auth_date, datetime.min.time()) if body.auth_date else None
+    row.prf_group = body.prf_group
+    row.item_code = body.item_code
+    row.cat_part_no = body.cat_part_no
+    row.au = body.accounting_unit
+    row.brief_desc = body.brief_description
+    row.item_status = (body.item_status or "CUR")[:3]
+    row.item_category = body.item_category
+    row.class_category = body.class_of_eqpt
+    row.origin_country = body.country_of_origin
+    row.dte_category = body.nodal_dte
+    row.dte_eqpt_category = body.eqpt_category
+    row.active_status = body.incl_in_aih
+    row.induc_year = body.year_of_induction
+    row.digest_category = body.digest_category
+    row.cost = _parse_cost(body.cost_rs)
+    row.manuf_agency = body.manufacturing_agency
+    row.ahsp_agency = body.ahsp_agency
+    row.nato_stk_no = body.nato_stock_no
+    row.def_cat_no_dcan = body.def_catalogue_no
+    row.remarks = body.remarks
+    if is_new:
+        row.data_cr_by = actor[:25]
+        row.data_cr_date = now
+        row.op_status = "NEW"
+    else:
+        row.data_upd_by = actor[:25]
+        row.data_upd_date = now
+
+
+def _next_census_no(session: Session) -> str:
+    """Allocate a 9-char census no like C900010 based on existing C9xxxxx values."""
+    rows = session.scalars(
+        select(MlccsEquipmentMaster.census_no).where(
+            MlccsEquipmentMaster.census_no.is_not(None)
+        )
+    ).all()
+    max_n = 899999
+    for c in rows:
+        if not c:
+            continue
+        digits = "".join(ch for ch in c if ch.isdigit())
+        if digits:
+            max_n = max(max_n, int(digits))
+    nxt = max_n + 1
+    candidate = f"C{nxt}"[:9]
+    return candidate
 
 
 @router.post("/generate", response_model=MlccsRecord)
-def generate_census(body: GenerateCensusRequest) -> MlccsRecord:
+def generate_census(
+    body: GenerateCensusRequest,
+    session: Session = Depends(get_db_session),
+) -> MlccsRecord:
     """Add New Eqpt — generate a new census number and return a blank detail draft."""
+    existing = session.scalar(
+        select(MlccsEquipmentMaster).where(
+            func.upper(MlccsEquipmentMaster.nomen) == body.nomenclature.strip().upper()
+        )
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Nomenclature already exists with census no '{existing.census_no}'",
+        )
+
     year = datetime.now().year
-    seq = f"{datetime.now().strftime('%H%M%S')}"
-    census_no = f"CN-{year}-{seq}"
+    census_no = _next_census_no(session)
     return MlccsRecord(
-        cos_section=body.cos_section,
-        nomenclature=body.nomenclature,
+        cos_section=body.cos_section.strip()[:10],
+        nomenclature=body.nomenclature.strip(),
         census_no=census_no,
         accounting_unit="NOS",
         item_status="CUR",
@@ -105,84 +196,119 @@ def generate_census(body: GenerateCensusRequest) -> MlccsRecord:
 
 
 @router.post("/lookup", response_model=MlccsRecord)
-def lookup_census(body: LookupCensusRequest) -> MlccsRecord:
+def lookup_census(
+    body: LookupCensusRequest,
+    session: Session = Depends(get_db_session),
+) -> MlccsRecord:
     """Modify Census — load an existing record by census number."""
     key = body.census_no.strip().upper()
-    record = _SAMPLE.get(key)
-    if record is None:
+    row = session.scalar(
+        select(MlccsEquipmentMaster).where(
+            func.upper(MlccsEquipmentMaster.census_no) == key
+        )
+    )
+    if row is None:
         raise HTTPException(
             status_code=404,
             detail=f"No MLCCS record found for census no '{body.census_no}'",
         )
-    data = dict(record)
-    if body.nomenclature:
-        data["nomenclature"] = body.nomenclature
-    return MlccsRecord(**data)
+    if body.nomenclature and row.nomen:
+        if row.nomen.strip().upper() != body.nomenclature.strip().upper():
+            raise HTTPException(
+                status_code=404,
+                detail="Census no and nomenclature do not match",
+            )
+    return _to_record(row)
 
 
 @router.post("/", response_model=MlccsRecord)
-def save_mlccs(body: MlccsRecord) -> MlccsRecord:
-    """Create or update an MLCCS record (stub — persists to in-memory sample)."""
+def save_mlccs(
+    body: MlccsRecord,
+    session: Session = Depends(get_db_session),
+    principal: Principal = Depends(get_principal),
+) -> MlccsRecord:
+    """Create or update an MLCCS record in Oracle."""
     if not body.census_no:
         raise HTTPException(status_code=400, detail="census_no is required")
+    if not body.nomenclature:
+        raise HTTPException(status_code=400, detail="nomenclature is required")
+
+    actor = principal.username
     key = body.census_no.strip().upper()
-    _SAMPLE[key] = body.model_dump()
-    return body
+    row = session.scalar(
+        select(MlccsEquipmentMaster).where(
+            func.upper(MlccsEquipmentMaster.census_no) == key
+        )
+    )
+    if row is None:
+        row = MlccsEquipmentMaster(id=new_id())
+        _apply_body(row, body, is_new=True, actor=actor)
+        session.add(row)
+    else:
+        # Unique nomen: reject if another row already has this name
+        clash = session.scalar(
+            select(MlccsEquipmentMaster).where(
+                func.upper(MlccsEquipmentMaster.nomen) == body.nomenclature.strip().upper(),
+                MlccsEquipmentMaster.id != row.id,
+            )
+        )
+        if clash is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Nomenclature already used by census '{clash.census_no}'",
+            )
+        _apply_body(row, body, is_new=False, actor=actor)
+
+    session.flush()
+    return _to_record(row)
+
+
+def _option_list(session: Session, domain: str) -> list[dict[str, str]]:
+    rows = session.scalars(
+        select(DomainValue)
+        .where(DomainValue.domain_name == domain)
+        .order_by(DomainValue.disp_order)
+    ).all()
+    return [
+        {"value": r.code_value or "", "label": r.label_name or r.code_value or ""}
+        for r in rows
+        if r.code_value
+    ]
+
+
+def _distinct_column(session: Session, column: Any) -> list[dict[str, str]]:
+    values = session.scalars(
+        select(column).where(column.is_not(None)).distinct().order_by(column)
+    ).all()
+    return [{"value": str(v), "label": str(v)} for v in values if str(v).strip()]
 
 
 @router.get("/options")
-def list_options() -> dict[str, list[dict[str, str]]]:
-    """Dropdown option lists for the MLCCS detail form."""
+def list_options(session: Session = Depends(get_db_session)) -> dict[str, list[dict[str, str]]]:
+    """Dropdown option lists — domain values + distinct MLCCS columns."""
     return {
-        "prf_group": [
-            {"value": "GRP-A", "label": "Group A"},
-            {"value": "GRP-B", "label": "Group B"},
-            {"value": "GRP-C", "label": "Group C"},
-        ],
-        "item_code": [
-            {"value": "IC-1001", "label": "IC-1001"},
-            {"value": "IC-1002", "label": "IC-1002"},
-            {"value": "IC-2001", "label": "IC-2001"},
-        ],
-        "accounting_unit": [
-            {"value": "NOS", "label": "NOS"},
-            {"value": "SET", "label": "SET"},
-            {"value": "KG", "label": "KG"},
-        ],
-        "item_status": [
+        "prf_group": _distinct_column(session, MlccsEquipmentMaster.prf_group),
+        "item_code": _distinct_column(session, MlccsEquipmentMaster.item_code),
+        "accounting_unit": _distinct_column(session, MlccsEquipmentMaster.au)
+        or [{"value": "NOS", "label": "NOS"}, {"value": "EA", "label": "EA"}],
+        "item_status": _distinct_column(session, MlccsEquipmentMaster.item_status)
+        or [
             {"value": "CUR", "label": "CUR"},
+            {"value": "ACT", "label": "ACT"},
             {"value": "OBS", "label": "OBS"},
-            {"value": "NEW", "label": "NEW"},
         ],
-        "item_category": [
-            {"value": "CAT-1", "label": "Category 1"},
-            {"value": "CAT-2", "label": "Category 2"},
-        ],
-        "class_of_eqpt": [
-            {"value": "A", "label": "Class A"},
-            {"value": "B", "label": "Class B"},
-            {"value": "C", "label": "Class C"},
-        ],
-        "country_of_origin": [
-            {"value": "IND", "label": "India"},
-            {"value": "USA", "label": "USA"},
-            {"value": "RUS", "label": "Russia"},
-            {"value": "FRA", "label": "France"},
-        ],
-        "nodal_dte": [
-            {"value": "DTE-1", "label": "Nodal Dte 1"},
-            {"value": "DTE-2", "label": "Nodal Dte 2"},
-        ],
-        "eqpt_category": [
-            {"value": "EQ-1", "label": "Equipment Cat 1"},
-            {"value": "EQ-2", "label": "Equipment Cat 2"},
-        ],
+        "item_category": _distinct_column(session, MlccsEquipmentMaster.item_category),
+        "class_of_eqpt": _distinct_column(session, MlccsEquipmentMaster.class_category),
+        "country_of_origin": _distinct_column(session, MlccsEquipmentMaster.origin_country),
+        "nodal_dte": _distinct_column(session, MlccsEquipmentMaster.dte_category),
+        "eqpt_category": _distinct_column(session, MlccsEquipmentMaster.dte_eqpt_category),
         "incl_in_aih": [
             {"value": "Y", "label": "Yes"},
             {"value": "N", "label": "No"},
         ],
-        "digest_category": [
-            {"value": "DIG-1", "label": "Digest 1"},
-            {"value": "DIG-2", "label": "Digest 2"},
-        ],
+        "digest_category": _distinct_column(session, MlccsEquipmentMaster.digest_category),
+        "type_of_hldg": _option_list(session, "TYPE_OF_HLDG"),
+        "type_of_eqpt": _option_list(session, "TYPE_OF_EQPT"),
+        "service_status": _option_list(session, "SERVICE_STATUS"),
+        "op_status": _option_list(session, "OP_STATUS"),
     }

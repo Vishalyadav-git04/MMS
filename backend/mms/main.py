@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.auth_seed import ensure_users_table
+from app.ep_lookup_seed import ensure_ep_lookup_tables
 from app.settings import get_settings
 from core.db.session import Database
 from core.logging import configure_logging
@@ -36,6 +38,14 @@ async def lifespan(app: FastAPI):
         app.state.db = db
         app.state.db_connected = True
         logger.info("oracle pool connected", extra={"dsn": settings.oracle_dsn})
+        try:
+            ensure_users_table(db)
+        except Exception:
+            logger.exception("failed to ensure MMS_USERS / seed accounts")
+        try:
+            ensure_ep_lookup_tables(db)
+        except Exception:
+            logger.exception("failed to ensure EP lookup tables")
     except Exception:
         # Allow API process to start for local UI work even if Oracle is down.
         # /health stays ok; /health/ready will report not ready.

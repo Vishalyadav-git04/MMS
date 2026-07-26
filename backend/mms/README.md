@@ -26,13 +26,22 @@ API prefix: `/api/v1`
 | `ro/*` | `app/ro/` (scaffold) |
 | `transfer/*` | `app/transfer/` (scaffold) |
 
-## Admin endpoints (from miso template)
+## Oracle connection
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/admin/capture-mlccs-details/generate` | Generate census no |
-| POST | `/admin/capture-mlccs-details/lookup` | Load record |
-| POST | `/admin/capture-mlccs-details` | Save / update |
-| GET | `/admin/capture-mlccs-details/options` | Dropdown options |
+Copy `.env.example` → `.env` (already matches SQL Developer **MISO 5.0**:
+`SYSTEM` / `oracle` @ `localhost:1521/FREEPDB1`). Tables are owned by **SYSTEM**.
 
-Existing UI screens are not modified; connect them to these APIs when ready.
+Check: `GET /api/v1/health/ready` → `{"status":"ready"}` when the pool is up.
+
+## Admin endpoints (wired to Oracle)
+
+| Method | Path | Table |
+|--------|------|-------|
+| POST | `/admin/capture-mlccs-details/generate` | `MMS_MLCCS_EQUIPMENT_MASTER` |
+| POST | `/admin/capture-mlccs-details/lookup` | same |
+| POST | `/admin/capture-mlccs-details/` | same |
+| GET | `/admin/capture-mlccs-details/options` | MLCCS + `MMS_DOMAIN_VALUES` |
+| GET/POST | `/admin/mms-domain-master/*` | `MMS_DOMAIN_VALUES` |
+| POST | `/admin/search-regn-no/search` | `MMS_UNIT_MSTR_DETL` |
+| POST | `/admin/unit-obsn-status/search` | `MMS_OBSN_DETL` |
+| POST | `/admin/link-census-no-with-item-code/link` | `MMS_MLCCS_EQUIPMENT_MASTER` |

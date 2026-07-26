@@ -1,0 +1,58 @@
+/** Thin fetch helper for the MMS FastAPI (proxied via Vite `/api/v1`). */
+
+import { clearSession, getToken } from "@/lib/auth";
+
+const API_BASE = "/api/v1";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function messageFromBody(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const b = body as Record<string, unknown>;
+  if (typeof b.detail === "string") return b.detail;
+  if (Array.isArray(b.detail) && b.detail[0]?.msg) return String(b.detail[0].msg);
+  const err = b.error as { message?: string } | undefined;
+  if (err?.message) return err.message;
+  return fallback;
+}
+
+type ApiInit = RequestInit & { skipAuth?: boolean };
+
+export async function api<T>(path: string, init?: ApiInit): Promise<T> {
+  const { skipAuth, headers: initHeaders, ...rest } = init ?? {};
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(initHeaders as Record<string, string> | undefined),
+  };
+
+  if (!skipAuth) {
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...rest,
+    headers,
+  });
+
+  if (res.status === 401 && !skipAuth) {
+    clearSession();
+    if (typeof window !== "undefined" && !window.location.pathname.includes("login")) {
+      window.dispatchEvent(new Event("mms:unauthorized"));
+    }
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, messageFromBody(body, res.statusText));
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}

@@ -17,12 +17,49 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
+
+interface ObsnRecord {
+  id: string;
+  sus_no?: string | null;
+  deo?: string | null;
+  mth?: string | null;
+  yr?: string | null;
+  census_no?: string | null;
+  obsn_status?: string | null;
+  unit_remarks?: string | null;
+  obsn1?: string | null;
+  obsn2?: string | null;
+}
 
 export function UnitObsnStatus() {
   const [unitName, setUnitName] = useState("");
-  const [period, setPeriod] = useState("2026-07");
+  const [period, setPeriod] = useState("");
   const [status, setStatus] = useState("all");
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<ObsnRecord[]>([]);
+
+  const handleSearch = async () => {
+    setBusy(true);
+    try {
+      const rows = await api<ObsnRecord[]>("/admin/unit-obsn-status/search", {
+        method: "POST",
+        body: JSON.stringify({
+          unit_name: unitName || null,
+          period: period || null,
+          status,
+        }),
+      });
+      setResults(rows);
+      toast.success(`${rows.length} record(s) found`);
+    } catch (e) {
+      setResults([]);
+      toast.error(e instanceof ApiError ? e.message : "Search failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <FormPanel title="Unit Obsn Status" fill>
@@ -32,7 +69,7 @@ export function UnitObsnStatus() {
             <Input
               value={unitName}
               onChange={(e) => setUnitName(e.target.value)}
-              placeholder="Search..."
+              placeholder="SUS No / DEO..."
             />
           </FormRow>
           <FormRow label="Period">
@@ -53,10 +90,10 @@ export function UnitObsnStatus() {
           </FormRow>
         </FormGrid>
 
-        {/* Action buttons above the grid */}
         <div className="flex flex-wrap justify-center gap-2 py-1">
           <Button
-            onClick={() => toast.success("Searching records...")}
+            disabled={busy}
+            onClick={() => void handleSearch()}
             className="bg-success hover:bg-success/90 text-success-foreground"
           >
             Search
@@ -65,12 +102,16 @@ export function UnitObsnStatus() {
             variant="secondary"
             onClick={() => {
               setUnitName("");
+              setPeriod("");
               setStatus("all");
+              setResults([]);
             }}
           >
             Clear
           </Button>
-          <Button variant="destructive">Cancel</Button>
+          <Button variant="destructive" onClick={() => setResults([])}>
+            Cancel
+          </Button>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
@@ -93,14 +134,13 @@ export function UnitObsnStatus() {
               <TableHeader>
                 <TableRow className="bg-primary hover:bg-primary">
                   {[
-                    "Unit Name",
-                    "Uploaded Doc",
-                    "Obsn ID",
+                    "SUS No",
+                    "DEO",
+                    "Period",
+                    "Census No",
+                    "Status",
                     "Observation",
-                    "Obsn Date",
-                    "Date of Completion",
-                    "Completion by",
-                    "MISO Reply",
+                    "Remarks",
                   ].map((h) => (
                     <TableHead key={h} className="text-primary-foreground font-semibold text-[10px]">
                       {h}
@@ -109,29 +149,33 @@ export function UnitObsnStatus() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-xs">
-                    No data available in table
-                  </TableCell>
-                </TableRow>
+                {results.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-xs">
+                      No data available in table
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  results.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-xs">{r.sus_no}</TableCell>
+                      <TableCell className="text-xs">{r.deo}</TableCell>
+                      <TableCell className="text-xs">
+                        {[r.mth, r.yr].filter(Boolean).join(" ")}
+                      </TableCell>
+                      <TableCell className="text-xs">{r.census_no}</TableCell>
+                      <TableCell className="text-xs">{r.obsn_status}</TableCell>
+                      <TableCell className="text-xs">{r.obsn1 ?? r.obsn2}</TableCell>
+                      <TableCell className="text-xs">{r.unit_remarks}</TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
           <div className="flex shrink-0 items-center justify-between px-3 py-1 bg-muted/40 text-[10px] text-muted-foreground">
-            <div>Showing 0 to 0 of 0 entries</div>
-            <div className="flex gap-0.5">
-              <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5">
-                First
-              </Button>
-              <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5">
-                Previous
-              </Button>
-              <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5">
-                Next
-              </Button>
-              <Button size="sm" variant="ghost" className="h-5 text-[10px] px-1.5">
-                Last
-              </Button>
+            <div>
+              Showing {results.length === 0 ? 0 : 1} to {results.length} of {results.length} entries
             </div>
           </div>
         </div>

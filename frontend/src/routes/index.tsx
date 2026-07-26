@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout, type ModuleId, type WeaponSub } from "@/components/AppLayout";
+import { LoginScreen } from "@/components/LoginScreen";
 import { FormScreen } from "@/components/FormPanel";
 import { SubModuleTiles } from "@/components/SubModuleTiles";
 import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
@@ -23,6 +24,8 @@ import {
   UnitToDepotDeposit,
 } from "@/components/transfer/EqptTransferForms";
 import { Toaster } from "@/components/ui/sonner";
+import { useAuth } from "@/lib/auth-context";
+import { isAdmin } from "@/lib/auth";
 import {
   FileText,
   Link2,
@@ -120,13 +123,31 @@ type MlccsTile = (typeof MLCCS_TILES)[number]["id"];
 type TransferTile = (typeof TRANSFER_TILES)[number]["id"];
 
 function Index() {
+  const { isAuthenticated, user, logout } = useAuth();
+  const admin = isAdmin(user);
+
   const [active, setActive] = useState<ModuleId>("weapon");
-  const [activeSub, setActiveSub] = useState<WeaponSub | null>("mms-admin");
+  const [activeSub, setActiveSub] = useState<WeaponSub | null>(
+    admin ? "mms-admin" : "mlccs",
+  );
   const [activeMms, setActiveMms] = useState<MmsTile | null>(null);
   const [activeEp, setActiveEp] = useState<EpTile | null>(null);
   const [activeRo, setActiveRo] = useState<RoTile | null>(null);
   const [activeMlccs, setActiveMlccs] = useState<MlccsTile | null>(null);
   const [activeTransfer, setActiveTransfer] = useState<TransferTile | null>(null);
+
+  useEffect(() => {
+    const onUnauthorized = () => logout();
+    window.addEventListener("mms:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("mms:unauthorized", onUnauthorized);
+  }, [logout]);
+
+  useEffect(() => {
+    if (!admin && activeSub === "mms-admin") {
+      setActiveSub("mlccs");
+      setActiveMms(null);
+    }
+  }, [admin, activeSub]);
 
   const handleSelect = (m: ModuleId, sub?: WeaponSub) => {
     setActive(m);
@@ -136,11 +157,17 @@ function Index() {
     setActiveMlccs(null);
     setActiveTransfer(null);
     if (m === "weapon") {
-      setActiveSub(sub ?? "mms-admin");
+      const fallback: WeaponSub = admin ? "mms-admin" : "mlccs";
+      const next = sub ?? fallback;
+      setActiveSub(next === "mms-admin" && !admin ? "mlccs" : next);
     } else {
       setActiveSub(null);
     }
   };
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   const breadcrumb: string[] = ["Home"];
   if (active === "dashboard") breadcrumb.push("Dashboard");

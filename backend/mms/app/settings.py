@@ -17,7 +17,8 @@ class MmsSettings(BaseServiceSettings):
     oracle_user: str = "SYSTEM"
     oracle_password: str = "oracle"
     oracle_dsn: str = "localhost:1521/FREEPDB1"
-    oracle_schema: str = "MMS"
+    # MMS_* tables from the DDL live under SYSTEM in the local FreeDB PDB.
+    oracle_schema: str = "SYSTEM"
 
     api_prefix: str = "/api/v1"
     # Include common Vite / TanStack / Lovable local ports used by this frontend

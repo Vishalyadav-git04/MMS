@@ -55,6 +55,14 @@ class BaseServiceSettings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # --- JWT auth ---------------------------------------------------------
+    jwt_secret: str = Field(
+        default="mms-dev-jwt-secret-change-me-32chars!",
+        description="HS256 signing secret for access tokens",
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480  # 8 hours
+
     @property
     def is_prod(self) -> bool:
         return self.environment == "prod"

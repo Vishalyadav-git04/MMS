@@ -9,7 +9,7 @@ Material / Master List Management. Layout mirrors **miso-5.0** (ORBAT pattern).
 | Frontend | **`frontend/`** — TanStack Start / React app (existing screens preserved) |
 | Backend | **FastAPI MMS service** under `backend/mms`, same shape as miso `backend/orbat` |
 | Shared lib | `backend/core` — config, Oracle pool, auth, audit, logging |
-| Database | Oracle via `python-oracledb` + SQLAlchemy 2 + Alembic; schema **MMS** |
+| Database | Oracle via `python-oracledb` + SQLAlchemy 2 + Alembic; local FreeDB tables owned by **SYSTEM** (`MMS_*`) |
 | API | `/api/v1` on port **8001**; Vite proxies `/api/v1` → backend |
 
 ## Layout

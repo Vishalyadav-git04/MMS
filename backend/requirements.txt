@@ -21,3 +21,6 @@ alembic>=1.13
 
 # --- Logging ---
 python-json-logger>=2.0
+
+# --- Auth ---
+PyJWT>=2.8

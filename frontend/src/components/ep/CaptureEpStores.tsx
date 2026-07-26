@@ -1,10 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 interface EquipRow {
@@ -27,8 +26,32 @@ interface EquipRow {
   serviceability: string;
 }
 
+interface DomainRow {
+  id: string;
+  eqpt_cat: string;
+}
+
+interface SubDomainRow {
+  id: string;
+  equipment_domain_id: string;
+  sub_domain_name: string;
+}
+
+interface IssuerUnit {
+  id: string;
+  sanctioning_auth: string;
+  unit_name: string;
+  sus_no: string;
+}
+
+interface HoldingUnit {
+  id: string;
+  unit_name: string;
+  sus_no: string;
+}
+
 const emptyIssuer = {
-  sanctioningAuth: "DG CD",
+  sanctioningAuth: "",
   issuingAuthority: "",
   issueSusNo: "",
   authLetterNo: "",
@@ -41,8 +64,8 @@ const emptyHolding = {
   susNo: "",
   ivNo: "",
   ivDate: "2026-07-24",
-  eqptCategory: "",
-  epCensus: "",
+  domainId: "",
+  subDomainId: "",
   regnNoAvl: "yes",
   qty: "",
   voucherFile: "",
@@ -57,12 +80,144 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+function SuggestInput({
+  value,
+  placeholder,
+  disabled,
+  suggestions,
+  renderItem,
+  onChange,
+  onPick,
+}: {
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: string[];
+  renderItem?: (s: string, idx: number) => ReactNode;
+  onChange: (v: string) => void;
+  onPick: (idx: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const blurTimer = useRef<number | null>(null);
+
+  return (
+    <div className="relative">
+      <Input
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+        }}
+      />
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-30 mt-1 max-h-44 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
+          {suggestions.map((s, idx) => (
+            <li key={`${s}-${idx}`}>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                  onPick(idx);
+                  setOpen(false);
+                }}
+              >
+                {renderItem ? renderItem(s, idx) : s}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function CaptureEpStores() {
   const [issuer, setIssuer] = useState(emptyIssuer);
   const [holding, setHolding] = useState(emptyHolding);
   const [equipRows, setEquipRows] = useState<EquipRow[]>([
     { regdNo: "", serviceability: "Serviceable" },
   ]);
+  const [busy, setBusy] = useState(false);
+
+  const [sanctionAuths, setSanctionAuths] = useState<string[]>([]);
+  const [domains, setDomains] = useState<DomainRow[]>([]);
+  const [subDomains, setSubDomains] = useState<SubDomainRow[]>([]);
+
+  const [issuerUnits, setIssuerUnits] = useState<IssuerUnit[]>([]);
+  const [holdingUnits, setHoldingUnits] = useState<HoldingUnit[]>([]);
+  const [issuerQueryField, setIssuerQueryField] = useState<"name" | "sus" | null>(null);
+  const [holdingQueryField, setHoldingQueryField] = useState<"name" | "sus" | null>(null);
+
+  useEffect(() => {
+    api<string[]>("/ep/capture/sanctioning-auths")
+      .then((rows) => {
+        setSanctionAuths(rows);
+        if (rows.length && !issuer.sanctioningAuth) {
+          setIssuer((prev) => ({ ...prev, sanctioningAuth: rows[0] }));
+        }
+      })
+      .catch(() => undefined);
+    api<DomainRow[]>("/ep/domain-master/")
+      .then(setDomains)
+      .catch(() => toast.error("Failed to load domains"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!holding.domainId) {
+      setSubDomains([]);
+      return;
+    }
+    api<SubDomainRow[]>(
+      `/ep/sub-domain-master/search?equipment_domain_id=${encodeURIComponent(holding.domainId)}`,
+    )
+      .then(setSubDomains)
+      .catch(() => setSubDomains([]));
+  }, [holding.domainId]);
+
+  useEffect(() => {
+    if (!issuerQueryField) return;
+    const q =
+      issuerQueryField === "name" ? issuer.issuingAuthority.trim() : issuer.issueSusNo.trim();
+    if (q.length < 1) {
+      setIssuerUnits([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      const params = new URLSearchParams({ q });
+      if (issuer.sanctioningAuth) params.set("sanctioning_auth", issuer.sanctioningAuth);
+      void api<IssuerUnit[]>(`/ep/capture/issuer-units?${params}`)
+        .then(setIssuerUnits)
+        .catch(() => setIssuerUnits([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [issuer.issuingAuthority, issuer.issueSusNo, issuer.sanctioningAuth, issuerQueryField]);
+
+  useEffect(() => {
+    if (!holdingQueryField) return;
+    const q = holdingQueryField === "name" ? holding.unitName.trim() : holding.susNo.trim();
+    if (q.length < 1) {
+      setHoldingUnits([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<HoldingUnit[]>(
+        `/ep/capture/holding-units?q=${encodeURIComponent(q)}`,
+      )
+        .then(setHoldingUnits)
+        .catch(() => setHoldingUnits([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [holding.unitName, holding.susNo, holdingQueryField]);
 
   const updIssuer = <K extends keyof typeof emptyIssuer>(k: K, v: (typeof emptyIssuer)[K]) =>
     setIssuer({ ...issuer, [k]: v });
@@ -70,9 +225,15 @@ export function CaptureEpStores() {
     setHolding({ ...holding, [k]: v });
 
   const handleClear = () => {
-    setIssuer(emptyIssuer);
+    setIssuer({
+      ...emptyIssuer,
+      sanctioningAuth: sanctionAuths[0] ?? "",
+    });
     setHolding(emptyHolding);
     setEquipRows([{ regdNo: "", serviceability: "Serviceable" }]);
+    setIssuerUnits([]);
+    setHoldingUnits([]);
+    setSubDomains([]);
   };
 
   const handleQtyChange = (qty: string) => {
@@ -86,34 +247,73 @@ export function CaptureEpStores() {
     });
   };
 
+  const handleSubmit = async () => {
+    if (
+      !issuer.sanctioningAuth ||
+      !issuer.issuingAuthority ||
+      !issuer.issueSusNo ||
+      !issuer.authLetterNo ||
+      !issuer.date ||
+      !holding.unitName ||
+      !holding.susNo ||
+      !holding.ivNo ||
+      !holding.ivDate ||
+      !holding.domainId ||
+      !holding.subDomainId ||
+      !holding.qty
+    ) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api<{ ids: string[]; count: number }>("/ep/capture/", {
+        method: "POST",
+        body: JSON.stringify({
+          sanctioning_auth: issuer.sanctioningAuth,
+          issuing_authority: issuer.issuingAuthority,
+          issue_sus_no: issuer.issueSusNo,
+          auth_letter_no: issuer.authLetterNo,
+          auth_date: issuer.date,
+          upload_auth_letter: issuer.authLetterFile || null,
+          unit_name: holding.unitName,
+          sus_no: holding.susNo,
+          iv_no: holding.ivNo,
+          iv_date: holding.ivDate,
+          domain_id: holding.domainId,
+          sub_domain_id: holding.subDomainId,
+          regn_no_avl: holding.regnNoAvl,
+          qty: Number(holding.qty),
+          upload_voucher: holding.voucherFile || null,
+          remarks: holding.remarks || null,
+          equipment: equipRows.map((r) => ({
+            regd_no: r.regdNo || null,
+            serviceability: r.serviceability,
+          })),
+        }),
+      });
+      toast.success(`EP Store submitted (${result.count} record(s))`);
+      handleClear();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Submit failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <FormPanel
       title="EP STORES"
       fill
       footer={
         <>
-          <Button variant="secondary" onClick={handleClear}>
+          <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
           <Button
             className="bg-success hover:bg-success/90 text-success-foreground"
-            onClick={() => {
-              if (
-                !issuer.sanctioningAuth ||
-                !issuer.issuingAuthority ||
-                !issuer.issueSusNo ||
-                !issuer.authLetterNo ||
-                !holding.unitName ||
-                !holding.susNo ||
-                !holding.ivNo ||
-                !holding.eqptCategory ||
-                !holding.epCensus ||
-                !holding.qty
-              ) {
-                return toast.error("Please fill all required fields");
-              }
-              toast.success("EP Store submitted");
-            }}
+            disabled={busy}
+            onClick={() => void handleSubmit()}
           >
             Submit
           </Button>
@@ -126,36 +326,91 @@ export function CaptureEpStores() {
           <FormRow label="Sanctioning Auth" required>
             <Select
               value={issuer.sanctioningAuth}
-              onValueChange={(v) => updIssuer("sanctioningAuth", v)}
+              onValueChange={(v) => {
+                updIssuer("sanctioningAuth", v);
+                setIssuer((prev) => ({
+                  ...prev,
+                  sanctioningAuth: v,
+                  issuingAuthority: "",
+                  issueSusNo: "",
+                }));
+                setIssuerUnits([]);
+              }}
+              disabled={busy}
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select--" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="DG CD">DG CD</SelectItem>
-                <SelectItem value="DGOS">DGOS</SelectItem>
-                <SelectItem value="DGAS">DGAS</SelectItem>
+                {sanctionAuths.map((a) => (
+                  <SelectItem key={a} value={a}>
+                    {a}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FormRow>
           <FormRow label="Issuing Authority" required>
-            <Input
-              placeholder="Search Issuing Auth Unit Name..."
+            <SuggestInput
               value={issuer.issuingAuthority}
-              onChange={(e) => updIssuer("issuingAuthority", e.target.value)}
+              placeholder="Search Issuing Auth Unit Name..."
+              disabled={busy}
+              suggestions={
+                issuerQueryField === "name"
+                  ? issuerUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
+                  : []
+              }
+              onChange={(v) => {
+                setIssuerQueryField("name");
+                setIssuer({ ...issuer, issuingAuthority: v, issueSusNo: "" });
+              }}
+              onPick={(idx) => {
+                const u = issuerUnits[idx];
+                if (!u) return;
+                setIssuer({
+                  ...issuer,
+                  issuingAuthority: u.unit_name,
+                  issueSusNo: u.sus_no,
+                  sanctioningAuth: u.sanctioning_auth || issuer.sanctioningAuth,
+                });
+                setIssuerUnits([]);
+                setIssuerQueryField(null);
+              }}
             />
           </FormRow>
           <FormRow label="Issue SUS No" required>
-            <Input
-              placeholder="Search Issuing Auth SUS No..."
+            <SuggestInput
               value={issuer.issueSusNo}
-              onChange={(e) => updIssuer("issueSusNo", e.target.value)}
+              placeholder="Search Issuing Auth SUS No..."
+              disabled={busy}
+              suggestions={
+                issuerQueryField === "sus"
+                  ? issuerUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
+                  : []
+              }
+              onChange={(v) => {
+                setIssuerQueryField("sus");
+                setIssuer({ ...issuer, issueSusNo: v, issuingAuthority: "" });
+              }}
+              onPick={(idx) => {
+                const u = issuerUnits[idx];
+                if (!u) return;
+                setIssuer({
+                  ...issuer,
+                  issuingAuthority: u.unit_name,
+                  issueSusNo: u.sus_no,
+                  sanctioningAuth: u.sanctioning_auth || issuer.sanctioningAuth,
+                });
+                setIssuerUnits([]);
+                setIssuerQueryField(null);
+              }}
             />
           </FormRow>
           <FormRow label="Auth Letter No" required>
             <Input
               placeholder="Enter Auth Letter No..."
               value={issuer.authLetterNo}
+              disabled={busy}
               onChange={(e) => updIssuer("authLetterNo", e.target.value)}
             />
           </FormRow>
@@ -163,6 +418,7 @@ export function CaptureEpStores() {
             <Input
               type="date"
               value={issuer.date}
+              disabled={busy}
               onChange={(e) => updIssuer("date", e.target.value)}
             />
           </FormRow>
@@ -170,6 +426,7 @@ export function CaptureEpStores() {
             <Input
               type="file"
               className="h-auto py-1"
+              disabled={busy}
               onChange={(e) =>
                 updIssuer("authLetterFile", e.target.files?.[0]?.name ?? "")
               }
@@ -180,23 +437,56 @@ export function CaptureEpStores() {
         <SectionHeader title="EP HOLDING DETAILS" />
         <FormGrid>
           <FormRow label="Unit Name" required>
-            <Input
-              placeholder="Search..."
+            <SuggestInput
               value={holding.unitName}
-              onChange={(e) => updHolding("unitName", e.target.value)}
+              placeholder="Search..."
+              disabled={busy}
+              suggestions={
+                holdingQueryField === "name"
+                  ? holdingUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
+                  : []
+              }
+              onChange={(v) => {
+                setHoldingQueryField("name");
+                setHolding({ ...holding, unitName: v, susNo: "" });
+              }}
+              onPick={(idx) => {
+                const u = holdingUnits[idx];
+                if (!u) return;
+                setHolding({ ...holding, unitName: u.unit_name, susNo: u.sus_no });
+                setHoldingUnits([]);
+                setHoldingQueryField(null);
+              }}
             />
           </FormRow>
           <FormRow label="SUS No" required>
-            <Input
-              placeholder="Search..."
+            <SuggestInput
               value={holding.susNo}
-              onChange={(e) => updHolding("susNo", e.target.value)}
+              placeholder="Search..."
+              disabled={busy}
+              suggestions={
+                holdingQueryField === "sus"
+                  ? holdingUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
+                  : []
+              }
+              onChange={(v) => {
+                setHoldingQueryField("sus");
+                setHolding({ ...holding, susNo: v, unitName: "" });
+              }}
+              onPick={(idx) => {
+                const u = holdingUnits[idx];
+                if (!u) return;
+                setHolding({ ...holding, unitName: u.unit_name, susNo: u.sus_no });
+                setHoldingUnits([]);
+                setHoldingQueryField(null);
+              }}
             />
           </FormRow>
           <FormRow label="IV No" required>
             <Input
               placeholder="Enter IV No..."
               value={holding.ivNo}
+              disabled={busy}
               onChange={(e) => updHolding("ivNo", e.target.value)}
             />
           </FormRow>
@@ -204,64 +494,85 @@ export function CaptureEpStores() {
             <Input
               type="date"
               value={holding.ivDate}
+              disabled={busy}
               onChange={(e) => updHolding("ivDate", e.target.value)}
             />
           </FormRow>
           <FormRow label="Eqpt Category/Domain Name" required>
             <Select
-              value={holding.eqptCategory}
-              onValueChange={(v) => updHolding("eqptCategory", v)}
+              value={holding.domainId}
+              disabled={busy}
+              onValueChange={(v) =>
+                setHolding({ ...holding, domainId: v, subDomainId: "" })
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select Eqpt category--" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Weapon">Weapon</SelectItem>
-                <SelectItem value="Vehicle">Vehicle</SelectItem>
-                <SelectItem value="Communication">Communication</SelectItem>
-                <SelectItem value="Optics">Optics</SelectItem>
+                {domains.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.eqpt_cat}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FormRow>
           <FormRow label="EP Census/Sub Domain" required>
             <Select
-              value={holding.epCensus}
-              onValueChange={(v) => updHolding("epCensus", v)}
+              value={holding.subDomainId}
+              disabled={busy || !holding.domainId}
+              onValueChange={(v) => updHolding("subDomainId", v)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select EP Census/Eqpt Nomen--" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Radar">Radar</SelectItem>
-                <SelectItem value="Sensors">Sensors</SelectItem>
-                <SelectItem value="Night Vision">Night Vision</SelectItem>
+                {subDomains.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.sub_domain_name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FormRow>
           <FormRow label="Is Registration No Avl?" required>
-            <RadioGroup
-              value={holding.regnNoAvl}
-              onValueChange={(v) => updHolding("regnNoAvl", v)}
-              className="flex flex-row gap-4"
-            >
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="yes" id="regn-yes" />
-                <Label htmlFor="regn-yes" className="text-xs font-normal">
-                  Yes
-                </Label>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="no" id="regn-no" />
-                <Label htmlFor="regn-no" className="text-xs font-normal">
-                  No
-                </Label>
-              </div>
-            </RadioGroup>
+            <div className="flex flex-row items-center gap-5">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-foreground">
+                <input
+                  type="radio"
+                  name="ep-regn-no-avl"
+                  value="yes"
+                  checked={holding.regnNoAvl === "yes"}
+                  disabled={busy}
+                  className="h-4 w-4 accent-primary"
+                  onChange={() =>
+                    setHolding((prev) => ({ ...prev, regnNoAvl: "yes" }))
+                  }
+                />
+                Yes
+              </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-foreground">
+                <input
+                  type="radio"
+                  name="ep-regn-no-avl"
+                  value="no"
+                  checked={holding.regnNoAvl === "no"}
+                  disabled={busy}
+                  className="h-4 w-4 accent-primary"
+                  onChange={() =>
+                    setHolding((prev) => ({ ...prev, regnNoAvl: "no" }))
+                  }
+                />
+                No
+              </label>
+            </div>
           </FormRow>
           <FormRow label="Qty" required>
             <Input
               placeholder="Max Four Character"
               value={holding.qty}
+              disabled={busy}
               onChange={(e) => handleQtyChange(e.target.value)}
             />
           </FormRow>
@@ -269,6 +580,7 @@ export function CaptureEpStores() {
             <Input
               type="file"
               className="h-auto py-1"
+              disabled={busy}
               onChange={(e) =>
                 updHolding("voucherFile", e.target.files?.[0]?.name ?? "")
               }
@@ -281,6 +593,7 @@ export function CaptureEpStores() {
             rows={2}
             placeholder="Enter Remarks..."
             value={holding.remarks}
+            disabled={busy}
             onChange={(e) => updHolding("remarks", e.target.value)}
           />
         </FormRow>
@@ -301,7 +614,7 @@ export function CaptureEpStores() {
                   <TableCell>
                     <Input
                       value={row.regdNo}
-                      disabled={holding.regnNoAvl === "no"}
+                      disabled={busy || holding.regnNoAvl === "no"}
                       onChange={(e) => {
                         const next = [...equipRows];
                         next[idx] = { ...next[idx], regdNo: e.target.value };
@@ -312,6 +625,7 @@ export function CaptureEpStores() {
                   <TableCell>
                     <Select
                       value={row.serviceability}
+                      disabled={busy}
                       onValueChange={(v) => {
                         const next = [...equipRows];
                         next[idx] = { ...next[idx], serviceability: v };
