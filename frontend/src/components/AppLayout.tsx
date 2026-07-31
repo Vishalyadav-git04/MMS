@@ -103,12 +103,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
   const roleLabel = user?.role ?? "UNIT";
 
   return (
-    <div
-      className={cn(
-        "relative flex h-screen overflow-hidden bg-background",
-        activeSub === "eqpt-transfer" && "theme-navy",
-      )}
-    >
+    <div className="relative flex h-screen overflow-hidden bg-background">
       <SessionWatermark />
       {/* Sidebar */}
       <aside

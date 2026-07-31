@@ -27,6 +27,7 @@ import {
 import { AddNewEqpt } from "@/components/unit-holding/AddNewEqpt";
 import { ApproveNewEqpt } from "@/components/unit-holding/ApproveNewEqpt";
 import { UpdateEqptData } from "@/components/unit-holding/UpdateEqptData";
+import { UpdateArtyEqptData } from "@/components/unit-holding/UpdateArtyEqptData";
 import { AllIndiaHolding } from "@/components/reports/AllIndiaHolding";
 import { UnitWiseHoldingData } from "@/components/reports/UnitWiseHoldingData";
 import { WpnsAndEqptStatus } from "@/components/reports/WpnsAndEqptStatus";
@@ -59,9 +60,9 @@ import {
   PackageCheck,
   BadgeCheck,
   RefreshCw,
+  Crosshair,
   Globe2,
   Building2,
-  Crosshair,
   ListChecks,
   Share2,
 } from "lucide-react";
@@ -155,6 +156,12 @@ const HOLDING_TILES = [
     label: "UPDATE EQPT DATA",
     icon: RefreshCw,
     description: "Update equipment serviceability status",
+  },
+  {
+    id: "update-arty-eqpt-data",
+    label: "UPDATE ARTY EQPT DATA",
+    icon: Crosshair,
+    description: "Update artillery OH, barrel and strip inspection data",
   },
 ];
 
@@ -465,6 +472,7 @@ function Index() {
             {activeHolding === "add-new-eqpt" && <AddNewEqpt />}
             {activeHolding === "approve-new-eqpt" && <ApproveNewEqpt />}
             {activeHolding === "update-eqpt-data" && <UpdateEqptData />}
+            {activeHolding === "update-arty-eqpt-data" && <UpdateArtyEqptData />}
           </FormScreen>
         )}
         {active === "weapon" && activeSub === "reports" && !activeReport && (

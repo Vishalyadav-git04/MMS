@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
+import { FormPanel, FormRow } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -33,19 +33,15 @@ const UNIT_OPTIONS = [
   "1942103B - 5 SIKH",
   "1950012C - 2 RAJPUT",
   "1960408D - 9 GARH RIF",
-  "1970501E - 14 FIELD REGT (ARTY)",
-  "1980602F - 61 MEDIUM REGT (ARTY)",
 ];
 
-const PRF_GROUPS = ["PRF-INF-01", "PRF-ARTY-02", "PRF-ARMD-03", "PRF-ASC-04"];
+const PRF_GROUPS = ["PRF-INF-01", "PRF-ARMD-03", "PRF-ASC-04"];
 
 const CENSUS_OPTIONS = [
   "CN-88421 — Carbine 5.56mm Folding Stock",
   "CN-90215 — LMG 7.62mm Belt Fed",
   "CN-77109 — Thermal Imager Hand Held",
   "CN-65033 — VHF Radio Set Manpack 25W",
-  "CN-44102 — 155mm Howitzer FH-77B",
-  "CN-44118 — 130mm Field Gun M-46",
 ];
 
 const HOLDING_TYPES = [
@@ -62,9 +58,6 @@ const SERVICEABILITY_OPTIONS = [
   "Under Repair",
 ];
 
-const OH_TYPE_OPTIONS = ["Minor OH", "Major OH", "Base OH", "Intermediate OH"];
-const OP_CLEARANCE_OPTIONS = ["Cleared", "Not Cleared", "Pending"];
-
 type EqptResult = {
   id: string;
   regnNo: string;
@@ -73,10 +66,7 @@ type EqptResult = {
   censusNo: string;
   typeOfHolding: string;
   serviceability: string;
-  isArtillery: boolean;
 };
-
-type ArtilleryTab = "oh" | "barrel" | "strip";
 
 const MOCK_EQPT: EqptResult[] = [
   {
@@ -87,7 +77,6 @@ const MOCK_EQPT: EqptResult[] = [
     censusNo: "CN-88421 — Carbine 5.56mm Folding Stock",
     typeOfHolding: "Authorised Holding",
     serviceability: "Serviciable",
-    isArtillery: false,
   },
   {
     id: "2",
@@ -97,27 +86,6 @@ const MOCK_EQPT: EqptResult[] = [
     censusNo: "CN-90215 — LMG 7.62mm Belt Fed",
     typeOfHolding: "Authorised Holding",
     serviceability: "Repairable",
-    isArtillery: false,
-  },
-  {
-    id: "3",
-    regnNo: "21A-L0858",
-    unit: "1970501E - 14 FIELD REGT (ARTY)",
-    prfGroup: "PRF-ARTY-02",
-    censusNo: "CN-44102 — 155mm Howitzer FH-77B",
-    typeOfHolding: "Authorised Holding",
-    serviceability: "Serviciable",
-    isArtillery: true,
-  },
-  {
-    id: "4",
-    regnNo: "21A-L0921",
-    unit: "1980602F - 61 MEDIUM REGT (ARTY)",
-    prfGroup: "PRF-ARTY-02",
-    censusNo: "CN-44118 — 130mm Field Gun M-46",
-    typeOfHolding: "Authorised Holding",
-    serviceability: "Under Repair",
-    isArtillery: true,
   },
   {
     id: "5",
@@ -127,22 +95,8 @@ const MOCK_EQPT: EqptResult[] = [
     censusNo: "CN-77109 — Thermal Imager Hand Held",
     typeOfHolding: "Temporary Holding",
     serviceability: "Serviciable",
-    isArtillery: false,
   },
 ];
-
-function isArtilleryUnit(unit: string, prfGroup: string) {
-  return (
-    prfGroup.includes("ARTY") ||
-    /\(ARTY\)/i.test(unit) ||
-    /FIELD REGT|MEDIUM REGT|ARTY/i.test(unit)
-  );
-}
-
-function shortCode(regnNo: string) {
-  const parts = regnNo.split("-");
-  return parts.length > 1 ? parts[parts.length - 1] : regnNo;
-}
 
 function SelectField({
   value,
@@ -209,9 +163,8 @@ function DialogActions({
 }
 
 const wideRow = "sm:grid-cols-[140px_minmax(0,1fr)]";
-const pairRow = "sm:grid-cols-[120px_minmax(0,1fr)]";
 
-/** ss1 — non-artillery */
+/** Non-artillery serviceability update */
 function ServiceabilityStateForm({
   record,
   onClose,
@@ -272,345 +225,6 @@ function ServiceabilityStateForm({
         }}
       />
     </div>
-  );
-}
-
-/** ss2 — OH Details */
-function OhDetailsForm({
-  record,
-  onClose,
-}: {
-  record: EqptResult;
-  onClose: () => void;
-}) {
-  const [ohType, setOhType] = useState("");
-  const [ohDueDt, setOhDueDt] = useState("");
-  const [ohDoneDt, setOhDoneDt] = useState("");
-  const [wkspName, setWkspName] = useState("");
-  const [wkspInDt, setWkspInDt] = useState("");
-  const [dispatchDt, setDispatchDt] = useState("");
-  const [bohComplDt, setBohComplDt] = useState("");
-  const [gunRecdDt, setGunRecdDt] = useState("");
-  const [dtOfIntro, setDtOfIntro] = useState("");
-
-  return (
-    <div className="space-y-1.5">
-      <FormRow label="OH Type" required className={pairRow}>
-        <SelectField
-          value={ohType}
-          onChange={setOhType}
-          options={OH_TYPE_OPTIONS}
-          placeholder="--Select--"
-        />
-      </FormRow>
-      <FormGrid cols={2}>
-        <FormRow label="OH Due Dt" className={pairRow}>
-          <Input type="date" value={ohDueDt} onChange={(e) => setOhDueDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="OH Done Dt" className={pairRow}>
-          <Input type="date" value={ohDoneDt} onChange={(e) => setOhDoneDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="WKSP Name" className={pairRow}>
-          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
-        </FormRow>
-        <FormRow label="WKSP in Dt" className={pairRow}>
-          <Input type="date" value={wkspInDt} onChange={(e) => setWkspInDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="Dispatch dt" className={pairRow}>
-          <Input type="date" value={dispatchDt} onChange={(e) => setDispatchDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="BOH Compl Dt" className={pairRow}>
-          <Input type="date" value={bohComplDt} onChange={(e) => setBohComplDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="Gun Recd Dt" className={pairRow}>
-          <Input type="date" value={gunRecdDt} onChange={(e) => setGunRecdDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="Dt of Intro" className={pairRow}>
-          <Input type="date" value={dtOfIntro} onChange={(e) => setDtOfIntro(e.target.value)} />
-        </FormRow>
-      </FormGrid>
-      <DialogActions
-        onClose={onClose}
-        updateLabel="Update OH Data"
-        onUpdate={() => {
-          if (!ohType) {
-            toast.error("OH Type is required");
-            return;
-          }
-          toast.success(`OH details updated for ${record.regnNo}`);
-          onClose();
-        }}
-      />
-    </div>
-  );
-}
-
-/** ss3 — Barrel Details */
-function BarrelDetailsForm({
-  record,
-  onClose,
-}: {
-  record: EqptResult;
-  onClose: () => void;
-}) {
-  const [barrelRegnNo, setBarrelRegnNo] = useState("");
-  const [opClearance, setOpClearance] = useState("");
-  const [opClearanceDt, setOpClearanceDt] = useState("");
-  const [wkspName, setWkspName] = useState("");
-  const [wkspInDt, setWkspInDt] = useState("");
-  const [cofrVertical, setCofrVertical] = useState("");
-  const [cofrHorizontal, setCofrHorizontal] = useState("");
-  const [qtrOfLife, setQtrOfLife] = useState("");
-  const [efc, setEfc] = useState("");
-  const [totalRdsFired, setTotalRdsFired] = useState("");
-  const [lastFiredDt, setLastFiredDt] = useState("");
-
-  return (
-    <div className="space-y-1.5">
-      <FormRow label="Barrel Regn no" required className={pairRow}>
-        <Input value={barrelRegnNo} onChange={(e) => setBarrelRegnNo(e.target.value)} />
-      </FormRow>
-      <FormGrid cols={2}>
-        <FormRow label="Op Clearance" className={pairRow}>
-          <SelectField
-            value={opClearance}
-            onChange={setOpClearance}
-            options={OP_CLEARANCE_OPTIONS}
-            placeholder="--Select--"
-          />
-        </FormRow>
-        <FormRow label="Op Clearance Dt" className={pairRow}>
-          <Input
-            type="date"
-            value={opClearanceDt}
-            onChange={(e) => setOpClearanceDt(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="WKSP Name" className={pairRow}>
-          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
-        </FormRow>
-        <FormRow label="WKSP In Dt" className={pairRow}>
-          <Input type="date" value={wkspInDt} onChange={(e) => setWkspInDt(e.target.value)} />
-        </FormRow>
-        <FormRow label="CoFR Vertical (mm)" className={pairRow}>
-          <Input
-            placeholder="Ex. 0000.0000"
-            value={cofrVertical}
-            onChange={(e) => setCofrVertical(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="CoFR Horizontal (mm)" className={pairRow}>
-          <Input
-            placeholder="Ex. 0000.0000"
-            value={cofrHorizontal}
-            onChange={(e) => setCofrHorizontal(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="Qtr of Life" required className={pairRow}>
-          <Input
-            placeholder="Ex. 1,2,3,4"
-            value={qtrOfLife}
-            onChange={(e) => setQtrOfLife(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="EFC" required className={pairRow}>
-          <Input
-            placeholder="Ex. 0000.0000"
-            value={efc}
-            onChange={(e) => setEfc(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="Total Rds Fired" required className={pairRow}>
-          <Input value={totalRdsFired} onChange={(e) => setTotalRdsFired(e.target.value)} />
-        </FormRow>
-        <FormRow label="Last Fired Dt" required className={pairRow}>
-          <Input
-            type="date"
-            value={lastFiredDt}
-            onChange={(e) => setLastFiredDt(e.target.value)}
-          />
-        </FormRow>
-      </FormGrid>
-      <DialogActions
-        onClose={onClose}
-        updateLabel="Update Barrel Data"
-        onUpdate={() => {
-          if (!barrelRegnNo || !qtrOfLife || !efc || !totalRdsFired || !lastFiredDt) {
-            toast.error("Please fill all required fields");
-            return;
-          }
-          toast.success(`Barrel details updated for ${record.regnNo}`);
-          onClose();
-        }}
-      />
-    </div>
-  );
-}
-
-type StripRow = {
-  id: string;
-  recoilSysRegnNo: string;
-  periodicity: string;
-  dtOfInsp: string;
-  dtOfNextInsp: string;
-};
-
-/** ss4 — Strip Inspection */
-function StripInspectionForm({
-  record,
-  onClose,
-}: {
-  record: EqptResult;
-  onClose: () => void;
-}) {
-  const [recoilSysRegnNo, setRecoilSysRegnNo] = useState("");
-  const [periodicity, setPeriodicity] = useState("");
-  const [dtOfInsp, setDtOfInsp] = useState("");
-  const [dtOfNextInsp, setDtOfNextInsp] = useState("");
-  const [rows, setRows] = useState<StripRow[]>([]);
-
-  const handleAdd = () => {
-    if (!recoilSysRegnNo) {
-      toast.error("Recoil Sys Regn No is required");
-      return;
-    }
-    setRows((prev) => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        recoilSysRegnNo,
-        periodicity,
-        dtOfInsp,
-        dtOfNextInsp,
-      },
-    ]);
-    setRecoilSysRegnNo("");
-    setPeriodicity("");
-    setDtOfInsp("");
-    setDtOfNextInsp("");
-    toast.success("Strip inspection row added");
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <div className="overflow-auto rounded-md border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-primary hover:bg-primary">
-              <TableHead className="text-primary-foreground text-[12px]">
-                <span className="text-destructive mr-0.5">*</span>
-                Recoil Sys Regn No
-              </TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">
-                Periodicity (in years)
-              </TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">Dt of insp</TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">Dt of next insp</TableHead>
-              <TableHead className="text-primary-foreground text-[12px] w-14">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell className="p-1">
-                <Input
-                  className="h-7"
-                  value={recoilSysRegnNo}
-                  onChange={(e) => setRecoilSysRegnNo(e.target.value)}
-                />
-              </TableCell>
-              <TableCell className="p-1">
-                <Input
-                  className="h-7"
-                  value={periodicity}
-                  onChange={(e) => setPeriodicity(e.target.value)}
-                />
-              </TableCell>
-              <TableCell className="p-1">
-                <Input
-                  type="date"
-                  className="h-7"
-                  value={dtOfInsp}
-                  onChange={(e) => setDtOfInsp(e.target.value)}
-                />
-              </TableCell>
-              <TableCell className="p-1">
-                <Input
-                  type="date"
-                  className="h-7"
-                  value={dtOfNextInsp}
-                  onChange={(e) => setDtOfNextInsp(e.target.value)}
-                />
-              </TableCell>
-              <TableCell className="p-1">
-                <Button
-                  type="button"
-                  size="icon"
-                  className="h-7 w-7 bg-success hover:bg-success/90 text-success-foreground"
-                  onClick={handleAdd}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </TableCell>
-            </TableRow>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="text-xs">{r.recoilSysRegnNo}</TableCell>
-                <TableCell className="text-xs">{r.periodicity}</TableCell>
-                <TableCell className="text-xs">{r.dtOfInsp}</TableCell>
-                <TableCell className="text-xs">{r.dtOfNextInsp}</TableCell>
-                <TableCell />
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <p className="text-[12px] text-muted-foreground">Eqpt: {record.regnNo}</p>
-      <DialogActions onClose={onClose} />
-    </div>
-  );
-}
-
-function ArtilleryUpdateDialog({
-  record,
-  open,
-  onClose,
-}: {
-  record: EqptResult;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = useState<ArtilleryTab>("oh");
-  const code = shortCode(record.regnNo);
-
-  const title =
-    tab === "oh"
-      ? `OH DETAILS (-${code})`
-      : tab === "barrel"
-        ? `BARREL DETAILS (-${code})`
-        : `Strip Inspection (-${code})`;
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto gap-2 p-3 sm:p-4">
-        <DialogHeader className="space-y-1">
-          <DialogTitle className="text-center text-sm font-bold uppercase tracking-wide underline underline-offset-2">
-            {title}
-          </DialogTitle>
-          <SwitchTabs<ArtilleryTab>
-            tabs={[
-              { id: "oh", label: "OH Details" },
-              { id: "barrel", label: "Barrel Details" },
-              { id: "strip", label: "Strip Inspection" },
-            ]}
-            value={tab}
-            onChange={setTab}
-          />
-        </DialogHeader>
-        {tab === "oh" && <OhDetailsForm record={record} onClose={onClose} />}
-        {tab === "barrel" && <BarrelDetailsForm record={record} onClose={onClose} />}
-        {tab === "strip" && <StripInspectionForm record={record} onClose={onClose} />}
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -677,7 +291,6 @@ export function UpdateEqptData() {
       return;
     }
 
-    const arty = isArtilleryUnit(form.unit, form.prfGroup);
     const matched = MOCK_EQPT.filter((r) => {
       const unitOk = r.unit === form.unit;
       const prfOk = r.prfGroup === form.prfGroup;
@@ -689,20 +302,18 @@ export function UpdateEqptData() {
       return unitOk && prfOk && censusOk && holdingOk && regdOk;
     });
 
-    // Fallback demo rows when exact mock match is empty so the flow is usable
     const rows =
       matched.length > 0
         ? matched
         : [
             {
               id: `demo-${Date.now()}`,
-              regnNo: form.regdNo.trim() || (arty ? "21A-L0858" : "22P-081815"),
+              regnNo: form.regdNo.trim() || "22P-081815",
               unit: form.unit,
               prfGroup: form.prfGroup,
               censusNo: form.censusNo,
               typeOfHolding: form.typeOfHolding,
               serviceability: "Serviciable",
-              isArtillery: arty,
             },
           ];
 
@@ -879,37 +490,23 @@ export function UpdateEqptData() {
                         <TableCell className="text-xs">{r.censusNo}</TableCell>
                         <TableCell className="text-xs">{r.typeOfHolding}</TableCell>
                         <TableCell className="text-xs">{r.serviceability}</TableCell>
-                        <TableCell className="text-xs">
-                          {r.isArtillery ? "Artillery" : "Other"}
-                        </TableCell>
+                        <TableCell className="text-xs">Other</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
               <div className="shrink-0 px-3 py-1 bg-muted/40 text-[12px] text-muted-foreground">
-                Showing {results.length} record(s). Select a row and click Update.
-                {selected?.isArtillery
-                  ? " Artillery unit → OH / Barrel / Strip screens."
-                  : selected
-                    ? " Non-artillery → Serviceability State."
-                    : ""}
+                Showing {results.length} record(s). Select a row and click Update → Serviceability
+                State. For artillery equipment use UPDATE ARTY EQPT DATA.
               </div>
             </div>
           )}
         </div>
       </FormPanel>
 
-      {updateRecord && !updateRecord.isArtillery && (
+      {updateRecord && (
         <ServiceabilityDialog
-          record={updateRecord}
-          open
-          onClose={() => setUpdateRecord(null)}
-        />
-      )}
-
-      {updateRecord?.isArtillery && (
-        <ArtilleryUpdateDialog
           record={updateRecord}
           open
           onClose={() => setUpdateRecord(null)}

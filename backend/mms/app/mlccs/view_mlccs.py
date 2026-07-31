@@ -1,6 +1,7 @@
-"""MLCCS feature routes — View MLCCS against MMS_MLCCS_EQUIPMENT_MASTER.
+"""View MLCCS — Weapon → MLCCS.
 
-Screens: ViewMlccs. Search / list / class-of-eqpt options for the Weapon → MLCCS module.
+Search / list / class-of-eqpt options against MMS_MLCCS_EQUIPMENT_MASTER.
+Mirrors frontend src/components/mlccs/ViewMlccs.tsx.
 """
 
 from __future__ import annotations
@@ -15,7 +16,10 @@ from sqlalchemy.orm import Session
 from app.deps import get_db_session
 from app.models import MlccsEquipmentMaster
 
-router = APIRouter(prefix="/mlccs", tags=["mlccs"])
+router = APIRouter(
+    prefix="/mlccs",
+    tags=["mlccs: view mlccs"],
+)
 
 
 class MlccsSearchRequest(BaseModel):

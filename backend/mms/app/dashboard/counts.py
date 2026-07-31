@@ -1,4 +1,7 @@
-"""Dashboard count aggregates for MLCCS, EP and MMS sections."""
+"""Dashboard — home screen count aggregates for MLCCS, EP and MMS sections.
+
+Mirrors frontend Dashboard in src/routes/index.tsx.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +17,10 @@ from app.models import EpDomainMaster, EpSubDomain, EpTransaction
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+router = APIRouter(
+    prefix="/dashboard",
+    tags=["dashboard: counts"],
+)
 
 
 class MlccsCounts(BaseModel):
