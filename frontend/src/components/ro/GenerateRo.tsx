@@ -216,7 +216,7 @@ export function GenerateRo() {
               <TableHeader>
                 <TableRow className="bg-destructive/10 hover:bg-destructive/10">
                   {["Unit Name", "ITEM", "UE", "UH", "DEFI", "SURP", "ISSUE QTY"].map((h) => (
-                    <TableHead key={h} className="h-8 px-2 text-[10px] font-bold text-destructive">
+                    <TableHead key={h} className="h-8 px-2 text-[12px] font-bold text-destructive">
                       {h}
                     </TableHead>
                   ))}
@@ -269,7 +269,7 @@ export function GenerateRo() {
                     "Issue Date",
                     "Action",
                   ].map((h) => (
-                    <TableHead key={h} className="h-8 px-2 text-[10px] font-bold text-destructive">
+                    <TableHead key={h} className="h-8 px-2 text-[12px] font-bold text-destructive">
                       {h}
                     </TableHead>
                   ))}

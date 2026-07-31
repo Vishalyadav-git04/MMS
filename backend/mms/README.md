@@ -7,13 +7,11 @@ FastAPI service for MMS (same pattern as miso-5.0 `backend/orbat`).
 ```bash
 # from repo: backend/
 pip install -r requirements.txt
-pip install -e ./core
 pip install -e ./mms
 
 cd mms
 python -m uvicorn main:app --reload --port 8001
 ```
-
 API prefix: `/api/v1`
 
 ## Feature map (frontend ↔ backend)
@@ -42,6 +40,9 @@ Check: `GET /api/v1/health/ready` → `{"status":"ready"}` when the pool is up.
 | POST | `/admin/capture-mlccs-details/` | same |
 | GET | `/admin/capture-mlccs-details/options` | MLCCS + `MMS_DOMAIN_VALUES` |
 | GET/POST | `/admin/mms-domain-master/*` | `MMS_DOMAIN_VALUES` |
+| GET | `/admin/mms-domain-master/suggest-domains` | same |
 | POST | `/admin/search-regn-no/search` | `MMS_UNIT_MSTR_DETL` |
 | POST | `/admin/unit-obsn-status/search` | `MMS_OBSN_DETL` |
-| POST | `/admin/link-census-no-with-item-code/link` | `MMS_MLCCS_EQUIPMENT_MASTER` |
+| GET | `/admin/link-census-no-with-item-code/suggest-census` | `MMS_MLCCS_EQUIPMENT_MASTER` |
+| GET | `/admin/link-census-no-with-item-code/lookup/{census_no}` | same |
+| POST | `/admin/link-census-no-with-item-code/link` | same |

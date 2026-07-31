@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 from app.deps import get_optional_db_session, get_principal, get_settings_dep
 from app.models import MmsUser
 from app.settings import MmsSettings
-from core.auth.jwt import create_access_token, hash_password, verify_password
-from core.auth.principal import Principal, Role
+from app.auth.jwt import create_access_token, hash_password, verify_password
+from app.auth.principal import Principal, Role
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,6 +28,7 @@ class TokenResponse(BaseModel):
     display_name: str | None = None
     role: str
     unit_id: str | None = None
+    client_ip: str | None = None
 
 
 class MeResponse(BaseModel):
@@ -36,6 +37,40 @@ class MeResponse(BaseModel):
     role: str
     unit_id: str | None = None
     roles: list[str]
+    client_ip: str
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        host = forwarded.split(",")[0].strip()
+    else:
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            host = real_ip.strip()
+        elif request.client and request.client.host:
+            host = request.client.host
+        else:
+            return "unknown"
+
+    # Normalize IPv6 loopback / IPv4-mapped forms for display
+    lower = host.lower()
+    if lower in ("::1", "0:0:0:0:0:0:0:1"):
+        return "127.0.0.1"
+    if lower.startswith("::ffff:"):
+        return host.split(":")[-1]
+    if host.startswith("[") and host.endswith("]"):
+        return _client_ip_from_host(host[1:-1])
+    return host
+
+
+def _client_ip_from_host(host: str) -> str:
+    lower = host.lower()
+    if lower in ("::1", "0:0:0:0:0:0:0:1"):
+        return "127.0.0.1"
+    if lower.startswith("::ffff:"):
+        return host.split(":")[-1]
+    return host
 
 
 # In-memory fallback when Oracle is unavailable (local UI work).
@@ -62,6 +97,7 @@ def _token_for(
     display_name: str | None,
     unit_id: str | None,
     settings: MmsSettings,
+    client_ip: str | None = None,
 ) -> TokenResponse:
     token = create_access_token(
         subject=username,
@@ -78,16 +114,19 @@ def _token_for(
         display_name=display_name,
         role=role,
         unit_id=unit_id or None,
+        client_ip=client_ip,
     )
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(
     body: LoginRequest,
+    request: Request,
     settings: MmsSettings = Depends(get_settings_dep),
     session: Session | None = Depends(get_optional_db_session),
 ) -> TokenResponse:
     username = body.username.strip()
+    client_ip = _client_ip(request)
     row: MmsUser | None = None
     if session is not None:
         try:
@@ -119,6 +158,7 @@ def login(
             display_name=row.display_name or row.username,
             unit_id=row.unit_id,
             settings=settings,
+            client_ip=client_ip,
         )
 
     # Fallback seed users (no DB / table not ready)
@@ -130,6 +170,7 @@ def login(
             display_name=fb["display_name"],
             unit_id=fb["unit_id"] or None,
             settings=settings,
+            client_ip=client_ip,
         )
 
     raise HTTPException(
@@ -139,7 +180,10 @@ def login(
 
 
 @router.get("/me", response_model=MeResponse)
-def me(principal: Principal = Depends(get_principal)) -> MeResponse:
+def me(
+    request: Request,
+    principal: Principal = Depends(get_principal),
+) -> MeResponse:
     role = principal.primary_role.value if principal.primary_role else Role.UNIT.value
     return MeResponse(
         username=principal.username,
@@ -147,4 +191,5 @@ def me(principal: Principal = Depends(get_principal)) -> MeResponse:
         role=role,
         unit_id=principal.unit_id,
         roles=[r.value for r in principal.roles],
+        client_ip=_client_ip(request),
     )

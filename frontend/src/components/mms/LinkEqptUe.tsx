@@ -1,36 +1,199 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
+
+interface CensusSuggestion {
+  census_no: string;
+  nomenclature?: string | null;
+  cat_part_no?: string | null;
+  prf_group?: string | null;
+  item_code?: string | null;
+}
+
+interface LinkDetails {
+  id?: string | null;
+  census_no?: string | null;
+  nomenclature?: string | null;
+  item_code?: string | null;
+  cat_part_no?: string | null;
+  prf_group?: string | null;
+}
+
+function errMsg(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof Error) return e.message;
+  return "Request failed";
+}
 
 export function LinkEqptUe() {
   const [censusNo, setCensusNo] = useState("");
   const [nomenclature, setNomenclature] = useState("");
+  const [censusSuggestions, setCensusSuggestions] = useState<CensusSuggestion[]>([]);
+  const [nomSuggestions, setNomSuggestions] = useState<CensusSuggestion[]>([]);
+  const suppressCensusSuggestRef = useRef(false);
+  const suppressNomSuggestRef = useRef(false);
   const [fetched, setFetched] = useState(false);
-  const [linkedCode, setLinkedCode] = useState("");
-
+  const [busy, setBusy] = useState(false);
+  const [itemCode, setItemCode] = useState("");
   const [details, setDetails] = useState({
     catPartNo: "",
     prfGroup: "",
   });
 
-  const handleFetch = () => {
-    if (!censusNo || !nomenclature) {
-      toast.error("Census No and Nomenclature are required");
+  // Census No typeahead — autofill nomenclature on exact match / pick
+  useEffect(() => {
+    if (fetched) return;
+    if (suppressCensusSuggestRef.current) {
+      suppressCensusSuggestRef.current = false;
+      setCensusSuggestions([]);
       return;
     }
-    setDetails({ catPartNo: "CP-77482", prfGroup: "Group B" });
-    setFetched(true);
-    toast.success("Details fetched");
+    const q = censusNo.trim();
+    if (q.length < 1) {
+      setCensusSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<CensusSuggestion[]>(
+        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => {
+          const exact = rows.find((r) => r.census_no.toUpperCase() === q.toUpperCase());
+          if (exact) {
+            suppressNomSuggestRef.current = true;
+            setNomenclature(exact.nomenclature ?? "");
+            setCensusSuggestions([]);
+            setNomSuggestions([]);
+            return;
+          }
+          setCensusSuggestions(rows.slice(0, 50));
+        })
+        .catch(() => setCensusSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [censusNo, fetched]);
+
+  useEffect(() => {
+    if (fetched) return;
+    if (suppressNomSuggestRef.current) {
+      suppressNomSuggestRef.current = false;
+      setNomSuggestions([]);
+      return;
+    }
+    const q = nomenclature.trim();
+    if (q.length < 1) {
+      setNomSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<CensusSuggestion[]>(
+        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => {
+          const matched = rows.filter((r) =>
+            (r.nomenclature ?? "").toUpperCase().includes(q.toUpperCase()),
+          );
+          const exact = matched.filter(
+            (r) => (r.nomenclature ?? "").toUpperCase() === q.toUpperCase(),
+          );
+          if (exact.length === 1) {
+            suppressCensusSuggestRef.current = true;
+            setCensusNo(exact[0]!.census_no);
+            setNomSuggestions([]);
+            setCensusSuggestions([]);
+            return;
+          }
+          setNomSuggestions(matched.slice(0, 50));
+        })
+        .catch(() => setNomSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [nomenclature, fetched]);
+
+  const pickCensusSuggestion = (row: CensusSuggestion) => {
+    suppressNomSuggestRef.current = true;
+    setCensusNo(row.census_no);
+    setNomenclature(row.nomenclature ?? "");
+    setCensusSuggestions([]);
+    setNomSuggestions([]);
+  };
+
+  const pickNomSuggestion = (row: CensusSuggestion) => {
+    suppressCensusSuggestRef.current = true;
+    setCensusNo(row.census_no);
+    setNomenclature(row.nomenclature ?? "");
+    setCensusSuggestions([]);
+    setNomSuggestions([]);
+  };
+
+  const resetLookup = () => {
+    setCensusNo("");
+    setNomenclature("");
+    setCensusSuggestions([]);
+    setNomSuggestions([]);
+    setFetched(false);
+    setItemCode("");
+    setDetails({ catPartNo: "", prfGroup: "" });
+  };
+
+  const handleFetch = async () => {
+    if (!censusNo.trim()) {
+      toast.error("Census No is required");
+      return;
+    }
+    setBusy(true);
+    try {
+      const rec = await api<LinkDetails>("/admin/capture-mlccs-details/lookup", {
+        method: "POST",
+        body: JSON.stringify({
+          census_no: censusNo.trim(),
+          nomenclature: nomenclature.trim() || null,
+        }),
+      });
+      setCensusNo(rec.census_no ?? censusNo.trim());
+      setNomenclature(rec.nomenclature ?? "");
+      setDetails({
+        catPartNo: rec.cat_part_no ?? "",
+        prfGroup: rec.prf_group ?? "",
+      });
+      setItemCode(rec.item_code ?? "");
+      setFetched(true);
+      setCensusSuggestions([]);
+      setNomSuggestions([]);
+      toast.success("Details fetched");
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!itemCode.trim()) {
+      toast.error("Item code is required");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api<LinkDetails>("/admin/link-census-no-with-item-code/link", {
+        method: "POST",
+        body: JSON.stringify({
+          census_no: censusNo.trim(),
+          item_code: itemCode.trim(),
+        }),
+      });
+      toast.success("Item code linked");
+      resetLookup();
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -39,37 +202,45 @@ export function LinkEqptUe() {
       footer={
         !fetched ? (
           <>
-            <Button onClick={handleFetch} className="bg-primary hover:bg-primary/90">
-              Fetch Details
-            </Button>
             <Button
-              variant="secondary"
-              onClick={() => {
-                setCensusNo("");
-                setNomenclature("");
-              }}
+              onClick={() => void handleFetch()}
+              disabled={busy}
+              className="bg-primary hover:bg-primary/90"
             >
+              {busy ? "Fetching…" : "Fetch Details"}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={resetLookup}>
               Clear
             </Button>
-            <Button variant="destructive" onClick={() => toast("Cancelled")}>
+            <Button variant="destructive" disabled={busy} onClick={resetLookup}>
               Cancel
             </Button>
           </>
         ) : (
           <>
             <Button
-              onClick={() => {
-                if (!linkedCode) return toast.error("Select an item code");
-                toast.success("Item code linked");
-              }}
+              onClick={() => void handleUpdate()}
+              disabled={busy}
               className="bg-success hover:bg-success/90 text-success-foreground"
             >
-              Update
+              {busy ? "Updating…" : "Update"}
             </Button>
-            <Button variant="secondary" onClick={() => setLinkedCode("")}>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setItemCode("")}
+            >
               Clear
             </Button>
-            <Button variant="destructive" onClick={() => setFetched(false)}>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                setFetched(false);
+                setItemCode("");
+                setDetails({ catPartNo: "", prfGroup: "" });
+              }}
+            >
               Cancel
             </Button>
           </>
@@ -77,20 +248,62 @@ export function LinkEqptUe() {
       }
     >
       {!fetched ? (
-        <div className="mx-auto max-w-3xl space-y-4 pt-2">
+        <div className="mx-auto max-w-3xl space-y-4 overflow-visible pt-2">
           <FormRow label="Census No" required>
-            <Input
+            <SuggestInput
               value={censusNo}
-              onChange={(e) => setCensusNo(e.target.value)}
               placeholder="Search..."
+              suggestions={censusSuggestions.map((r) => r.census_no)}
+              renderItem={(s, idx) => {
+                const row = censusSuggestions[idx];
+                return (
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium">{s}</span>
+                    {row?.nomenclature && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {row.nomenclature}
+                      </span>
+                    )}
+                  </span>
+                );
+              }}
+              onChange={(v) => {
+                setNomSuggestions([]);
+                setCensusNo(v);
+                setNomenclature("");
+              }}
+              onPick={(idx) => {
+                const row = censusSuggestions[idx];
+                if (row) pickCensusSuggestion(row);
+              }}
             />
           </FormRow>
           <FormRow label="Nomenclature" required>
-            <Textarea
-              rows={1}
+            <SuggestInput
               value={nomenclature}
-              onChange={(e) => setNomenclature(e.target.value)}
               placeholder="Search..."
+              disabled={busy}
+              suggestions={nomSuggestions.map((r) => r.nomenclature ?? r.census_no)}
+              renderItem={(s, idx) => {
+                const row = nomSuggestions[idx];
+                return (
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium truncate">{s}</span>
+                    {row?.census_no && (
+                      <span className="text-xs text-muted-foreground">{row.census_no}</span>
+                    )}
+                  </span>
+                );
+              }}
+              onChange={(v) => {
+                setCensusSuggestions([]);
+                setNomenclature(v);
+                setCensusNo("");
+              }}
+              onPick={(idx) => {
+                const row = nomSuggestions[idx];
+                if (row) pickNomSuggestion(row);
+              }}
             />
           </FormRow>
         </div>
@@ -111,20 +324,117 @@ export function LinkEqptUe() {
             <Input value={details.prfGroup} disabled />
           </FormRow>
           <FormRow label="Linked Item Code" required>
-            <Select value={linkedCode} onValueChange={setLinkedCode}>
-              <SelectTrigger>
-                <SelectValue placeholder="--Select Item Code--" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="IC-1001">IC-1001 · Rifle Assembly</SelectItem>
-                <SelectItem value="IC-1002">IC-1002 · Barrel Kit</SelectItem>
-                <SelectItem value="IC-1003">IC-1003 · Sight Unit</SelectItem>
-                <SelectItem value="IC-1004">IC-1004 · Magazine Set</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input
+              value={itemCode}
+              onChange={(e) => setItemCode(e.target.value)}
+              placeholder="Enter item code"
+              autoComplete="off"
+            />
           </FormRow>
         </div>
       )}
     </FormPanel>
+  );
+}
+
+function SuggestInput({
+  value,
+  placeholder,
+  disabled,
+  suggestions,
+  renderItem,
+  onChange,
+  onPick,
+}: {
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: string[];
+  renderItem?: (s: string, idx: number) => ReactNode;
+  onChange: (v: string) => void;
+  onPick: (idx: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(
+    null,
+  );
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
+  return (
+    <div className="relative overflow-visible">
+      <Input
+        ref={inputRef}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          updateCoords();
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+        }}
+      />
+      {showList &&
+        createPortal(
+          <ul
+            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+            }}
+          >
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
+    </div>
   );
 }

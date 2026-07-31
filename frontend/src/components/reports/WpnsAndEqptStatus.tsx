@@ -1,0 +1,166 @@
+import { useState } from "react";
+import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import {
+  ARMS,
+  BDES,
+  COMMANDS,
+  CORPS,
+  DEFAULT_MONTH,
+  DIVS,
+  HOLDING_TYPES,
+  PrfGroupField,
+  SelectField,
+} from "@/components/reports/shared";
+
+export function WpnsAndEqptStatus() {
+  const [prfSearch, setPrfSearch] = useState("");
+  const [prfGroup, setPrfGroup] = useState("");
+  const [holdingType, setHoldingType] = useState("");
+  const [period, setPeriod] = useState(DEFAULT_MONTH);
+  const [arm, setArm] = useState("");
+  const [command, setCommand] = useState("");
+  const [corps, setCorps] = useState("");
+  const [div, setDiv] = useState("");
+  const [bde, setBde] = useState("");
+  const [susNo, setSusNo] = useState("");
+  const [unitName, setUnitName] = useState("");
+
+  const handleClear = () => {
+    setPrfSearch("");
+    setPrfGroup("");
+    setHoldingType("");
+    setPeriod(DEFAULT_MONTH);
+    setArm("");
+    setCommand("");
+    setCorps("");
+    setDiv("");
+    setBde("");
+    setSusNo("");
+    setUnitName("");
+  };
+
+  const requireUnit = () => {
+    if (!susNo.trim() || !unitName.trim()) {
+      toast.error("SUS No and Unit Name are required");
+      return false;
+    }
+    return true;
+  };
+
+  return (
+    <FormPanel
+      title="WEAPON AND EQPT STATUS"
+      footer={
+        <>
+          <Button
+            className="bg-success hover:bg-success/90 text-success-foreground"
+            onClick={() => {
+              if (!requireUnit()) return;
+              toast.message("List Eqpt Data — functionality coming soon");
+            }}
+          >
+            List Eqpt Data
+          </Button>
+          <Button
+            className="bg-success hover:bg-success/90 text-success-foreground"
+            onClick={() => {
+              if (!requireUnit()) return;
+              toast.message("Eqpt Data Summary — functionality coming soon");
+            }}
+          >
+            Eqpt Data Summary
+          </Button>
+          <Button variant="secondary" onClick={handleClear}>
+            Clear
+          </Button>
+        </>
+      }
+    >
+      <div className="mx-auto w-full max-w-5xl space-y-2 pt-1">
+        <FormRow label="PRF Group" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+          <PrfGroupField
+            search={prfSearch}
+            onSearchChange={setPrfSearch}
+            value={prfGroup}
+            onChange={setPrfGroup}
+          />
+        </FormRow>
+
+        <FormGrid cols={2}>
+          <FormRow label="Type of Holding" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            <SelectField
+              value={holdingType}
+              onChange={setHoldingType}
+              options={HOLDING_TYPES}
+              placeholder="-- ALL Holdings --"
+            />
+          </FormRow>
+          <FormRow label="Period" className="sm:grid-cols-[80px_minmax(0,1fr)]">
+            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
+          </FormRow>
+        </FormGrid>
+
+        <FormRow label="Arm" className="sm:grid-cols-[120px_minmax(0,1fr)] sm:max-w-xl">
+          <SelectField
+            value={arm}
+            onChange={setArm}
+            options={ARMS}
+            placeholder="-- All ARMS --"
+          />
+        </FormRow>
+
+        <FormGrid cols={2}>
+          <FormRow label="Command" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            <SelectField
+              value={command}
+              onChange={setCommand}
+              options={COMMANDS}
+              placeholder="-- All Command --"
+            />
+          </FormRow>
+          <FormRow label="Corps" className="sm:grid-cols-[80px_minmax(0,1fr)]">
+            <SelectField
+              value={corps}
+              onChange={setCorps}
+              options={CORPS}
+              placeholder="-- All Corps --"
+            />
+          </FormRow>
+          <FormRow label="Div" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            <SelectField
+              value={div}
+              onChange={setDiv}
+              options={DIVS}
+              placeholder="-- All Div --"
+            />
+          </FormRow>
+          <FormRow label="Bde" className="sm:grid-cols-[80px_minmax(0,1fr)]">
+            <SelectField
+              value={bde}
+              onChange={setBde}
+              options={BDES}
+              placeholder="-- All Bde --"
+            />
+          </FormRow>
+          <FormRow label="SUS No" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            <Input
+              placeholder="Search..."
+              value={susNo}
+              onChange={(e) => setSusNo(e.target.value)}
+            />
+          </FormRow>
+          <FormRow label="Unit Name" required className="sm:grid-cols-[80px_minmax(0,1fr)]">
+            <Input
+              placeholder="Search..."
+              value={unitName}
+              onChange={(e) => setUnitName(e.target.value)}
+            />
+          </FormRow>
+        </FormGrid>
+      </div>
+    </FormPanel>
+  );
+}

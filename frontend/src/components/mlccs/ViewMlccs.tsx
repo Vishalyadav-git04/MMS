@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FormPanel } from "@/components/FormPanel";
+import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,16 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { api, ApiError } from "@/lib/api";
+import { buildPrintWatermarkParts, resolveClientIp } from "@/lib/session-watermark";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No";
 
@@ -33,171 +28,353 @@ interface MlccsRow {
   status: string;
 }
 
-const DUMMY_ROWS: MlccsRow[] = [
-  {
-    id: "1",
-    materialNo: "MAT-100245",
-    censusNo: "CN-2020-01482",
-    nomenclature: "Rifle 5.56mm Assault — Standard Pattern",
-    classOfEqpt: "Class I",
-    catPartNo: "CP-A247108",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "2",
-    materialNo: "MAT-100312",
-    censusNo: "CN-2021-00891",
-    nomenclature: "Machine Gun 7.62mm Light — Belt Fed",
-    classOfEqpt: "Class I",
-    catPartNo: "CP-B381204",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "3",
-    materialNo: "MAT-100478",
-    censusNo: "CN-2019-03301",
-    nomenclature: "Night Vision Sight — Gen III Clip-On",
-    classOfEqpt: "Class II",
-    catPartNo: "CP-C552917",
-    au: "NOS",
-    status: "Pending",
-  },
-  {
-    id: "4",
-    materialNo: "MAT-100501",
-    censusNo: "CN-2022-00115",
-    nomenclature: "Radio Set VHF Manpack — 5W",
-    classOfEqpt: "Class II",
-    catPartNo: "CP-D118640",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "5",
-    materialNo: "MAT-100629",
-    censusNo: "CN-2018-04772",
-    nomenclature: "Binocular Prismatic 7x50 — Military",
-    classOfEqpt: "Class III",
-    catPartNo: "CP-E774023",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "6",
-    materialNo: "MAT-100744",
-    censusNo: "CN-2023-00654",
-    nomenclature: "Mortar 81mm — Smooth Bore Complete",
-    classOfEqpt: "Class I",
-    catPartNo: "CP-F902331",
-    au: "NOS",
-    status: "Obs",
-  },
-  {
-    id: "7",
-    materialNo: "MAT-100815",
-    censusNo: "CN-2020-01903",
-    nomenclature: "Laser Range Finder — Hand Held 10km",
-    classOfEqpt: "Class II",
-    catPartNo: "CP-G445812",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "8",
-    materialNo: "MAT-100902",
-    censusNo: "CN-2021-02240",
-    nomenclature: "Ballistic Helmet — Level IIIA Composite",
-    classOfEqpt: "Class III",
-    catPartNo: "CP-H661059",
-    au: "NOS",
-    status: "Approved",
-  },
-  {
-    id: "9",
-    materialNo: "MAT-101033",
-    censusNo: "CN-2017-05518",
-    nomenclature: "Generator Set Diesel 5kVA — Portable",
-    classOfEqpt: "Class II",
-    catPartNo: "CP-J228774",
-    au: "NOS",
-    status: "Pending",
-  },
-  {
-    id: "10",
-    materialNo: "MAT-101156",
-    censusNo: "CN-2024-00087",
-    nomenclature: "UAV Reconnaissance Mini — Day/Night",
-    classOfEqpt: "Class I",
-    catPartNo: "CP-K319460",
-    au: "NOS",
-    status: "Approved",
-  },
-];
+interface MlccsListItem {
+  id: string;
+  material_no?: string | null;
+  census_no?: string | null;
+  nomenclature?: string | null;
+  class_of_eqpt?: string | null;
+  cat_part_no?: string | null;
+  au?: string | null;
+  status?: string | null;
+}
+
+const ALL_CLASS = "__all__";
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_PAGE_SIZE = 20;
+
+function mapRow(r: MlccsListItem): MlccsRow {
+  return {
+    id: String(r.id),
+    materialNo: r.material_no ?? "",
+    censusNo: r.census_no ?? "",
+    nomenclature: r.nomenclature ?? "",
+    classOfEqpt: r.class_of_eqpt ?? "",
+    catPartNo: r.cat_part_no ?? "",
+    au: r.au ?? "",
+    status: r.status ?? "",
+  };
+}
+
+function exportCsv(rows: MlccsRow[]) {
+  const headers = [
+    "Material No",
+    "Census No",
+    "Nomenclature",
+    "Class of Eqpt",
+    "Cat Part No",
+    "A/U",
+    "Status",
+  ];
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) =>
+      [
+        r.materialNo,
+        r.censusNo,
+        r.nomenclature,
+        r.classOfEqpt,
+        r.catPartNo,
+        r.au,
+        r.status,
+      ]
+        .map(escape)
+        .join(","),
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mlccs-export-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildPrintHtml(rows: MlccsRow[]) {
+  const bodyRows = rows
+    .map(
+      (r, i) => `
+      <tr class="${i % 2 === 1 ? "alt" : ""}">
+        <td>${escapeHtml(r.materialNo)}</td>
+        <td>${escapeHtml(r.censusNo)}</td>
+        <td>${escapeHtml(r.nomenclature)}</td>
+        <td>${escapeHtml(r.classOfEqpt)}</td>
+        <td>${escapeHtml(r.catPartNo)}</td>
+        <td>${escapeHtml(r.au)}</td>
+        <td>${escapeHtml(r.status)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const watermark = buildPrintWatermarkParts();
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>View MLCCS — Results</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 12px; position: relative; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    .meta { font-size: 11px; color: #444; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { border: 1px solid #333; padding: 4px 6px; text-align: left; vertical-align: top; }
+    th { background: #2f4f2f; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr.alt td { background: #f3f3f3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    ${watermark.styles}
+  </style>
+</head>
+<body>
+  ${watermark.html}
+  <h1>VIEW MLCCS — Search Results</h1>
+  <div class="meta">${rows.length} record(s) · Printed ${new Date().toLocaleString()}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Material No</th>
+        <th>Census No</th>
+        <th>Nomenclature</th>
+        <th>Class of Eqpt</th>
+        <th>Cat Part No</th>
+        <th>A/U</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bodyRows || `<tr><td colspan="7" style="text-align:center">No records found</td></tr>`}
+    </tbody>
+  </table>
+</body>
+</html>`;
+}
+
+async function printResults(rows: MlccsRow[]) {
+  await resolveClientIp();
+
+  const existing = document.getElementById("mlccs-print-frame");
+  if (existing) existing.remove();
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "mlccs-print-frame";
+  iframe.setAttribute("title", "Print MLCCS results");
+  iframe.style.cssText =
+    "position:fixed;left:0;top:0;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(iframe);
+
+  const frameWindow = iframe.contentWindow;
+  const frameDoc = frameWindow?.document;
+  if (!frameWindow || !frameDoc) {
+    iframe.remove();
+    toast.error("Unable to open print view");
+    return;
+  }
+
+  frameDoc.open();
+  frameDoc.write(buildPrintHtml(rows));
+  frameDoc.close();
+
+  const cleanup = () => {
+    const el = document.getElementById("mlccs-print-frame");
+    if (el) el.remove();
+  };
+
+  // Allow the iframe document to finish layout before invoking print
+  window.setTimeout(() => {
+    try {
+      frameWindow.focus();
+      frameWindow.print();
+    } catch {
+      toast.error("Print failed");
+    }
+    window.setTimeout(cleanup, 1500);
+  }, 250);
+}
 
 export function ViewMlccs() {
   const [searchText, setSearchText] = useState("");
   const [searchIn, setSearchIn] = useState<SearchField>("Nomenclature");
-  const [classOfEqpt, setClassOfEqpt] = useState("");
+  const [classOfEqpt, setClassOfEqpt] = useState(ALL_CLASS);
+  const [classOptions, setClassOptions] = useState<string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
   const [selectedId, setSelectedId] = useState("");
-  const [queried, setQueried] = useState(true);
-  const [appliedSearch, setAppliedSearch] = useState({ text: "", field: "Nomenclature" as SearchField, classOfEqpt: "" });
+  const [rows, setRows] = useState<MlccsRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [modifyTarget, setModifyTarget] = useState<{
+    censusNo: string;
+    nomenclature: string;
+  } | null>(null);
+
+  useEffect(() => {
+    api<{ class_of_eqpt?: { value: string; label: string }[] }>("/mlccs/options")
+      .then((opts) => {
+        setClassOptions((opts.class_of_eqpt ?? []).map((o) => o.value).filter(Boolean));
+      })
+      .catch(() => {
+        setClassOptions(["Class I", "Class II", "Class III"]);
+      });
+  }, []);
+
+  useEffect(() => {
+    void handleSearch(true);
+    // Initial load of all records
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
-    if (!queried) return [];
-    return DUMMY_ROWS.filter((row) => {
-      if (appliedSearch.classOfEqpt && row.classOfEqpt !== appliedSearch.classOfEqpt) {
-        return false;
-      }
-      if (appliedSearch.text.trim()) {
-        const q = appliedSearch.text.trim().toLowerCase();
-        const fieldMap: Record<SearchField, string> = {
-          Nomenclature: row.nomenclature,
-          "Census No": row.censusNo,
-          "Material No": row.materialNo,
-          "Cat Part No": row.catPartNo,
-        };
-        if (!fieldMap[appliedSearch.field].toLowerCase().includes(q)) return false;
-      }
-      if (resultFilter.trim()) {
-        const q = resultFilter.trim().toLowerCase();
-        return (
-          row.materialNo.toLowerCase().includes(q) ||
-          row.censusNo.toLowerCase().includes(q) ||
-          row.nomenclature.toLowerCase().includes(q) ||
-          row.classOfEqpt.toLowerCase().includes(q) ||
-          row.catPartNo.toLowerCase().includes(q) ||
-          row.au.toLowerCase().includes(q) ||
-          row.status.toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [queried, appliedSearch, resultFilter]);
+    if (!resultFilter.trim()) return rows;
+    const q = resultFilter.trim().toLowerCase();
+    return rows.filter(
+      (row) =>
+        row.materialNo.toLowerCase().includes(q) ||
+        row.censusNo.toLowerCase().includes(q) ||
+        row.nomenclature.toLowerCase().includes(q) ||
+        row.classOfEqpt.toLowerCase().includes(q) ||
+        row.catPartNo.toLowerCase().includes(q) ||
+        row.au.toLowerCase().includes(q) ||
+        row.status.toLowerCase().includes(q),
+    );
+  }, [rows, resultFilter]);
 
-  const handleSearch = () => {
-    setAppliedSearch({ text: searchText, field: searchIn, classOfEqpt });
-    setQueried(true);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, filtered.length);
+  const paged = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage, pageSize],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [resultFilter, rows, pageSize]);
+
+  const handleSearch = async (silent = false) => {
+    setBusy(true);
     setSelectedId("");
-    toast.success("Search complete");
+    setPage(1);
+    try {
+      const data = await api<MlccsListItem[]>("/mlccs/search", {
+        method: "POST",
+        body: JSON.stringify({
+          text: searchText.trim() || null,
+          field: searchIn,
+          class_of_eqpt: classOfEqpt === ALL_CLASS ? null : classOfEqpt,
+        }),
+      });
+      const mapped = data.map(mapRow);
+      setRows(mapped);
+      if (!silent) toast.success(`${mapped.length} record(s) found`);
+    } catch (e) {
+      setRows([]);
+      toast.error(e instanceof ApiError ? e.message : "Search failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
+  const handleModify = () => {
+    if (!selectedId) {
+      toast.error("Select a Census No first");
+      return;
+    }
+    const row = rows.find((r) => r.id === selectedId);
+    if (!row?.censusNo) {
+      toast.error("Selected row has no Census No");
+      return;
+    }
+    setModifyTarget({ censusNo: row.censusNo, nomenclature: row.nomenclature });
+  };
+
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error("No records to export");
+      return;
+    }
+    exportCsv(filtered);
+    toast.success(`Exported ${filtered.length} record(s)`);
+  };
+
+  const handlePrint = () => {
+    if (filtered.length === 0) {
+      toast.error("No records to print");
+      return;
+    }
+    printResults(filtered);
+  };
+
+  if (modifyTarget) {
+    return (
+      <CaptureMlccs
+        initialModify={modifyTarget}
+        onBack={() => {
+          setModifyTarget(null);
+          void handleSearch(true);
+        }}
+      />
+    );
+  }
+
   return (
-    <FormPanel title="VIEW MLCCS" fill>
-      <div className="space-y-3">
-        <div className="rounded border border-border bg-muted/30 p-3 space-y-2">
+    <FormPanel
+      title="VIEW MLCCS"
+      fill
+      footer={
+        <>
+          <Button
+            size="sm"
+            className="bg-success hover:bg-success/90 text-success-foreground"
+            disabled={busy || filtered.length === 0}
+            onClick={handleExport}
+          >
+            Export
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || filtered.length === 0}
+            onClick={handlePrint}
+          >
+            Print Page
+          </Button>
+          <Button
+            size="sm"
+            className="bg-success hover:bg-success/90 text-success-foreground"
+            disabled={busy}
+            onClick={handleModify}
+          >
+            Modify Census Details
+          </Button>
+        </>
+      }
+    >
+      <div className="absolute inset-0 flex flex-col gap-1.5 overflow-hidden bg-card p-2 sm:p-3">
+        <div className="shrink-0 rounded border border-border bg-muted/30 p-2">
           <div className="flex flex-wrap items-center gap-2">
             <Input
-              className="max-w-xs"
+              className="h-8 max-w-xs"
               placeholder="Search..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSearch();
+              }}
             />
             <span className="text-xs text-muted-foreground">in</span>
             <Select value={searchIn} onValueChange={(v) => setSearchIn(v as SearchField)}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="h-8 w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -207,106 +384,192 @@ export function ViewMlccs() {
                 <SelectItem value="Cat Part No">Cat Part No</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-foreground">Class of Eqpt</span>
             <Select value={classOfEqpt} onValueChange={setClassOfEqpt}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="h-8 w-[180px]">
                 <SelectValue placeholder="--Select--" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Class I">Class I</SelectItem>
-                <SelectItem value="Class II">Class II</SelectItem>
-                <SelectItem value="Class III">Class III</SelectItem>
+                <SelectItem value={ALL_CLASS}>--Select--</SelectItem>
+                {classOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <Button size="sm" className="h-8" disabled={busy} onClick={() => void handleSearch()}>
+              {busy ? "Searching..." : "Search"}
+            </Button>
           </div>
-          <Button size="sm" onClick={handleSearch}>
-            Search
-          </Button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold text-primary">
             Select a Census No to Modify Data
           </p>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              Search in Result({filtered.length}):
-            </span>
-            <Input
-              className="h-7 w-40"
-              value={resultFilter}
-              onChange={(e) => setResultFilter(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="overflow-auto rounded border border-border">
-          <RadioGroup value={selectedId} onValueChange={setSelectedId}>
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-primary hover:bg-primary">
-                  <TableHead className="w-10 text-primary-foreground" />
-                  <TableHead className="text-primary-foreground text-xs">Material No</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">Census No</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">Nomenclature</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">Class of Eqpt</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">Cat Part No</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">A/U</TableHead>
-                  <TableHead className="text-primary-foreground text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((row, idx) => (
-                  <TableRow
-                    key={row.id}
-                    className={idx % 2 === 1 ? "bg-muted/40" : undefined}
-                  >
-                    <TableCell className="w-10">
-                      <RadioGroupItem value={row.id} id={`mlccs-${row.id}`} />
-                    </TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{row.materialNo}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{row.censusNo}</TableCell>
-                    <TableCell className="text-xs min-w-[220px]">{row.nomenclature}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{row.classOfEqpt}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{row.catPartNo}</TableCell>
-                    <TableCell className="text-xs">{row.au}</TableCell>
-                    <TableCell className="text-xs">{row.status}</TableCell>
-                  </TableRow>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Show
+              <select
+                className="h-7 rounded border border-border bg-card px-1.5 text-xs text-foreground"
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
                 ))}
-                {filtered.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-16 text-center text-sm text-muted-foreground">
-                      No records found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </RadioGroup>
+              </select>
+              entries
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                Search in Result({pageSize}):
+              </span>
+              <Input
+                className="h-7 w-40"
+                value={resultFilter}
+                onChange={(e) => setResultFilter(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div className="flex gap-2">
-            <Button
-              className="bg-success hover:bg-success/90 text-success-foreground"
-              onClick={() => toast.success("Export started")}
-            >
-              Export
-            </Button>
-            <Button onClick={() => toast("Print dialog opened")}>Print Page</Button>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-border">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <table className="w-full caption-bottom border-collapse text-xs">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-primary">
+                  <th className="h-8 w-10 px-2 py-0 text-left text-xs font-medium text-primary-foreground" />
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Material No
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Census No
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Nomenclature
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Class of Eqpt
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Cat Part No
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    A/U
+                  </th>
+                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.map((row, idx) => {
+                  const selected = selectedId === row.id;
+                  return (
+                    <tr
+                      key={row.id}
+                      onClick={() => setSelectedId(row.id)}
+                      className={cn(
+                        "h-8 cursor-pointer border-b border-border",
+                        selected ? "bg-primary/15" : idx % 2 === 1 ? "bg-muted/40" : undefined,
+                      )}
+                    >
+                      <td className="w-10 px-2 py-0 align-middle">
+                        <span
+                          role="radio"
+                          aria-checked={selected}
+                          aria-label={`Select ${row.censusNo || row.id}`}
+                          className={cn(
+                            "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-primary bg-card shadow-sm",
+                            selected && "border-primary bg-primary/10",
+                          )}
+                        >
+                          {selected && (
+                            <span className="block h-2 w-2 rounded-full bg-primary" />
+                          )}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.materialNo}</td>
+                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.censusNo}</td>
+                      <td className="min-w-[220px] px-2 py-0 align-middle">{row.nomenclature}</td>
+                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.classOfEqpt}</td>
+                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.catPartNo}</td>
+                      <td className="px-2 py-0 align-middle">{row.au}</td>
+                      <td className="px-2 py-0 align-middle">{row.status}</td>
+                    </tr>
+                  );
+                })}
+                {!busy && filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="h-16 text-center text-sm text-muted-foreground">
+                      No records found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            onClick={() => {
-              if (!selectedId) return toast.error("Select a Census No first");
-              const row = DUMMY_ROWS.find((r) => r.id === selectedId);
-              toast.success(`Modify Census: ${row?.censusNo}`);
-            }}
-          >
-            Modify Census Details
-          </Button>
+
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground">
+            <div>
+              Showing {pageStart} to {pageEnd} of {filtered.length} entries
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[12px]"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((n) => {
+                  if (totalPages <= 7) return true;
+                  if (n === 1 || n === totalPages) return true;
+                  return Math.abs(n - currentPage) <= 1;
+                })
+                .reduce<number[]>((acc, n, idx, arr) => {
+                  if (idx > 0 && n - arr[idx - 1]! > 1) acc.push(-n);
+                  acc.push(n);
+                  return acc;
+                }, [])
+                .map((n) =>
+                  n < 0 ? (
+                    <span key={`e${n}`} className="px-1">
+                      …
+                    </span>
+                  ) : (
+                    <Button
+                      key={n}
+                      type="button"
+                      variant={n === currentPage ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 min-w-7 px-2 text-[12px]"
+                      onClick={() => setPage(n)}
+                    >
+                      {n}
+                    </Button>
+                  ),
+                )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[12px]"
+                disabled={currentPage >= totalPages || filtered.length === 0}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </FormPanel>

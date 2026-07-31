@@ -10,7 +10,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -45,9 +44,7 @@ export function EqptDomainMaster() {
       });
       toast.success("Domain saved");
       setEqptCat("");
-      // refresh full list after save
-      const rows = await api<EpDomainRow[]>("/ep/domain-master/");
-      setResults(rows);
+      setResults([]);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Save failed");
     } finally {
@@ -78,30 +75,21 @@ export function EqptDomainMaster() {
   return (
     <FormPanel
       title="EQPT DOMAIN MASTER"
-      fill
       footer={
         <>
           <Button disabled={busy} onClick={() => void handleSave()}>
             Save
           </Button>
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            disabled={busy}
-            onClick={handleClear}
-          >
+          <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
           <Button disabled={busy} onClick={() => void handleSearch()}>
-            <Search className="h-3.5 w-3.5" />
             Search
           </Button>
         </>
       }
     >
-      <div className="space-y-4 max-w-3xl mx-auto">
-        <div className="text-center text-sm font-bold uppercase tracking-wide text-foreground">
-          ADD
-        </div>
+      <div className="max-w-3xl mx-auto space-y-3">
         <FormRow label="EQPT CAT" required>
           <Input
             value={eqptCat}
@@ -112,7 +100,7 @@ export function EqptDomainMaster() {
         </FormRow>
 
         {results.length > 0 && (
-          <div className="overflow-auto rounded-md border border-border">
+          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-primary hover:bg-primary">

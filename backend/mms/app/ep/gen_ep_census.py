@@ -12,16 +12,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
-from app.models import EpMstr, EpSubDomain
-from core.auth.principal import Principal
+from app.models import EpDomainMaster, EpMstr, EpSubDomain
+from app.auth.principal import Principal
+from app.utils.ids import next_int_id
 
 router = APIRouter(
     prefix="/ep/gen-census",
     tags=["ep: gen census"],
 )
-
-_CENSUS_RE = re.compile(r"^EPC(\d+)$", re.IGNORECASE)
-
 
 class GenerateCensusIn(BaseModel):
     sub_domain_id: str = Field(..., min_length=1, max_length=36)
@@ -38,7 +36,7 @@ class EpCensusIn(BaseModel):
     sub_domain_id: str = Field(..., min_length=1, max_length=36)
     census_no: str = Field(..., min_length=1, max_length=30)
     auth_letter_no: str = Field(..., min_length=1, max_length=100)
-    auth_date: date
+    auth_date: str = Field(..., min_length=1, max_length=10, description="DD-MM-YYYY")
     cat_part_no: str = Field(..., min_length=1, max_length=100)
     accounting_unit: str = Field(..., min_length=1, max_length=2000)
     brief_description: str = Field(..., min_length=1, max_length=2000)
@@ -66,16 +64,51 @@ class EpCensusOut(BaseModel):
     status: str | None = None
 
 
-def _next_census_no(session: Session) -> str:
-    rows = session.scalars(select(EpMstr.census_no)).all()
-    max_n = 399999
+def _next_census_no(
+    session: Session,
+    domain: EpDomainMaster,
+    sub_domain: EpSubDomain,
+) -> str:
+    if not 0 <= domain.domain_id <= 99 or not 0 <= sub_domain.sub_domain_id <= 99:
+        raise HTTPException(
+            status_code=400,
+            detail="Domain and Sub Domain IDs must be between 0 and 99",
+        )
+
+    prefix = f"EP{domain.domain_id:02d}{sub_domain.sub_domain_id:02d}"
+    census_re = re.compile(rf"^{re.escape(prefix)}(\d{{4}})$", re.IGNORECASE)
+    rows = session.scalars(
+        select(EpMstr.census_no).where(
+            EpMstr.domain_id == sub_domain.equipment_domain_id,
+            EpMstr.sub_domain_id == sub_domain.id,
+        )
+    ).all()
+    max_sequence = -1
     for raw in rows:
         if not raw:
             continue
-        m = _CENSUS_RE.match(raw.strip())
+        m = census_re.match(raw.strip())
         if m:
-            max_n = max(max_n, int(m.group(1)))
-    return f"EPC{max_n + 1}"
+            max_sequence = max(max_sequence, int(m.group(1)))
+
+    next_sequence = max_sequence + 1
+    if next_sequence > 9999:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Census number sequence exhausted for {prefix}",
+        )
+    return f"{prefix}{next_sequence:04d}"
+
+
+def _parse_auth_date(value: str) -> date:
+    raw = value.strip()
+    try:
+        return datetime.strptime(raw, "%d-%m-%Y").date()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid auth date '{value}'. Expected DD-MM-YYYY",
+        ) from exc
 
 
 def _parse_cost(value: str | None) -> Decimal | None:
@@ -107,8 +140,12 @@ def generate_census(
     if sub is None:
         raise HTTPException(status_code=400, detail="Invalid Sub Domain selected")
 
+    domain = session.get(EpDomainMaster, sub.equipment_domain_id)
+    if domain is None:
+        raise HTTPException(status_code=400, detail="Sub Domain has no valid Domain")
+
     return GenerateCensusOut(
-        census_no=_next_census_no(session),
+        census_no=_next_census_no(session, domain, sub),
         sub_domain_id=sub.id,
         sub_domain_name=sub.sub_domain_name,
         domain_id=sub.equipment_domain_id,
@@ -133,10 +170,7 @@ def save_census(
             detail=f"Census No '{census_no}' already exists",
         )
 
-    ids = session.scalars(select(EpMstr.id)).all()
-    next_id = (
-        max((int(i) for i in ids if i is not None and str(i).isdigit()), default=0) + 1
-    )
+    next_id = next_int_id(session, EpMstr)
 
     now = datetime.now()
     row = EpMstr(
@@ -145,7 +179,7 @@ def save_census(
         sub_domain_id=sub.id,
         census_no=census_no,
         auth_letter_no=body.auth_letter_no.strip(),
-        auth_date=datetime.combine(body.auth_date, datetime.min.time()),
+        auth_date=datetime.combine(_parse_auth_date(body.auth_date), datetime.min.time()),
         cat_part_no=body.cat_part_no.strip(),
         brief_description=body.brief_description.strip(),
         accounting_unit=body.accounting_unit.strip()[:2000],

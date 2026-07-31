@@ -11,13 +11,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
 from app.models import DomainValue, MlccsEquipmentMaster
-from core.auth.principal import Principal
-from core.utils.ids import new_id
+from app.auth.principal import Principal
+from app.utils.ids import next_int_id
 
 router = APIRouter(
     prefix="/admin/capture-mlccs-details",
@@ -33,6 +33,12 @@ class GenerateCensusRequest(BaseModel):
 class LookupCensusRequest(BaseModel):
     census_no: str = Field(..., min_length=1)
     nomenclature: str | None = None
+
+
+class CensusSuggestion(BaseModel):
+    census_no: str
+    nomenclature: str | None = None
+    cos_section: str | None = None
 
 
 class MlccsRecord(BaseModel):
@@ -61,6 +67,7 @@ class MlccsRecord(BaseModel):
     ahsp_agency: str | None = None
     nato_stock_no: str | None = None
     def_catalogue_no: str | None = None
+    material_no: str | None = None
     remarks: str | None = None
 
 
@@ -101,6 +108,7 @@ def _to_record(row: MlccsEquipmentMaster) -> MlccsRecord:
         ahsp_agency=row.ahsp_agency,
         nato_stock_no=row.nato_stk_no,
         def_catalogue_no=row.def_cat_no_dcan,
+        material_no=row.material_no,
         remarks=row.remarks,
     )
 
@@ -137,6 +145,7 @@ def _apply_body(
     row.ahsp_agency = body.ahsp_agency
     row.nato_stk_no = body.nato_stock_no
     row.def_cat_no_dcan = body.def_catalogue_no
+    row.material_no = (body.material_no or "")[:15] or None
     row.remarks = body.remarks
     if is_new:
         row.data_cr_by = actor[:25]
@@ -241,7 +250,7 @@ def save_mlccs(
         )
     )
     if row is None:
-        row = MlccsEquipmentMaster(id=new_id())
+        row = MlccsEquipmentMaster(id=str(next_int_id(session, MlccsEquipmentMaster)))
         _apply_body(row, body, is_new=True, actor=actor)
         session.add(row)
     else:
@@ -264,10 +273,14 @@ def save_mlccs(
 
 
 def _option_list(session: Session, domain: str) -> list[dict[str, str]]:
+    # Display Order controls sequence within a domain (numeric-ish via LPAD).
     rows = session.scalars(
         select(DomainValue)
         .where(DomainValue.domain_name == domain)
-        .order_by(DomainValue.disp_order)
+        .order_by(
+            func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
+            DomainValue.label_name,
+        )
     ).all()
     return [
         {"value": r.code_value or "", "label": r.label_name or r.code_value or ""}
@@ -283,10 +296,63 @@ def _distinct_column(session: Session, column: Any) -> list[dict[str, str]]:
     return [{"value": str(v), "label": str(v)} for v in values if str(v).strip()]
 
 
+@router.get("/suggest-cos", response_model=list[str])
+def suggest_cos_section(
+    q: str = "",
+    session: Session = Depends(get_db_session),
+) -> list[str]:
+    """Typeahead for COS Section — distinct COS_SEC from MLCCS master."""
+    term = q.strip().upper()
+    stmt = (
+        select(MlccsEquipmentMaster.cos_sec)
+        .where(MlccsEquipmentMaster.cos_sec.is_not(None))
+        .distinct()
+        .order_by(MlccsEquipmentMaster.cos_sec)
+    )
+    if term:
+        stmt = stmt.where(func.upper(MlccsEquipmentMaster.cos_sec).like(f"%{term}%"))
+    values = session.scalars(stmt.limit(50)).all()
+    return [str(v) for v in values if v and str(v).strip()]
+
+
+@router.get("/suggest-census", response_model=list[CensusSuggestion])
+def suggest_census(
+    q: str = "",
+    session: Session = Depends(get_db_session),
+) -> list[CensusSuggestion]:
+    """Typeahead for Census No — returns census + nomenclature for auto-fill."""
+    term = q.strip().upper()
+    stmt = (
+        select(MlccsEquipmentMaster)
+        .where(MlccsEquipmentMaster.census_no.is_not(None))
+        .order_by(MlccsEquipmentMaster.census_no)
+    )
+    if term:
+        stmt = stmt.where(
+            or_(
+                func.upper(MlccsEquipmentMaster.census_no).like(f"%{term}%"),
+                func.upper(func.coalesce(MlccsEquipmentMaster.nomen, "")).like(
+                    f"%{term}%"
+                ),
+            )
+        )
+    rows = session.scalars(stmt.limit(50)).all()
+    return [
+        CensusSuggestion(
+            census_no=r.census_no or "",
+            nomenclature=r.nomen,
+            cos_section=r.cos_sec,
+        )
+        for r in rows
+        if r.census_no
+    ]
+
+
 @router.get("/options")
 def list_options(session: Session = Depends(get_db_session)) -> dict[str, list[dict[str, str]]]:
     """Dropdown option lists — domain values + distinct MLCCS columns."""
     return {
+        "cos_section": _distinct_column(session, MlccsEquipmentMaster.cos_sec),
         "prf_group": _distinct_column(session, MlccsEquipmentMaster.prf_group),
         "item_code": _distinct_column(session, MlccsEquipmentMaster.item_code),
         "accounting_unit": _distinct_column(session, MlccsEquipmentMaster.au)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
 from app.models import EpDomainMaster, EpSubDomain
-from core.auth.principal import Principal
+from app.auth.principal import Principal
 
 router = APIRouter(
     prefix="/ep/sub-domain-master",

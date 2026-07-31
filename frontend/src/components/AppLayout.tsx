@@ -12,6 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { isAdmin } from "@/lib/auth";
+import { SessionWatermark } from "@/components/SessionWatermark";
+import { PageBackdrop } from "@/components/PageBackdrop";
 
 export type ModuleId = "dashboard" | "weapon" | "it-asset";
 export type WeaponSub =
@@ -59,6 +61,7 @@ interface Props {
 
 export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }: Props) {
   const [collapsed, setCollapsed] = useState(false);
+  const [menuQuery, setMenuQuery] = useState("");
   const { user, logout } = useAuth();
   const admin = isAdmin(user);
 
@@ -72,21 +75,56 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
     };
   });
 
+  const query = menuQuery.trim().toLowerCase();
+  const filteredNav = query
+    ? nav
+        .map((item) => {
+          const labelMatch = item.label.toLowerCase().includes(query);
+          const matchedChildren = item.children?.filter((c) =>
+            c.label.toLowerCase().includes(query),
+          );
+          if (labelMatch) return item;
+          if (matchedChildren && matchedChildren.length > 0) {
+            return { ...item, children: matchedChildren };
+          }
+          return null;
+        })
+        .filter((item): item is NavItem => item !== null)
+    : nav;
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      if (!prev) setMenuQuery("");
+      return !prev;
+    });
+  };
+
   const displayName = (user?.displayName || user?.username || "User").toUpperCase();
   const roleLabel = user?.role ?? "UNIT";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div
+      className={cn(
+        "relative flex h-screen overflow-hidden bg-background",
+        activeSub === "eqpt-transfer" && "theme-navy",
+      )}
+    >
+      <SessionWatermark />
       {/* Sidebar */}
       <aside
         className={cn(
-          "flex flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all",
+          "flex flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-200",
           collapsed ? "w-16" : "w-64",
         )}
       >
         {/* User block */}
-        <div className="border-b border-sidebar-border p-4">
-          <div className="flex items-center gap-3">
+        <div className={cn("border-b border-sidebar-border", collapsed ? "p-2" : "p-4")}>
+          <div
+            className={cn(
+              "flex",
+              collapsed ? "flex-col items-center gap-2" : "items-center gap-3",
+            )}
+          >
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground font-bold">
               <User className="h-5 w-5" />
             </div>
@@ -99,9 +137,11 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
               </div>
             )}
             <button
-              onClick={() => setCollapsed(!collapsed)}
-              className="rounded p-1 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-primary"
-              aria-label="Toggle sidebar"
+              type="button"
+              onClick={toggleCollapsed}
+              className="rounded p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-primary"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               <Menu className="h-4 w-4" />
             </button>
@@ -109,10 +149,13 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
 
           {!collapsed && (
             <div className="mt-3 relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground/50" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground/50 pointer-events-none" />
               <input
-                type="text"
+                type="search"
+                value={menuQuery}
+                onChange={(e) => setMenuQuery(e.target.value)}
                 placeholder="Search menu..."
+                aria-label="Search menu"
                 className="w-full rounded bg-sidebar-accent/40 border border-sidebar-border pl-8 pr-2 py-1.5 text-xs text-sidebar-foreground placeholder:text-sidebar-foreground/40 focus:outline-none focus:ring-1 focus:ring-sidebar-primary"
               />
             </div>
@@ -121,13 +164,25 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2">
-          {nav.map((item) => {
+          {filteredNav.length === 0 && !collapsed && (
+            <div className="px-4 py-3 text-xs text-sidebar-foreground/50">No menu items found</div>
+          )}
+          {filteredNav.map((item) => {
             const Icon = item.icon;
             const isActive = active === item.id;
+            const showChildren =
+              !collapsed &&
+              !!item.children?.length &&
+              (isActive || query.length > 0);
             return (
               <div key={item.id}>
                 <button
-                  onClick={() => onSelect(item.id)}
+                  type="button"
+                  title={collapsed ? item.label : undefined}
+                  onClick={() => {
+                    onSelect(item.id);
+                    if (collapsed) setCollapsed(false);
+                  }}
                   className={cn(
                     "flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors",
                     isActive
@@ -139,15 +194,18 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </button>
 
-                {/* Sub items — visible under active parent only */}
-                {!collapsed && item.children && isActive && (
+                {showChildren && (
                   <div className="bg-sidebar-accent/30 py-1">
-                    {item.children.map((c) => {
-                      const subActive = activeSub === c.id;
+                    {item.children!.map((c) => {
+                      const subActive = activeSub === c.id && isActive;
                       return (
                         <button
                           key={c.id}
-                          onClick={() => onSelect(item.id, c.id)}
+                          type="button"
+                          onClick={() => {
+                            onSelect(item.id, c.id);
+                            setMenuQuery("");
+                          }}
                           className={cn(
                             "flex w-full items-center gap-2 pl-11 pr-4 py-2 text-xs transition-colors",
                             subActive
@@ -172,7 +230,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
           })}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3 text-[10px] text-sidebar-foreground/50">
+        <div className="border-t border-sidebar-border p-3 text-[12px] text-sidebar-foreground/50">
           {!collapsed && <div>MISO v5.0 · Indian Army</div>}
         </div>
       </aside>
@@ -187,7 +245,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
                 <Shield className="h-6 w-6" strokeWidth={2.2} />
               </div>
               <div className="hidden sm:block">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                <div className="text-[12px] uppercase tracking-widest text-muted-foreground">
                   Indian Army
                 </div>
                 <div className="text-xs font-semibold text-foreground">भारतीय सेना</div>
@@ -198,7 +256,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
               <h1 className="truncate text-base sm:text-lg font-bold text-primary tracking-wide">
                 MANAGEMENT INFORMATION SYSTEM ORGANISATION
               </h1>
-              <div className="text-[10px] text-muted-foreground tracking-wider">
+              <div className="text-[12px] text-muted-foreground tracking-wider">
                 MISO · Version 5.0
               </div>
             </div>
@@ -206,7 +264,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
             <div className="flex items-center gap-3">
               <button className="relative rounded-full p-2 text-muted-foreground hover:bg-muted">
                 <Bell className="h-4 w-4" />
-                <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
                   3
                 </span>
               </button>
@@ -230,7 +288,7 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
           </div>
 
           {/* Breadcrumb bar */}
-          <div className="bg-primary text-primary-foreground px-4 py-1.5 text-[11px] flex items-center gap-2">
+          <div className="bg-primary text-primary-foreground px-4 py-1.5 text-[13px] flex items-center gap-2">
             <LayoutDashboard className="h-3.5 w-3.5 text-accent" />
             {breadcrumb.map((b, i) => (
               <span key={i} className="flex items-center gap-2">
@@ -249,7 +307,10 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 overflow-hidden p-2">{children}</main>
+        <div className="relative flex-1 min-h-0">
+          <PageBackdrop />
+          <main className="relative h-full overflow-y-auto p-2">{children}</main>
+        </div>
       </div>
     </div>
   );

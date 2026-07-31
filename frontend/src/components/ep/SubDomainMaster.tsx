@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -43,10 +42,20 @@ export function SubDomainMaster() {
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<EpSubDomainRow[]>([]);
 
-  useEffect(() => {
+  const loadDomains = () => {
     api<EpDomainRow[]>("/ep/domain-master/")
-      .then(setDomains)
+      .then((rows) =>
+        setDomains(
+          [...rows].sort((a, b) =>
+            a.eqpt_cat.localeCompare(b.eqpt_cat, undefined, { sensitivity: "base" }),
+          ),
+        ),
+      )
       .catch(() => toast.error("Failed to load EQPT CAT list"));
+  };
+
+  useEffect(() => {
+    loadDomains();
   }, []);
 
   const handleClear = () => {
@@ -72,11 +81,7 @@ export function SubDomainMaster() {
       });
       toast.success("Sub domain saved");
       setSubDomain("");
-      const params = new URLSearchParams();
-      if (eqptCatId) params.set("equipment_domain_id", eqptCatId);
-      const q = params.toString() ? `?${params.toString()}` : "";
-      const rows = await api<EpSubDomainRow[]>(`/ep/sub-domain-master/search${q}`);
-      setResults(rows);
+      setResults([]);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Save failed");
     } finally {
@@ -105,61 +110,54 @@ export function SubDomainMaster() {
   return (
     <FormPanel
       title="SUB DOMAIN MASTER"
-      fill
       footer={
         <>
           <Button disabled={busy} onClick={() => void handleSave()}>
             Save
           </Button>
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            disabled={busy}
-            onClick={handleClear}
-          >
+          <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
           <Button disabled={busy} onClick={() => void handleSearch()}>
-            <Search className="h-3.5 w-3.5" />
             Search
           </Button>
         </>
       }
     >
-      <div className="space-y-4 max-w-3xl mx-auto">
-        <div className="text-center text-sm font-bold uppercase tracking-wide text-foreground">
-          ADD
-        </div>
-        <FormGrid>
-          <FormRow label="EQPT CAT(Domain Name)" required>
-            <Select
-              value={eqptCatId}
-              onValueChange={setEqptCatId}
-              disabled={busy}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="--Select--" />
-              </SelectTrigger>
-              <SelectContent>
-                {domains.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.eqpt_cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormRow>
-          <FormRow label="Sub Domain Name" required>
-            <Input
-              value={subDomain}
-              onChange={(e) => setSubDomain(e.target.value)}
-              placeholder="Enter Sub Domain"
-              disabled={busy}
-            />
-          </FormRow>
-        </FormGrid>
+      <div className="max-w-3xl mx-auto space-y-1.5">
+        <FormRow label="EQPT CAT(Domain Name)" required>
+          <Select
+            value={eqptCatId || "__all__"}
+            onValueChange={(v) => setEqptCatId(v === "__all__" ? "" : v)}
+            disabled={busy}
+            onOpenChange={(open) => {
+              if (open) loadDomains();
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="-- ALL --" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="__all__">-- ALL --</SelectItem>
+              {domains.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.eqpt_cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormRow>
+        <FormRow label="Sub Domain Name" required>
+          <Input
+            value={subDomain}
+            onChange={(e) => setSubDomain(e.target.value)}
+            placeholder="Enter Sub Domain"
+            disabled={busy}
+          />
+        </FormRow>
 
         {results.length > 0 && (
-          <div className="overflow-auto rounded-md border border-border">
+          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-primary hover:bg-primary">

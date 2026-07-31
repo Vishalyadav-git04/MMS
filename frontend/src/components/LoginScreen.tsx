@@ -56,23 +56,23 @@ export function LoginScreen() {
               <div className="mb-5 grid h-16 w-16 place-items-center rounded-full border border-[#c5a35a]/50 bg-gradient-to-b from-[#1f4632] to-[#14291e] text-[#c5a35a] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
                 <Shield className="h-8 w-8" strokeWidth={1.75} />
               </div>
-              <p className="font-display text-[11px] font-semibold uppercase tracking-[0.38em] text-[#c5a35a]">
+              <p className="font-display text-[13px] font-semibold uppercase tracking-[0.38em] text-[#c5a35a]">
                 Indian Army
               </p>
-              <h1 className="mt-2 font-display text-[1.65rem] font-semibold tracking-[0.06em] text-[#f5f1e8]">
+              <h1 className="mt-2 font-display text-[1.85rem] font-semibold tracking-[0.06em] text-[#f5f1e8]">
                 MISO · MMS
               </h1>
               <div className="my-3 h-px w-16 bg-gradient-to-r from-transparent via-[#c5a35a]/55 to-transparent" />
-              <p className="text-[13px] leading-relaxed text-[#f5f1e8]/55">
+              <p className="text-[15px] leading-relaxed text-[#f5f1e8]/55">
                 Sign in with your ADMIN or UNIT account
               </p>
             </div>
 
             <form onSubmit={onSubmit} className="space-y-5">
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label
                   htmlFor="username"
-                  className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#f5f1e8]/65"
+                  className="text-[13px] font-medium uppercase tracking-[0.16em] text-[#f5f1e8]/65"
                 >
                   Username
                 </Label>
@@ -86,17 +86,17 @@ export function LoginScreen() {
                     autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="h-12 rounded-lg border-[#c5a35a]/20 bg-[#07120c]/75 pl-11 text-[15px] text-[#f5f1e8] shadow-inner placeholder:text-[#f5f1e8]/28 focus-visible:border-[#c5a35a]/55 focus-visible:ring-[#c5a35a]/30"
+                    className="h-12 rounded-lg border-[#c5a35a]/20 bg-[#07120c]/75 pl-11 text-[17px] text-[#f5f1e8] shadow-inner placeholder:text-[#f5f1e8]/28 focus-visible:border-[#c5a35a]/55 focus-visible:ring-[#c5a35a]/30"
                     placeholder="Enter username"
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label
                   htmlFor="password"
-                  className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#f5f1e8]/65"
+                  className="text-[13px] font-medium uppercase tracking-[0.16em] text-[#f5f1e8]/65"
                 >
                   Password
                 </Label>
@@ -111,7 +111,7 @@ export function LoginScreen() {
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="h-12 rounded-lg border-[#c5a35a]/20 bg-[#07120c]/75 pl-11 pr-12 text-[15px] text-[#f5f1e8] shadow-inner placeholder:text-[#f5f1e8]/28 focus-visible:border-[#c5a35a]/55 focus-visible:ring-[#c5a35a]/30"
+                    className="h-12 rounded-lg border-[#c5a35a]/20 bg-[#07120c]/75 pl-11 pr-12 text-[17px] text-[#f5f1e8] shadow-inner placeholder:text-[#f5f1e8]/28 focus-visible:border-[#c5a35a]/55 focus-visible:ring-[#c5a35a]/30"
                     placeholder="Enter password"
                     required
                   />
@@ -133,7 +133,7 @@ export function LoginScreen() {
               {error && (
                 <div
                   role="alert"
-                  className="rounded-lg border border-red-400/35 bg-red-950/55 px-3.5 py-2.5 text-center text-[12px] leading-snug text-red-100"
+                  className="rounded-lg border border-red-400/35 bg-red-950/55 px-3.5 py-2.5 text-center text-[14px] leading-snug text-red-100"
                 >
                   {error}
                 </div>
@@ -142,7 +142,7 @@ export function LoginScreen() {
               <Button
                 type="submit"
                 disabled={busy}
-                className="mt-1 h-12 w-full rounded-lg bg-[#c5a35a] text-[13px] font-semibold uppercase tracking-[0.14em] text-[#1a1408] shadow-[0_10px_28px_rgba(197,163,90,0.28)] transition-all hover:bg-[#d4b56a] hover:shadow-[0_12px_32px_rgba(197,163,90,0.35)] active:scale-[0.99] disabled:opacity-60"
+                className="mt-1 h-12 w-full rounded-lg bg-[#c5a35a] text-[15px] font-semibold uppercase tracking-[0.14em] text-[#1a1408] shadow-[0_10px_28px_rgba(197,163,90,0.28)] transition-all hover:bg-[#d4b56a] hover:shadow-[0_12px_32px_rgba(197,163,90,0.35)] active:scale-[0.99] disabled:opacity-60"
               >
                 {busy ? (
                   <>

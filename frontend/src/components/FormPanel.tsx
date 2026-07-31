@@ -8,22 +8,27 @@ export function FormPanel({
   tabs,
   /** When true, panel fills the viewport (long forms). Short forms leave this false so no empty gap. */
   fill = false,
+  /** When fill is true, keep body from scrolling so children can manage their own scroll regions. */
+  lockBodyScroll = false,
 }: {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
   tabs?: ReactNode;
   fill?: boolean;
+  lockBodyScroll?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-sm",
-        fill ? "absolute inset-0 min-h-0" : "w-full max-h-full",
+        "flex flex-col rounded-md border border-border bg-card shadow-sm",
+        fill
+          ? "absolute inset-0 min-h-0 overflow-hidden"
+          : "w-full max-h-full overflow-visible",
       )}
     >
       <div className="panel-title shrink-0 px-3 py-1 text-center">
-        <h2 className="text-[11px] font-bold uppercase tracking-wider underline underline-offset-2">
+        <h2 className="text-[13px] font-bold uppercase tracking-wider underline underline-offset-2">
           {title}
         </h2>
       </div>
@@ -33,7 +38,12 @@ export function FormPanel({
       <div
         className={cn(
           "compact-form p-2 sm:p-3",
-          fill ? "min-h-0 flex-1 overflow-y-auto" : "overflow-visible",
+          fill
+            ? cn(
+                "relative flex min-h-0 flex-1 flex-col",
+                lockBodyScroll ? "overflow-hidden" : "overflow-y-auto",
+              )
+            : "overflow-visible",
         )}
       >
         {children}
@@ -61,11 +71,11 @@ export function FormRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-1 sm:grid-cols-[100px_minmax(0,1fr)] items-center gap-0.5 sm:gap-1",
+        "grid grid-cols-1 sm:grid-cols-[112px_minmax(0,1fr)] items-center gap-x-1.5 gap-y-0",
         className,
       )}
     >
-      <label className="text-[10px] font-medium leading-tight text-foreground">
+      <label className="text-[12px] font-medium leading-tight text-foreground sm:text-right">
         {required && <span className="text-destructive mr-0.5">*</span>}
         {label}
       </label>
@@ -74,7 +84,15 @@ export function FormRow({
   );
 }
 
-export function FormGrid({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 | 4 }) {
+export function FormGrid({
+  children,
+  cols = 2,
+  className,
+}: {
+  children: ReactNode;
+  cols?: 2 | 3 | 4;
+  className?: string;
+}) {
   return (
     <div
       className={cn(
@@ -84,6 +102,7 @@ export function FormGrid({ children, cols = 2 }: { children: ReactNode; cols?: 2
           : cols === 3
             ? "sm:grid-cols-2 lg:grid-cols-3"
             : "sm:grid-cols-2",
+        className,
       )}
     >
       {children}
@@ -109,7 +128,7 @@ export function SwitchTabs<T extends string>({
             key={t.id}
             onClick={() => onChange(t.id)}
             className={cn(
-              "px-3 py-1 text-[11px] font-semibold rounded-t-md border border-b-0 transition-colors",
+              "px-3 py-1 text-[13px] font-semibold rounded-t-md border border-b-0 transition-colors",
               active
                 ? "bg-card text-primary border-border border-t-2 border-t-accent"
                 : "bg-transparent text-muted-foreground border-transparent hover:text-primary",
@@ -139,12 +158,14 @@ export function FormScreen({
     <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden">
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[9px] uppercase tracking-widest text-muted-foreground">{section}</div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+            {section}
+          </div>
           <h2 className="truncate text-sm font-bold text-primary tracking-tight">{title}</h2>
         </div>
         <button
           onClick={onBack}
-          className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-secondary"
+          className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-[13px] font-semibold text-primary hover:bg-secondary"
         >
           ← Back to sub-modules
         </button>

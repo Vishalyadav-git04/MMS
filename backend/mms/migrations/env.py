@@ -10,9 +10,9 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from app.db.base import Base
+from app.db.session import build_engine
 from app.settings import get_settings
-from core.db.base import Base
-from core.db.session import build_engine
 
 config = context.config
 if config.config_file_name is not None:

@@ -223,108 +223,108 @@ export function SearchApproveEpStores() {
   return (
     <FormPanel
       title="SEARCH DETAILS OF EP STORES"
-      fill
       footer={
         <>
+          <Button disabled={busy} onClick={() => void handleSearch()}>
+            Search
+          </Button>
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            disabled={busy}
-            onClick={() => void handleSearch()}
-          >
-            Search
-          </Button>
           {results.some((r) => r.op_status === "P") && (
-            <Button disabled={busy || selected.size === 0} onClick={() => void handleApprove()}>
+            <Button
+              disabled={busy || selected.size === 0}
+              onClick={() => void handleApprove()}
+            >
               Approve Selected
             </Button>
           )}
         </>
       }
     >
-      <div className="space-y-4">
-        <FormGrid>
-          <FormRow label="SUS No" required>
-            <SuggestInput
-              value={form.susNo}
-              placeholder="Search..."
-              disabled={busy}
-              suggestions={
-                queryField === "sus"
-                  ? holdingUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
-                  : []
-              }
-              onChange={(v) => {
-                setQueryField("sus");
-                setForm({ ...form, susNo: v, unitName: "" });
-              }}
-              onPick={(idx) => {
-                const u = holdingUnits[idx];
-                if (!u) return;
-                setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
-                setHoldingUnits([]);
-                setQueryField(null);
-              }}
-            />
-          </FormRow>
-          <FormRow label="Unit's Name" required>
-            <SuggestInput
-              value={form.unitName}
-              placeholder="Search..."
-              disabled={busy}
-              suggestions={
-                queryField === "name"
-                  ? holdingUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
-                  : []
-              }
-              onChange={(v) => {
-                setQueryField("name");
-                setForm({ ...form, unitName: v, susNo: "" });
-              }}
-              onPick={(idx) => {
-                const u = holdingUnits[idx];
-                if (!u) return;
-                setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
-                setHoldingUnits([]);
-                setQueryField(null);
-              }}
-            />
-          </FormRow>
-          <FormRow label="From">
-            <Input
-              type="date"
-              value={form.from}
-              disabled={busy}
-              onChange={(e) => upd("from", e.target.value)}
-            />
-          </FormRow>
-          <FormRow label="To">
-            <Input
-              type="date"
-              value={form.to}
-              disabled={busy}
-              onChange={(e) => upd("to", e.target.value)}
-            />
-          </FormRow>
-          <FormRow label="Status" required>
-            <Select
-              value={form.status}
-              onValueChange={(v) => upd("status", v)}
-              disabled={busy}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="--Select the Value--" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="Approved">Approved</SelectItem>
-                <SelectItem value="Rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-        </FormGrid>
+      <div className="max-w-3xl mx-auto space-y-3">
+        <div className="space-y-1.5">
+          <FormGrid>
+            <FormRow label="SUS No" required>
+              <SuggestInput
+                value={form.susNo}
+                placeholder="Search..."
+                disabled={busy}
+                suggestions={
+                  queryField === "sus"
+                    ? holdingUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
+                    : []
+                }
+                onChange={(v) => {
+                  setQueryField("sus");
+                  setForm({ ...form, susNo: v, unitName: "" });
+                }}
+                onPick={(idx) => {
+                  const u = holdingUnits[idx];
+                  if (!u) return;
+                  setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
+                  setHoldingUnits([]);
+                  setQueryField(null);
+                }}
+              />
+            </FormRow>
+            <FormRow label="Unit's Name" required>
+              <SuggestInput
+                value={form.unitName}
+                placeholder="Search..."
+                disabled={busy}
+                suggestions={
+                  queryField === "name"
+                    ? holdingUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
+                    : []
+                }
+                onChange={(v) => {
+                  setQueryField("name");
+                  setForm({ ...form, unitName: v, susNo: "" });
+                }}
+                onPick={(idx) => {
+                  const u = holdingUnits[idx];
+                  if (!u) return;
+                  setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
+                  setHoldingUnits([]);
+                  setQueryField(null);
+                }}
+              />
+            </FormRow>
+            <FormRow label="From">
+              <Input
+                type="date"
+                value={form.from}
+                disabled={busy}
+                onChange={(e) => upd("from", e.target.value)}
+              />
+            </FormRow>
+            <FormRow label="To">
+              <Input
+                type="date"
+                value={form.to}
+                disabled={busy}
+                onChange={(e) => upd("to", e.target.value)}
+              />
+            </FormRow>
+            <FormRow label="Status" required>
+              <Select
+                value={form.status}
+                onValueChange={(v) => upd("status", v)}
+                disabled={busy}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="--Select the Value--" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </FormRow>
+          </FormGrid>
+        </div>
 
         {results.length > 0 && (
           <div className="overflow-auto rounded-md border border-border">

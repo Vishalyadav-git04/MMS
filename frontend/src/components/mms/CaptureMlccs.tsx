@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,12 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 type Mode = "add" | "modify";
+
+interface CensusSuggestion {
+  census_no: string;
+  nomenclature?: string | null;
+  cos_section?: string | null;
+}
 
 interface FullForm {
   cosSection: string;
@@ -39,6 +46,7 @@ interface FullForm {
   ahspAgency: string;
   natoStockNo: string;
   defCatalogueNo: string;
+  materialNo: string;
   remarks: string;
 }
 
@@ -68,6 +76,7 @@ interface MlccsRecord {
   ahsp_agency?: string | null;
   nato_stock_no?: string | null;
   def_catalogue_no?: string | null;
+  material_no?: string | null;
   remarks?: string | null;
 }
 
@@ -98,6 +107,7 @@ const emptyForm: FullForm = {
   ahspAgency: "",
   natoStockNo: "",
   defCatalogueNo: "",
+  materialNo: "",
   remarks: "",
 };
 
@@ -127,6 +137,7 @@ function recordToForm(r: MlccsRecord): FullForm {
     ahspAgency: r.ahsp_agency ?? "",
     natoStockNo: r.nato_stock_no ?? "",
     defCatalogueNo: r.def_catalogue_no ?? "",
+    materialNo: r.material_no ?? "",
     remarks: r.remarks ?? "",
   };
 }
@@ -157,6 +168,7 @@ function formToBody(form: FullForm): MlccsRecord {
     ahsp_agency: form.ahspAgency || null,
     nato_stock_no: form.natoStockNo || null,
     def_catalogue_no: form.defCatalogueNo || null,
+    material_no: form.materialNo || null,
     remarks: form.remarks || null,
   };
 }
@@ -200,18 +212,31 @@ function ActionButtons({
   );
 }
 
-export function CaptureMlccs() {
-  const [mode, setMode] = useState<Mode>("add");
+type CaptureMlccsProps = {
+  /** When set (e.g. from View MLCCS), open Modify tab and auto-load the record. */
+  initialModify?: { censusNo: string; nomenclature: string } | null;
+  /** Optional back handler when launched from another screen. */
+  onBack?: () => void;
+};
+
+export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) {
+  const seeded = Boolean(initialModify?.censusNo);
+  const [mode, setMode] = useState<Mode>(seeded ? "modify" : "add");
   const [busy, setBusy] = useState(false);
   const [options, setOptions] = useState<OptionsMap>({});
 
   const [addCos, setAddCos] = useState("");
   const [addNom, setAddNom] = useState("");
+  const [cosSuggestions, setCosSuggestions] = useState<string[]>([]);
   const [showAddFull, setShowAddFull] = useState(false);
   const [addForm, setAddForm] = useState<FullForm>(emptyForm);
 
-  const [modCensus, setModCensus] = useState("");
-  const [modNom, setModNom] = useState("");
+  const [modCensus, setModCensus] = useState(initialModify?.censusNo ?? "");
+  const [modNom, setModNom] = useState(initialModify?.nomenclature ?? "");
+  const [censusSuggestions, setCensusSuggestions] = useState<CensusSuggestion[]>([]);
+  const [nomSuggestions, setNomSuggestions] = useState<CensusSuggestion[]>([]);
+  const suppressCensusSuggestRef = useRef(false);
+  const suppressNomSuggestRef = useRef(false);
   const [showModFull, setShowModFull] = useState(false);
   const [modForm, setModForm] = useState<FullForm>(emptyForm);
 
@@ -223,8 +248,161 @@ export function CaptureMlccs() {
       });
   }, []);
 
+  // COS Section typeahead — prefer local options list, fall back to API
+  useEffect(() => {
+    if (mode !== "add" || showAddFull) return;
+    const q = addCos.trim().toUpperCase();
+    const fromOptions =
+      options.cos_section?.map((o) => o.value).filter(Boolean) ?? [];
+
+    const applyLocal = (all: string[]) => {
+      const matched = q
+        ? all.filter((v) => v.toUpperCase().includes(q) && v.toUpperCase() !== q)
+        : all;
+      setCosSuggestions(matched.slice(0, 50));
+    };
+
+    if (fromOptions.length > 0) {
+      applyLocal(fromOptions);
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      void api<string[]>(
+        `/admin/capture-mlccs-details/suggest-cos?q=${encodeURIComponent(addCos.trim())}`,
+      )
+        .then((rows) => applyLocal(rows))
+        .catch(() => setCosSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [addCos, mode, showAddFull, options]);
+
+  // Census No typeahead (Modify Census) — autofills nomenclature on exact match / pick
+  useEffect(() => {
+    if (mode !== "modify" || showModFull) return;
+    if (suppressCensusSuggestRef.current) {
+      suppressCensusSuggestRef.current = false;
+      setCensusSuggestions([]);
+      return;
+    }
+    const q = modCensus.trim();
+    if (q.length < 1) {
+      setCensusSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<CensusSuggestion[]>(
+        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => {
+          const exact = rows.find((r) => r.census_no.toUpperCase() === q.toUpperCase());
+          if (exact) {
+            suppressNomSuggestRef.current = true;
+            setModNom(exact.nomenclature ?? "");
+            setCensusSuggestions([]);
+            setNomSuggestions([]);
+            return;
+          }
+          setCensusSuggestions(rows.slice(0, 50));
+        })
+        .catch(() => setCensusSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [modCensus, mode, showModFull]);
+
+  // Nomenclature typeahead (Modify Census) — autofills census no on unique exact match / pick
+  useEffect(() => {
+    if (mode !== "modify" || showModFull) return;
+    if (suppressNomSuggestRef.current) {
+      suppressNomSuggestRef.current = false;
+      setNomSuggestions([]);
+      return;
+    }
+    const q = modNom.trim();
+    if (q.length < 1) {
+      setNomSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void api<CensusSuggestion[]>(
+        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+      )
+        .then((rows) => {
+          const matched = rows.filter((r) =>
+            (r.nomenclature ?? "").toUpperCase().includes(q.toUpperCase()),
+          );
+          const exact = matched.filter(
+            (r) => (r.nomenclature ?? "").toUpperCase() === q.toUpperCase(),
+          );
+          if (exact.length === 1) {
+            suppressCensusSuggestRef.current = true;
+            setModCensus(exact[0]!.census_no);
+            setNomSuggestions([]);
+            setCensusSuggestions([]);
+            return;
+          }
+          setNomSuggestions(matched.slice(0, 50));
+        })
+        .catch(() => setNomSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [modNom, mode, showModFull]);
+
+  useEffect(() => {
+    if (!initialModify?.censusNo) return;
+    let cancelled = false;
+    const load = async () => {
+      setBusy(true);
+      setMode("modify");
+      setModCensus(initialModify.censusNo);
+      setModNom(initialModify.nomenclature);
+      try {
+        const rec = await api<MlccsRecord>("/admin/capture-mlccs-details/lookup", {
+          method: "POST",
+          body: JSON.stringify({
+            census_no: initialModify.censusNo,
+            nomenclature: initialModify.nomenclature || null,
+          }),
+        });
+        if (cancelled) return;
+        setModForm(recordToForm(rec));
+        setShowModFull(true);
+        toast.success("Record loaded from database");
+      } catch (e) {
+        if (!cancelled) toast.error(errMsg(e));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialModify?.censusNo, initialModify?.nomenclature]);
+
+  const pickCosSuggestion = (value: string) => {
+    setAddCos(value);
+    setCosSuggestions([]);
+  };
+
+  const pickCensusSuggestion = (row: CensusSuggestion) => {
+    suppressNomSuggestRef.current = true;
+    setModCensus(row.census_no);
+    setModNom(row.nomenclature ?? "");
+    setCensusSuggestions([]);
+    setNomSuggestions([]);
+  };
+
+  const pickNomSuggestion = (row: CensusSuggestion) => {
+    suppressCensusSuggestRef.current = true;
+    setModCensus(row.census_no);
+    setModNom(row.nomenclature ?? "");
+    setCensusSuggestions([]);
+    setNomSuggestions([]);
+  };
+
   const handleGenerate = async () => {
-    if (!addCos || !addNom) {
+    if (!addCos.trim() || !addNom.trim()) {
       toast.error("COS Section and Nomenclature are required");
       return;
     }
@@ -232,10 +410,14 @@ export function CaptureMlccs() {
     try {
       const rec = await api<MlccsRecord>("/admin/capture-mlccs-details/generate", {
         method: "POST",
-        body: JSON.stringify({ cos_section: addCos, nomenclature: addNom }),
+        body: JSON.stringify({
+          cos_section: addCos.trim(),
+          nomenclature: addNom.trim(),
+        }),
       });
       setAddForm(recordToForm(rec));
       setShowAddFull(true);
+      setCosSuggestions([]);
       toast.success(`Census No ${rec.census_no} generated`);
     } catch (e) {
       toast.error(errMsg(e));
@@ -245,18 +427,24 @@ export function CaptureMlccs() {
   };
 
   const handleModify = async () => {
-    if (!modCensus || !modNom) {
-      toast.error("Census No and Nomenclature are required");
+    if (!modCensus.trim()) {
+      toast.error("Census No is required");
       return;
     }
     setBusy(true);
     try {
       const rec = await api<MlccsRecord>("/admin/capture-mlccs-details/lookup", {
         method: "POST",
-        body: JSON.stringify({ census_no: modCensus, nomenclature: modNom }),
+        body: JSON.stringify({
+          census_no: modCensus.trim(),
+          nomenclature: modNom.trim() || null,
+        }),
       });
       setModForm(recordToForm(rec));
+      setModNom(rec.nomenclature ?? "");
       setShowModFull(true);
+      setCensusSuggestions([]);
+      setNomSuggestions([]);
       toast.success("Record loaded from database");
     } catch (e) {
       toast.error(errMsg(e));
@@ -273,6 +461,7 @@ export function CaptureMlccs() {
         body: JSON.stringify(formToBody(form)),
       });
       toast.success(isUpdate ? "Record updated successfully" : "Equipment saved successfully");
+      if (isUpdate && onBack) onBack();
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -291,6 +480,7 @@ export function CaptureMlccs() {
           setShowAddFull(false);
           setAddCos("");
           setAddNom("");
+          setCosSuggestions([]);
           setAddForm(emptyForm);
         }}
         onCancel={() => setShowAddFull(false)}
@@ -306,9 +496,15 @@ export function CaptureMlccs() {
           setShowModFull(false);
           setModCensus("");
           setModNom("");
+          setCensusSuggestions([]);
+          setNomSuggestions([]);
           setModForm(emptyForm);
+          onBack?.();
         }}
-        onCancel={() => setShowModFull(false)}
+        onCancel={() => {
+          setShowModFull(false);
+          onBack?.();
+        }}
       />
     );
   }
@@ -320,14 +516,21 @@ export function CaptureMlccs() {
         (mode === "add" && showAddFull) || (mode === "modify" && showModFull),
       )}
       tabs={
-        <SwitchTabs<Mode>
-          tabs={[
-            { id: "add", label: "Add New Eqpt" },
-            { id: "modify", label: "Modify Census" },
-          ]}
-          value={mode}
-          onChange={(v) => setMode(v)}
-        />
+        seeded ? undefined : (
+          <SwitchTabs<Mode>
+            tabs={[
+              { id: "add", label: "Add New Eqpt" },
+              { id: "modify", label: "Modify Census" },
+            ]}
+            value={mode}
+            onChange={(v) => {
+              setMode(v);
+              setCosSuggestions([]);
+              setCensusSuggestions([]);
+              setNomSuggestions([]);
+            }}
+          />
+        )
       }
       footer={footer}
     >
@@ -339,16 +542,20 @@ export function CaptureMlccs() {
             fields={
               <>
                 <FormRow label="COS Section" required>
-                  <Input
+                  <SuggestInput
                     placeholder="Search..."
                     value={addCos}
-                    onChange={(e) => setAddCos(e.target.value)}
+                    disabled={busy}
+                    suggestions={cosSuggestions}
+                    onChange={setAddCos}
+                    onPick={(idx) => pickCosSuggestion(cosSuggestions[idx]!)}
                   />
                 </FormRow>
                 <FormRow label="Nomenclature" required>
                   <Input
                     placeholder="Enter Nomenclature"
                     value={addNom}
+                    disabled={busy}
                     onChange={(e) => setAddNom(e.target.value)}
                   />
                 </FormRow>
@@ -361,14 +568,16 @@ export function CaptureMlccs() {
                 </Button>
                 <Button
                   variant="secondary"
+                  disabled={busy}
                   onClick={() => {
                     setAddCos("");
                     setAddNom("");
+                    setCosSuggestions([]);
                   }}
                 >
                   Clear
                 </Button>
-                <Button variant="destructive" onClick={() => toast("Cancelled")}>
+                <Button variant="destructive" disabled={busy} onClick={() => toast("Cancelled")}>
                   Cancel
                 </Button>
               </>
@@ -382,17 +591,63 @@ export function CaptureMlccs() {
           fields={
             <>
               <FormRow label="Census No" required>
-                <Input
-                  placeholder="e.g. C900000"
+                <SuggestInput
+                  placeholder="Search..."
                   value={modCensus}
-                  onChange={(e) => setModCensus(e.target.value)}
+                  disabled={busy}
+                  suggestions={censusSuggestions.map((r) => r.census_no)}
+                  renderItem={(censusNo, idx) => {
+                    const row = censusSuggestions[idx];
+                    return (
+                      <span className="flex w-full items-center justify-between gap-2">
+                        <span>{censusNo}</span>
+                        {row?.nomenclature ? (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {row.nomenclature}
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  }}
+                  onChange={(v) => {
+                    setNomSuggestions([]);
+                    setModCensus(v);
+                    setModNom("");
+                  }}
+                  onPick={(idx) => {
+                    const row = censusSuggestions[idx];
+                    if (row) pickCensusSuggestion(row);
+                  }}
                 />
               </FormRow>
               <FormRow label="Nomenclature" required>
-                <Input
-                  placeholder="e.g. Nomenclature 1"
+                <SuggestInput
+                  placeholder="Search..."
                   value={modNom}
-                  onChange={(e) => setModNom(e.target.value)}
+                  disabled={busy}
+                  suggestions={nomSuggestions.map((r) => r.nomenclature ?? r.census_no)}
+                  renderItem={(nomenclature, idx) => {
+                    const row = nomSuggestions[idx];
+                    return (
+                      <span className="flex w-full items-center justify-between gap-2">
+                        <span className="truncate">{nomenclature}</span>
+                        {row?.census_no ? (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {row.census_no}
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  }}
+                  onChange={(v) => {
+                    setCensusSuggestions([]);
+                    setModNom(v);
+                    setModCensus("");
+                  }}
+                  onPick={(idx) => {
+                    const row = nomSuggestions[idx];
+                    if (row) pickNomSuggestion(row);
+                  }}
                 />
               </FormRow>
             </>
@@ -404,14 +659,17 @@ export function CaptureMlccs() {
               </Button>
               <Button
                 variant="secondary"
+                disabled={busy}
                 onClick={() => {
                   setModCensus("");
                   setModNom("");
+                  setCensusSuggestions([]);
+                  setNomSuggestions([]);
                 }}
               >
                 Clear
               </Button>
-              <Button variant="destructive" onClick={() => toast("Cancelled")}>
+              <Button variant="destructive" disabled={busy} onClick={() => toast("Cancelled")}>
                 Cancel
               </Button>
             </>
@@ -424,9 +682,111 @@ export function CaptureMlccs() {
 
 function MiniLookup({ fields, actions }: { fields: ReactNode; actions: ReactNode }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-4 pt-2">
+    <div className="mx-auto max-w-3xl space-y-4 overflow-visible pt-2">
       {fields}
       <div className="flex flex-wrap justify-center gap-2 pt-2">{actions}</div>
+    </div>
+  );
+}
+
+function SuggestInput({
+  value,
+  placeholder,
+  disabled,
+  suggestions,
+  renderItem,
+  onChange,
+  onPick,
+}: {
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: string[];
+  renderItem?: (s: string, idx: number) => ReactNode;
+  onChange: (v: string) => void;
+  onPick: (idx: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(
+    null,
+  );
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
+  return (
+    <div className="relative overflow-visible">
+      <Input
+        ref={inputRef}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          updateCoords();
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+        }}
+      />
+      {showList &&
+        createPortal(
+          <ul
+            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+            }}
+          >
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -599,6 +959,14 @@ function FullEqptForm({
             value={form.defCatalogueNo}
             onChange={(e) => upd("defCatalogueNo", e.target.value)}
             placeholder="Enter No..."
+          />
+        </FormRow>
+        <FormRow label="Material No">
+          <Input
+            value={form.materialNo}
+            onChange={(e) => upd("materialNo", e.target.value)}
+            placeholder="Enter Material No..."
+            maxLength={15}
           />
         </FormRow>
         <FormRow label="Brief Description" required>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -24,17 +26,21 @@ class ObsnSearchRequest(BaseModel):
 
 class ObsnRecord(BaseModel):
     id: str
+    unit_name: str | None = None
+    uploaded_doc: str | None = None
+    obsn_id: int | None = None
+    observation: str | None = None
+    obsn_date: datetime | None = None
+    date_of_completion: datetime | None = None
+    completion_by: str | None = None
+    miso_reply: str | None = None
+    # retained for filters / compatibility
     sus_no: str | None = None
     deo: str | None = None
     mth: str | None = None
     yr: str | None = None
     census_no: str | None = None
     obsn_status: str | None = None
-    type_of_hldg: str | None = None
-    type_of_eqpt: str | None = None
-    unit_remarks: str | None = None
-    obsn1: str | None = None
-    obsn2: str | None = None
 
 
 _MONTHS = {
@@ -51,6 +57,18 @@ _MONTHS = {
     "11": "Nov",
     "12": "Dec",
 }
+
+
+def _first(*values: str | None) -> str | None:
+    for v in values:
+        if v and str(v).strip():
+            return str(v).strip()
+    return None
+
+
+def _unit_name(row: ObsnDetail) -> str | None:
+    parts = [p for p in (row.sus_no, row.deo) if p and str(p).strip()]
+    return " / ".join(parts) if parts else None
 
 
 @router.post("/search", response_model=list[ObsnRecord])
@@ -86,17 +104,22 @@ def search_obsn(
     return [
         ObsnRecord(
             id=r.id,
+            unit_name=_unit_name(r),
+            uploaded_doc=r.unit_upload_document,
+            obsn_id=r.tr_id,
+            observation=_first(r.obsn1, r.obsn2, r.obsn3, r.obsn4, r.obsn5),
+            obsn_date=r.data_cr_date,
+            date_of_completion=r.data_chk_date or r.data_upd_date,
+            completion_by=_first(r.data_chk_by, r.data_upd_by),
+            miso_reply=_first(
+                r.obsn1_res, r.obsn2_res, r.obsn3_res, r.obsn4_res, r.obsn5_res
+            ),
             sus_no=r.sus_no,
             deo=r.deo,
             mth=r.mth,
             yr=r.yr,
             census_no=r.census_no,
             obsn_status=r.obsn_status,
-            type_of_hldg=r.type_of_hldg,
-            type_of_eqpt=r.type_of_eqpt,
-            unit_remarks=r.unit_remarks,
-            obsn1=r.obsn1,
-            obsn2=r.obsn2,
         )
         for r in rows
     ]

@@ -1,6 +1,5 @@
 """FastAPI dependencies for the MMS service.
 
-Wires the shared `core` primitives (database, principal) to this service.
 `db` is created once at startup in `main.py` and injected here.
 """
 
@@ -13,10 +12,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.auth.jwt import decode_access_token
+from app.auth.principal import Principal, Role
+from app.auth.rbac import AuthorizationError, require_roles
 from app.settings import MmsSettings, get_settings
-from core.auth.jwt import decode_access_token
-from core.auth.principal import Principal, Role
-from core.auth.rbac import AuthorizationError, require_roles
 
 _bearer = HTTPBearer(auto_error=False)
 

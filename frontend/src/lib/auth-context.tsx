@@ -16,6 +16,7 @@ import {
   type AuthRole,
   type AuthUser,
 } from "@/lib/auth";
+import { setCachedClientIp } from "@/lib/session-watermark";
 
 type LoginResponse = {
   access_token: string;
@@ -24,6 +25,7 @@ type LoginResponse = {
   display_name: string | null;
   role: string;
   unit_id: string | null;
+  client_ip?: string | null;
 };
 
 type AuthContextValue = {
@@ -60,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ username, password }),
       skipAuth: true,
     });
+    if (res.client_ip) setCachedClientIp(res.client_ip);
     const next = toUser(res);
     setSession(next);
     setUser(next);
@@ -67,6 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearSession();
+    try {
+      sessionStorage.removeItem("mms_client_ip");
+    } catch {
+      /* ignore */
+    }
     setUser(null);
   }, []);
 

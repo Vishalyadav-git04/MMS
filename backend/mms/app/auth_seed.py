@@ -8,9 +8,9 @@ from datetime import datetime
 from sqlalchemy import select
 
 from app.models import MmsUser
-from core.auth.jwt import hash_password
-from core.auth.principal import Role
-from core.utils.ids import new_id
+from app.auth.jwt import hash_password
+from app.auth.principal import Role
+from app.utils.ids import next_int_id
 
 logger = logging.getLogger("mms.auth")
 
@@ -37,15 +37,18 @@ def ensure_users_table(db) -> None:
     """Create MMS_USERS if missing, then seed default accounts when empty."""
     MmsUser.__table__.create(bind=db.engine, checkfirst=True)
     with db.session() as session:
+        last_id: int | None = None
         for spec in _SEED_USERS:
             existing = session.scalar(
                 select(MmsUser).where(MmsUser.username == spec["username"])
             )
             if existing is not None:
                 continue
+            next_id = next_int_id(session, MmsUser, start_after=last_id)
+            last_id = next_id
             session.add(
                 MmsUser(
-                    id=new_id(),
+                    id=str(next_id),
                     username=spec["username"],
                     display_name=spec["display_name"],
                     password_hash=hash_password(spec["password"]),

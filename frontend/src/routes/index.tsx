@@ -14,6 +14,7 @@ import { SubDomainMaster } from "@/components/ep/SubDomainMaster";
 import { GenEpCensus } from "@/components/ep/GenEpCensus";
 import { CaptureEpStores } from "@/components/ep/CaptureEpStores";
 import { SearchApproveEpStores } from "@/components/ep/SearchApproveEpStores";
+import { EpIutTransfer } from "@/components/ep/EpIutTransfer";
 import { DrrDirUpload } from "@/components/ro/DrrDirUpload";
 import { GenerateRo } from "@/components/ro/GenerateRo";
 import { SearchRo } from "@/components/ro/SearchRo";
@@ -23,20 +24,27 @@ import {
   DepotToDepotTransfer,
   UnitToDepotDeposit,
 } from "@/components/transfer/EqptTransferForms";
+import { AddNewEqpt } from "@/components/unit-holding/AddNewEqpt";
+import { ApproveNewEqpt } from "@/components/unit-holding/ApproveNewEqpt";
+import { UpdateEqptData } from "@/components/unit-holding/UpdateEqptData";
+import { AllIndiaHolding } from "@/components/reports/AllIndiaHolding";
+import { UnitWiseHoldingData } from "@/components/reports/UnitWiseHoldingData";
+import { WpnsAndEqptStatus } from "@/components/reports/WpnsAndEqptStatus";
+import { WpnAndEqptDetails } from "@/components/reports/WpnAndEqptDetails";
+import { WpnEqptStatusNodalDte } from "@/components/reports/WpnEqptStatusNodalDte";
 import { Toaster } from "@/components/ui/sonner";
+import { DashboardCharts } from "@/components/DashboardCharts";
 import { useAuth } from "@/lib/auth-context";
 import { isAdmin } from "@/lib/auth";
+import { api } from "@/lib/api";
 import {
   FileText,
   Link2,
   ClipboardList,
   Database,
   Search,
-  LayoutDashboard,
   Shield,
   HardDrive,
-  BarChart3,
-  Boxes,
   Layers,
   Network,
   Hash,
@@ -49,6 +57,13 @@ import {
   ArrowLeftRight,
   Warehouse,
   PackageCheck,
+  BadgeCheck,
+  RefreshCw,
+  Globe2,
+  Building2,
+  Crosshair,
+  ListChecks,
+  Share2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -83,6 +98,12 @@ const EP_TILES = [
   { id: "gen-ep-census", label: "Gen EP Census", icon: Hash, description: "Generate EP census numbers" },
   { id: "capture-ep-stores", label: "Capture EP Stores", icon: PackagePlus, description: "Capture EP store holdings" },
   { id: "search-approve-ep", label: "Search/Approve EP Stores", icon: ClipboardCheck, description: "Search and approve EP stores" },
+  {
+    id: "ep-iut",
+    label: "EP IUT (Inter Unit Transfer)",
+    icon: ArrowLeftRight,
+    description: "EP inter-unit transfer of registration numbers",
+  },
 ];
 
 const RO_TILES = [
@@ -116,25 +137,81 @@ const TRANSFER_TILES = [
   },
 ];
 
+const HOLDING_TILES = [
+  {
+    id: "add-new-eqpt",
+    label: "ADD NEW EQPT",
+    icon: PackagePlus,
+    description: "Capture details of new equipment",
+  },
+  {
+    id: "approve-new-eqpt",
+    label: "APPROVE NEW EQPT",
+    icon: BadgeCheck,
+    description: "Search and approve new equipment",
+  },
+  {
+    id: "update-eqpt-data",
+    label: "UPDATE EQPT DATA",
+    icon: RefreshCw,
+    description: "Update equipment serviceability status",
+  },
+];
+
+const REPORT_TILES = [
+  {
+    id: "all-india-holding",
+    label: "ALL INDIA HOLDING",
+    icon: Globe2,
+    description: "All India Holding report for WPNs and EQPT",
+  },
+  {
+    id: "unit-wise-holding-data",
+    label: "UNIT WISE HOLDING DATA",
+    icon: Building2,
+    description: "Unit-wise holding data and summary",
+  },
+  {
+    id: "wpns-and-eqpt-status",
+    label: "WPNS AND EQPT STATUS",
+    icon: Crosshair,
+    description: "Weapon and equipment status by unit",
+  },
+  {
+    id: "wpn-and-eqpt-details",
+    label: "WPN AND EQPT DETAILS",
+    icon: ListChecks,
+    description: "WPNs and EQPT details by Line Dte",
+  },
+  {
+    id: "wpn-eqpt-status-nodal-dte",
+    label: "WPN EQPT STATUS NODAL DTE",
+    icon: Share2,
+    description: "WPNs and EQPT details by Nodal Dte",
+  },
+];
+
 type MmsTile = (typeof MMS_TILES)[number]["id"];
 type EpTile = (typeof EP_TILES)[number]["id"];
 type RoTile = (typeof RO_TILES)[number]["id"];
 type MlccsTile = (typeof MLCCS_TILES)[number]["id"];
 type TransferTile = (typeof TRANSFER_TILES)[number]["id"];
+type HoldingTile = (typeof HOLDING_TILES)[number]["id"];
+type ReportTile = (typeof REPORT_TILES)[number]["id"];
 
 function Index() {
   const { isAuthenticated, user, logout } = useAuth();
   const admin = isAdmin(user);
 
-  const [active, setActive] = useState<ModuleId>("weapon");
-  const [activeSub, setActiveSub] = useState<WeaponSub | null>(
-    admin ? "mms-admin" : "mlccs",
-  );
+  const [active, setActive] = useState<ModuleId>("dashboard");
+  const [activeSub, setActiveSub] = useState<WeaponSub | null>(null);
   const [activeMms, setActiveMms] = useState<MmsTile | null>(null);
   const [activeEp, setActiveEp] = useState<EpTile | null>(null);
   const [activeRo, setActiveRo] = useState<RoTile | null>(null);
   const [activeMlccs, setActiveMlccs] = useState<MlccsTile | null>(null);
   const [activeTransfer, setActiveTransfer] = useState<TransferTile | null>(null);
+  const [activeHolding, setActiveHolding] = useState<HoldingTile | null>(null);
+  const [activeReport, setActiveReport] = useState<ReportTile | null>(null);
 
   useEffect(() => {
     const onUnauthorized = () => logout();
@@ -156,9 +233,10 @@ function Index() {
     setActiveRo(null);
     setActiveMlccs(null);
     setActiveTransfer(null);
+    setActiveHolding(null);
+    setActiveReport(null);
     if (m === "weapon") {
-      const fallback: WeaponSub = admin ? "mms-admin" : "mlccs";
-      const next = sub ?? fallback;
+      const next = sub ?? "mlccs";
       setActiveSub(next === "mms-admin" && !admin ? "mlccs" : next);
     } else {
       setActiveSub(null);
@@ -205,6 +283,14 @@ function Index() {
         const tile = TRANSFER_TILES.find((t) => t.id === activeTransfer);
         if (tile) breadcrumb.push(tile.label);
       }
+      if (activeSub === "unit-holding" && activeHolding) {
+        const tile = HOLDING_TILES.find((t) => t.id === activeHolding);
+        if (tile) breadcrumb.push(tile.label);
+      }
+      if (activeSub === "reports" && activeReport) {
+        const tile = REPORT_TILES.find((t) => t.id === activeReport);
+        if (tile) breadcrumb.push(tile.label);
+      }
     }
   }
 
@@ -213,6 +299,8 @@ function Index() {
   const activeRoTile = RO_TILES.find((t) => t.id === activeRo);
   const activeMlccsTile = MLCCS_TILES.find((t) => t.id === activeMlccs);
   const activeTransferTile = TRANSFER_TILES.find((t) => t.id === activeTransfer);
+  const activeHoldingTile = HOLDING_TILES.find((t) => t.id === activeHolding);
+  const activeReportTile = REPORT_TILES.find((t) => t.id === activeReport);
 
   return (
     <>
@@ -222,7 +310,9 @@ function Index() {
         onSelect={handleSelect}
         breadcrumb={breadcrumb}
       >
-        {active === "dashboard" && <DashboardScreen />}
+        {active === "dashboard" && (
+          <DashboardScreen admin={admin} onNavigate={handleSelect} />
+        )}
         {active === "it-asset" && (
           <PlaceholderScreen
             icon={HardDrive}
@@ -280,6 +370,7 @@ function Index() {
             {activeEp === "gen-ep-census" && <GenEpCensus />}
             {activeEp === "capture-ep-stores" && <CaptureEpStores />}
             {activeEp === "search-approve-ep" && <SearchApproveEpStores />}
+            {activeEp === "ep-iut" && <EpIutTransfer />}
           </FormScreen>
         )}
         {active === "weapon" && activeSub === "generate-ro" && !activeRo && (
@@ -352,27 +443,68 @@ function Index() {
             {activeTransfer === "unit-to-depot" && <UnitToDepotDeposit />}
           </FormScreen>
         )}
+        {active === "weapon" && activeSub === "unit-holding" && !activeHolding && (
+          <div className="space-y-3">
+            <SectionHeading
+              title="Unit Holding"
+              subtitle="Select a sub-module to begin."
+            />
+            <SubModuleTiles
+              tiles={HOLDING_TILES}
+              active=""
+              onSelect={(id) => setActiveHolding(id as HoldingTile)}
+            />
+          </div>
+        )}
+        {active === "weapon" && activeSub === "unit-holding" && activeHolding && (
+          <FormScreen
+            section="Unit Holding"
+            title={activeHoldingTile?.label ?? ""}
+            onBack={() => setActiveHolding(null)}
+          >
+            {activeHolding === "add-new-eqpt" && <AddNewEqpt />}
+            {activeHolding === "approve-new-eqpt" && <ApproveNewEqpt />}
+            {activeHolding === "update-eqpt-data" && <UpdateEqptData />}
+          </FormScreen>
+        )}
+        {active === "weapon" && activeSub === "reports" && !activeReport && (
+          <div className="space-y-3">
+            <SectionHeading
+              title="Reports"
+              subtitle="Select a sub-module to begin."
+            />
+            <SubModuleTiles
+              tiles={REPORT_TILES}
+              active=""
+              onSelect={(id) => setActiveReport(id as ReportTile)}
+            />
+          </div>
+        )}
+        {active === "weapon" && activeSub === "reports" && activeReport && (
+          <FormScreen
+            section="Reports"
+            title={activeReportTile?.label ?? ""}
+            onBack={() => setActiveReport(null)}
+          >
+            {activeReport === "all-india-holding" && <AllIndiaHolding />}
+            {activeReport === "unit-wise-holding-data" && <UnitWiseHoldingData />}
+            {activeReport === "wpns-and-eqpt-status" && <WpnsAndEqptStatus />}
+            {activeReport === "wpn-and-eqpt-details" && <WpnAndEqptDetails />}
+            {activeReport === "wpn-eqpt-status-nodal-dte" && <WpnEqptStatusNodalDte />}
+          </FormScreen>
+        )}
         {active === "weapon" &&
           activeSub &&
           activeSub !== "mms-admin" &&
           activeSub !== "ep-stores" &&
           activeSub !== "generate-ro" &&
           activeSub !== "mlccs" &&
-          activeSub !== "eqpt-transfer" && (
+          activeSub !== "eqpt-transfer" &&
+          activeSub !== "unit-holding" &&
+          activeSub !== "reports" && (
           <PlaceholderScreen
-            icon={
-              activeSub === "unit-holding"
-                ? Boxes
-                : activeSub === "reports"
-                  ? BarChart3
-                  : Shield
-            }
-            title={
-              {
-                "unit-holding": "Unit Holding",
-                "reports": "Reports",
-              }[activeSub]
-            }
+            icon={Shield}
+            title={activeSub}
             description="This module will follow the same tile-based sub-module pattern as MMS Admin."
           />
         )}
@@ -395,37 +527,186 @@ function SectionHeading({ title, subtitle }: { title: string; subtitle?: string 
   );
 }
 
-function DashboardScreen() {
-  const stats = [
-    { label: "Active Units", value: "1,284", color: "bg-primary" },
-    { label: "Census Records", value: "48,921", color: "bg-accent" },
-    { label: "Open Observations", value: "37", color: "bg-destructive" },
-    { label: "Pending RO", value: "12", color: "bg-success" },
+interface DashboardCounts {
+  mlccs: { unique_census_no: number; prf_group: number };
+  ep: { domain: number; sub_domain: number; regn_no: number };
+  mms: { ue: number; uh: number };
+}
+
+const DUMMY_MLCCS = { unique_census_no: 1284, prf_group: 86 };
+const DUMMY_MMS = { ue: 4520, uh: 18976 };
+
+function formatCount(n: number | undefined, loading: boolean): string {
+  if (loading) return "—";
+  if (n == null) return "0";
+  return n.toLocaleString("en-IN");
+}
+
+function DashboardScreen({
+  admin,
+  onNavigate,
+}: {
+  admin: boolean;
+  onNavigate: (m: ModuleId, sub?: WeaponSub) => void;
+}) {
+  const [epCounts, setEpCounts] = useState<DashboardCounts["ep"]>({
+    domain: 0,
+    sub_domain: 0,
+    regn_no: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    async function loadEpCounts() {
+      try {
+        const data = await api<DashboardCounts>("/dashboard/counts");
+        if (!cancelled) {
+          setEpCounts(data.ep);
+        }
+        return;
+      } catch {
+        // Fall back to existing EP list endpoints if dashboard route is unavailable
+      }
+      try {
+        const [domains, subDomains] = await Promise.all([
+          api<{ id: string }[]>("/ep/domain-master/"),
+          api<{ id: string }[]>("/ep/sub-domain-master/search"),
+        ]);
+        if (!cancelled) {
+          setEpCounts({
+            domain: domains.length,
+            sub_domain: subDomains.length,
+            regn_no: 0,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setEpCounts({ domain: 0, sub_domain: 0, regn_no: 0 });
+        }
+      }
+    }
+
+    void loadEpCounts().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sections = [
+    {
+      id: "mlccs" as const,
+      title: "MLCCS",
+      subtitle: "Master List of Census of Controlled Stores",
+      icon: Eye,
+      stats: [
+        { label: "Unique Census No.", value: DUMMY_MLCCS.unique_census_no },
+        { label: "PRF Group", value: DUMMY_MLCCS.prf_group },
+      ],
+      navigate: true as const,
+      loadingStats: false,
+    },
+    {
+      id: "ep-stores" as const,
+      title: "EP",
+      subtitle: "Equipment Personal / EP Stores",
+      icon: PackagePlus,
+      stats: [
+        { label: "Total Domain", value: epCounts.domain },
+        { label: "Sub Domain", value: epCounts.sub_domain },
+        { label: "Total Regn No.", value: epCounts.regn_no },
+      ],
+      navigate: true as const,
+      loadingStats: loading,
+    },
+    {
+      id: "mms-admin" as const,
+      title: "MMS",
+      subtitle: "UE and UH totals",
+      icon: Database,
+      stats: [
+        { label: "Total UE", value: DUMMY_MMS.ue },
+        { label: "Total UH", value: DUMMY_MMS.uh },
+      ],
+      navigate: admin,
+      loadingStats: false,
+    },
   ];
+
   return (
-    <div className="space-y-6">
-      <SectionHeading title="Dashboard" subtitle="MISO v5.0 · Operational overview" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <div className={`h-1 w-10 rounded-full ${s.color} mb-3`} />
-            <div className="text-2xl font-bold text-foreground">{s.value}</div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">
-              {s.label}
+    <div className="space-y-5">
+      <SectionHeading title="Dashboard" subtitle="MLCCS · EP · MMS overview" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        {sections.map((section) => {
+          const Icon = section.icon;
+          return (
+            <div
+              key={section.id}
+              role={section.navigate ? "button" : undefined}
+              tabIndex={section.navigate ? 0 : undefined}
+              onClick={
+                section.navigate
+                  ? () => onNavigate("weapon", section.id)
+                  : undefined
+              }
+              onKeyDown={
+                section.navigate
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onNavigate("weapon", section.id);
+                      }
+                    }
+                  : undefined
+              }
+              className={
+                section.navigate
+                  ? "group flex cursor-pointer flex-col rounded-lg border border-border bg-card text-left shadow-sm transition-all hover:border-accent/60 hover:shadow-md"
+                  : "flex flex-col rounded-lg border border-border bg-card text-left shadow-sm"
+              }
+            >
+              <div className="flex items-center gap-3 border-b border-border bg-primary px-4 py-3 text-primary-foreground">
+                <div className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-semibold tracking-tight">{section.title}</div>
+                  <div className="text-[13px] leading-snug text-primary-foreground/70">
+                    {section.subtitle}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col gap-3 p-4">
+                {section.stats.map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="flex items-end justify-between gap-3 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                  >
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      {stat.label}
+                    </span>
+                    <span className="text-2xl font-bold tabular-nums text-primary">
+                      {formatCount(stat.value, section.loadingStats)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <LayoutDashboard className="h-5 w-5 text-accent" />
-          <h3 className="text-base font-semibold text-primary">Welcome back, VISHAL</h3>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Use the sidebar to navigate. Weapon → MMS Admin is preconfigured with the tile-based
-          sub-module switcher.
-        </p>
-      </div>
+
+      <DashboardCharts
+        mlccs={DUMMY_MLCCS}
+        ep={epCounts}
+        mms={DUMMY_MMS}
+        loadingEp={loading}
+      />
     </div>
   );
 }

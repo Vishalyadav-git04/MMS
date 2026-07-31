@@ -47,7 +47,7 @@ export function SubModuleTiles({ tiles, active, onSelect }: Props) {
               {t.description && (
                 <div
                   className={cn(
-                    "mt-0.5 text-[11px] leading-snug",
+                    "mt-0.5 text-[13px] leading-snug",
                     isActive ? "text-primary-foreground/70" : "text-muted-foreground",
                   )}
                 >

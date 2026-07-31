@@ -18,7 +18,8 @@ from app.models import (
     EpSubDomain,
     EpTransaction,
 )
-from core.auth.principal import Principal
+from app.auth.principal import Principal
+from app.utils.ids import next_int_id
 
 router = APIRouter(
     prefix="/ep/capture",
@@ -136,8 +137,7 @@ def search_holding_units(
 
 
 def _next_txn_id(session: Session) -> int:
-    ids = session.scalars(select(EpTransaction.id)).all()
-    return max((int(i) for i in ids if i is not None and str(i).isdigit()), default=0) + 1
+    return next_int_id(session, EpTransaction)
 
 
 @router.post("/", response_model=CaptureEpOut)

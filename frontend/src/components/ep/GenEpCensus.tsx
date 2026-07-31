@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { format, parse } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -10,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -97,7 +102,7 @@ export function GenEpCensus() {
       void api<SubDomainSuggestion[]>(
         `/ep/sub-domain-master/search?sub_domain_name=${encodeURIComponent(q)}`,
       )
-        .then((rows) => setSuggestions(rows.slice(0, 10)))
+        .then((rows) => setSuggestions(rows.slice(0, 50)))
         .catch(() => setSuggestions([]));
     }, 250);
     return () => window.clearTimeout(handle);
@@ -232,49 +237,51 @@ export function GenEpCensus() {
         </>
       }
     >
-      <div className="max-w-3xl mx-auto relative">
+      <div className="max-w-3xl mx-auto">
         <FormRow label="Sub Domain Name" required>
-          <Input
-            placeholder="Search..."
-            value={query}
-            disabled={busy}
-            autoComplete="off"
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelected(null);
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => {
-              blurTimer.current = window.setTimeout(
-                () => setShowSuggestions(false),
-                150,
-              );
-            }}
-          />
+          <div className="relative">
+            <Input
+              placeholder="Search..."
+              value={query}
+              disabled={busy}
+              autoComplete="off"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelected(null);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => {
+                blurTimer.current = window.setTimeout(
+                  () => setShowSuggestions(false),
+                  150,
+                );
+              }}
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md">
+                {suggestions.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                        pickSuggestion(row);
+                      }}
+                    >
+                      <span>{row.sub_domain_name}</span>
+                      {row.eqpt_cat ? (
+                        <span className="text-xs text-muted-foreground">{row.eqpt_cat}</span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </FormRow>
-        {showSuggestions && suggestions.length > 0 && (
-          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
-            {suggestions.map((row) => (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                    pickSuggestion(row);
-                  }}
-                >
-                  <span>{row.sub_domain_name}</span>
-                  {row.eqpt_cat ? (
-                    <span className="text-xs text-muted-foreground">{row.eqpt_cat}</span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     </FormPanel>
   );
@@ -336,11 +343,10 @@ function MlccsEpForm({
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Date" required>
-            <Input
-              type="date"
+          <FormRow label="Date" required className="sm:grid-cols-[52px_minmax(0,1fr)]">
+            <DatePickerField
               value={form.date}
-              onChange={(e) => upd("date", e.target.value)}
+              onChange={(v) => upd("date", v)}
               disabled={busy}
             />
           </FormRow>
@@ -492,6 +498,60 @@ function MlccsEpForm({
         </FormGrid>
       </div>
     </FormPanel>
+  );
+}
+
+function DatePickerField({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected =
+    value.trim() !== ""
+      ? parse(value, "dd-MM-yyyy", new Date())
+      : undefined;
+  const validSelected =
+    selected && !Number.isNaN(selected.getTime()) ? selected : undefined;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          className={cn(
+            "h-9 w-full min-w-0 justify-start overflow-hidden px-3 text-left font-normal shadow-sm",
+            !validSelected && "text-muted-foreground",
+          )}
+        >
+          <CalendarIcon className="mr-2 size-4 shrink-0 opacity-70" />
+          <span className="truncate">
+            {validSelected ? format(validSelected, "dd-MM-yyyy") : "DD-MM-YYYY"}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          captionLayout="dropdown"
+          selected={validSelected}
+          defaultMonth={validSelected}
+          startMonth={new Date(1990, 0)}
+          endMonth={new Date(new Date().getFullYear() + 5, 11)}
+          onSelect={(day) => {
+            if (!day) return;
+            onChange(format(day, "dd-MM-yyyy"));
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

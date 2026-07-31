@@ -10,8 +10,11 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+venv-*/
 backend/**/.venv/
 backend/**/*.egg-info/
+backend/venv*/
+backend/offline_packages/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
 from app.models import EpHoldingUnit, EpTransaction
-from core.auth.principal import Principal
+from app.auth.principal import Principal
 
 router = APIRouter(
     prefix="/ep/search-approve",
