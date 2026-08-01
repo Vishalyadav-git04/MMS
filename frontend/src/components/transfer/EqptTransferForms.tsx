@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -13,6 +14,7 @@ import {
 import { ArrowRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 
 const UNIT_OPTIONS = [
   "1941005A - 13 PUNJAB",
@@ -247,6 +249,9 @@ function TransferForm({
   };
 
   const handleGetRegn = () => {
+    if (pageHasInvalidDateInputs()) {
+      return toast.error("Please enter a valid date (dd/mm/yyyy)");
+    }
     if (
       !parentUnit ||
       !parentHolding ||
@@ -411,11 +416,7 @@ function TransferForm({
                 />
               </FormRow>
               <FormRow label="RV Date" required>
-                <Input
-                  type="date"
-                  value={rvDate}
-                  onChange={(e) => setRvDate(e.target.value)}
-                />
+                <DateInput value={rvDate} onChange={setRvDate} />
               </FormRow>
               <FormRow label="Upload RV" required className="sm:col-span-2">
                 <Input type="file" className="h-auto py-0.5" />

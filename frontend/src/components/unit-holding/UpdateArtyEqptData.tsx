@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ import {
 import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 
 const UNIT_OPTIONS = [
   "1970501E - 14 FIELD REGT (ARTY)",
@@ -183,34 +185,38 @@ function OhDetailsForm({
       </FormRow>
       <FormGrid cols={2}>
         <FormRow label="OH Due Dt" className={pairRow}>
-          <Input type="date" value={ohDueDt} onChange={(e) => setOhDueDt(e.target.value)} />
+          <DateInput value={ohDueDt} onChange={setOhDueDt} />
         </FormRow>
         <FormRow label="OH Done Dt" className={pairRow}>
-          <Input type="date" value={ohDoneDt} onChange={(e) => setOhDoneDt(e.target.value)} />
+          <DateInput value={ohDoneDt} onChange={setOhDoneDt} />
         </FormRow>
         <FormRow label="WKSP Name" className={pairRow}>
           <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
         </FormRow>
         <FormRow label="WKSP in Dt" className={pairRow}>
-          <Input type="date" value={wkspInDt} onChange={(e) => setWkspInDt(e.target.value)} />
+          <DateInput value={wkspInDt} onChange={setWkspInDt} />
         </FormRow>
         <FormRow label="Dispatch dt" className={pairRow}>
-          <Input type="date" value={dispatchDt} onChange={(e) => setDispatchDt(e.target.value)} />
+          <DateInput value={dispatchDt} onChange={setDispatchDt} />
         </FormRow>
         <FormRow label="BOH Compl Dt" className={pairRow}>
-          <Input type="date" value={bohComplDt} onChange={(e) => setBohComplDt(e.target.value)} />
+          <DateInput value={bohComplDt} onChange={setBohComplDt} />
         </FormRow>
         <FormRow label="Gun Recd Dt" className={pairRow}>
-          <Input type="date" value={gunRecdDt} onChange={(e) => setGunRecdDt(e.target.value)} />
+          <DateInput value={gunRecdDt} onChange={setGunRecdDt} />
         </FormRow>
         <FormRow label="Dt of Intro" className={pairRow}>
-          <Input type="date" value={dtOfIntro} onChange={(e) => setDtOfIntro(e.target.value)} />
+          <DateInput value={dtOfIntro} onChange={setDtOfIntro} />
         </FormRow>
       </FormGrid>
       <DialogActions
         onClose={onClose}
         updateLabel="Update OH Data"
         onUpdate={() => {
+          if (pageHasInvalidDateInputs()) {
+            toast.error("Please enter a valid date (dd/mm/yyyy)");
+            return;
+          }
           if (!ohType) {
             toast.error("OH Type is required");
             return;
@@ -258,17 +264,13 @@ function BarrelDetailsForm({
           />
         </FormRow>
         <FormRow label="Op Clearance Dt" className={pairRow}>
-          <Input
-            type="date"
-            value={opClearanceDt}
-            onChange={(e) => setOpClearanceDt(e.target.value)}
-          />
+          <DateInput value={opClearanceDt} onChange={setOpClearanceDt} />
         </FormRow>
         <FormRow label="WKSP Name" className={pairRow}>
           <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
         </FormRow>
         <FormRow label="WKSP In Dt" className={pairRow}>
-          <Input type="date" value={wkspInDt} onChange={(e) => setWkspInDt(e.target.value)} />
+          <DateInput value={wkspInDt} onChange={setWkspInDt} />
         </FormRow>
         <FormRow label="CoFR Vertical (mm)" className={pairRow}>
           <Input
@@ -302,17 +304,17 @@ function BarrelDetailsForm({
           <Input value={totalRdsFired} onChange={(e) => setTotalRdsFired(e.target.value)} />
         </FormRow>
         <FormRow label="Last Fired Dt" required className={pairRow}>
-          <Input
-            type="date"
-            value={lastFiredDt}
-            onChange={(e) => setLastFiredDt(e.target.value)}
-          />
+          <DateInput value={lastFiredDt} onChange={setLastFiredDt} />
         </FormRow>
       </FormGrid>
       <DialogActions
         onClose={onClose}
         updateLabel="Update Barrel Data"
         onUpdate={() => {
+          if (pageHasInvalidDateInputs()) {
+            toast.error("Please enter a valid date (dd/mm/yyyy)");
+            return;
+          }
           if (!barrelRegnNo || !qtrOfLife || !efc || !totalRdsFired || !lastFiredDt) {
             toast.error("Please fill all required fields");
             return;
@@ -348,6 +350,10 @@ function StripInspectionForm({
   const [rows, setRows] = useState<StripRow[]>([]);
 
   const handleAdd = () => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     if (!recoilSysRegnNo) {
       toast.error("Recoil Sys Regn No is required");
       return;
@@ -404,19 +410,17 @@ function StripInspectionForm({
                 />
               </TableCell>
               <TableCell className="p-1">
-                <Input
-                  type="date"
-                  className="h-7"
+                <DateInput
+                  className="h-7 min-w-[9rem]"
                   value={dtOfInsp}
-                  onChange={(e) => setDtOfInsp(e.target.value)}
+                  onChange={setDtOfInsp}
                 />
               </TableCell>
               <TableCell className="p-1">
-                <Input
-                  type="date"
-                  className="h-7"
+                <DateInput
+                  className="h-7 min-w-[9rem]"
                   value={dtOfNextInsp}
-                  onChange={(e) => setDtOfNextInsp(e.target.value)}
+                  onChange={setDtOfNextInsp}
                 />
               </TableCell>
               <TableCell className="p-1">

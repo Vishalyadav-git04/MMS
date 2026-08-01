@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import {
   Select,
   SelectContent,
@@ -454,6 +456,10 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
   };
 
   const handleSave = async (form: FullForm, isUpdate: boolean) => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     setBusy(true);
     try {
       await api<MlccsRecord>("/admin/capture-mlccs-details/", {
@@ -834,7 +840,7 @@ function FullEqptForm({
           />
         </FormRow>
         <FormRow label="Date" required>
-          <Input type="date" value={form.date} onChange={(e) => upd("date", e.target.value)} />
+          <DateInput value={form.date} onChange={(v) => upd("date", v)} />
         </FormRow>
         <FormRow label="PRF Group" required>
           <SelectField

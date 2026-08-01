@@ -213,7 +213,7 @@ def submit_capture(
 
     now = datetime.now()
     auth_dt = datetime.combine(body.auth_date, datetime.min.time())
-    iv_date_str = body.iv_date.isoformat()
+    iv_dt = datetime.combine(body.iv_date, datetime.min.time())
 
     lines = body.equipment
     if body.regn_no_avl == "yes":
@@ -244,7 +244,7 @@ def submit_capture(
             to_sus_no=body.sus_no.strip()[:255],
             iv_sus_no=None,
             iv_no=body.iv_no.strip()[:255],
-            iv_date=iv_date_str,
+            iv_date=iv_dt,
             qty=1 if body.regn_no_avl == "yes" else body.qty,
             eqpt_regn_no=(
                 (line.regd_no or "").strip()[:255] or None

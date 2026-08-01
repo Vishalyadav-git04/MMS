@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, ApiError } from "@/lib/api";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 interface HoldingUnit {
@@ -151,6 +153,10 @@ export function SearchApproveEpStores() {
   };
 
   const handleSearch = async () => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     if (!form.susNo.trim() || !form.unitName.trim() || !form.status) {
       toast.error("SUS No, Unit's Name and Status are required");
       return;
@@ -292,19 +298,17 @@ export function SearchApproveEpStores() {
               />
             </FormRow>
             <FormRow label="From">
-              <Input
-                type="date"
+              <DateInput
                 value={form.from}
                 disabled={busy}
-                onChange={(e) => upd("from", e.target.value)}
+                onChange={(v) => upd("from", v)}
               />
             </FormRow>
             <FormRow label="To">
-              <Input
-                type="date"
+              <DateInput
                 value={form.to}
                 disabled={busy}
-                onChange={(e) => upd("to", e.target.value)}
+                onChange={(v) => upd("to", v)}
               />
             </FormRow>
             <FormRow label="Status" required>

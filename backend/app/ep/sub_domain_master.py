@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -103,12 +105,14 @@ def create_sub_domain(
         or 0
     ) + 1
 
+    now = datetime.now()
     row = EpSubDomain(
         id=str(next_id),
         equipment_domain_id=domain_id,
         sub_domain_id=next_id,
         sub_domain_name=name,
         created_by=principal.username,
+        created_date=now,
     )
     session.add(row)
     session.flush()

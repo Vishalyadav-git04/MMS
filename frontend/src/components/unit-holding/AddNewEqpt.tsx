@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 const DEPOT_OPTIONS = [
@@ -151,6 +153,10 @@ export function AddNewEqpt() {
   };
 
   const handleAddItems = () => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     if (
       !form.ivNo.trim() ||
       !form.ivDate ||
@@ -213,11 +219,7 @@ export function AddNewEqpt() {
             />
           </FormRow>
           <FormRow label="IV Date" required>
-            <Input
-              type="date"
-              value={form.ivDate}
-              onChange={(e) => upd("ivDate", e.target.value)}
-            />
+            <DateInput value={form.ivDate} onChange={(v) => upd("ivDate", v)} />
           </FormRow>
           <FormRow label="Issuing Depot" required className="sm:col-span-2">
             <SelectField

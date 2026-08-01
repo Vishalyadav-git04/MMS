@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MonthInput } from "@/components/ui/date-input";
 import { toast } from "sonner";
 import {
   ARMS,
@@ -85,7 +86,7 @@ export function UnitWiseHoldingData() {
             />
           </FormRow>
           <FormRow label="Month" className="sm:grid-cols-[80px_minmax(0,1fr)]">
-            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            <MonthInput value={month} onChange={setMonth} />
           </FormRow>
         </FormGrid>
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -10,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 const emptyForm = {
@@ -46,6 +48,9 @@ export function SearchRo() {
           </Button>
           <Button
             onClick={() => {
+              if (pageHasInvalidDateInputs()) {
+                return toast.error("Please enter a valid date (dd/mm/yyyy)");
+              }
               if (!form.from || !form.status) {
                 return toast.error("From date and Status are required");
               }
@@ -122,14 +127,10 @@ export function SearchRo() {
         </FormRow>
         <div />
         <FormRow label="From" required>
-          <Input
-            type="date"
-            value={form.from}
-            onChange={(e) => upd("from", e.target.value)}
-          />
+          <DateInput value={form.from} onChange={(v) => upd("from", v)} />
         </FormRow>
         <FormRow label="To">
-          <Input type="date" value={form.to} onChange={(e) => upd("to", e.target.value)} />
+          <DateInput value={form.to} onChange={(v) => upd("to", v)} />
         </FormRow>
         <FormRow label="Status" required>
           <Select value={form.status} onValueChange={(v) => upd("status", v)}>

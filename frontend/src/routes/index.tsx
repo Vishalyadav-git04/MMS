@@ -254,11 +254,13 @@ function Index() {
     return <LoginScreen />;
   }
 
-  const breadcrumb: string[] = ["Home"];
-  if (active === "dashboard") breadcrumb.push("Dashboard");
-  if (active === "it-asset") breadcrumb.push("IT Asset");
+  const breadcrumb: { label: string; onClick?: () => void }[] = [
+    { label: "Home", onClick: () => handleSelect("dashboard") },
+  ];
+  if (active === "dashboard") breadcrumb.push({ label: "Dashboard" });
+  if (active === "it-asset") breadcrumb.push({ label: "IT Asset" });
   if (active === "weapon") {
-    breadcrumb.push("Weapon");
+    breadcrumb.push({ label: "Weapon", onClick: () => handleSelect("weapon") });
     if (activeSub) {
       const label = {
         "mlccs": "MLCCS",
@@ -269,34 +271,45 @@ function Index() {
         "generate-ro": "Generate RO",
         "eqpt-transfer": "EQPT Transfer/Deposit",
       }[activeSub];
-      breadcrumb.push(label);
+      const hasTile =
+        (activeSub === "mms-admin" && activeMms) ||
+        (activeSub === "ep-stores" && activeEp) ||
+        (activeSub === "generate-ro" && activeRo) ||
+        (activeSub === "mlccs" && activeMlccs) ||
+        (activeSub === "eqpt-transfer" && activeTransfer) ||
+        (activeSub === "unit-holding" && activeHolding) ||
+        (activeSub === "reports" && activeReport);
+      breadcrumb.push({
+        label,
+        onClick: hasTile ? () => handleSelect("weapon", activeSub) : undefined,
+      });
       if (activeSub === "mms-admin" && activeMms) {
         const tile = MMS_TILES.find((t) => t.id === activeMms);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "ep-stores" && activeEp) {
         const tile = EP_TILES.find((t) => t.id === activeEp);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "generate-ro" && activeRo) {
         const tile = RO_TILES.find((t) => t.id === activeRo);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "mlccs" && activeMlccs) {
         const tile = MLCCS_TILES.find((t) => t.id === activeMlccs);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "eqpt-transfer" && activeTransfer) {
         const tile = TRANSFER_TILES.find((t) => t.id === activeTransfer);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "unit-holding" && activeHolding) {
         const tile = HOLDING_TILES.find((t) => t.id === activeHolding);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
       if (activeSub === "reports" && activeReport) {
         const tile = REPORT_TILES.find((t) => t.id === activeReport);
-        if (tile) breadcrumb.push(tile.label);
+        if (tile) breadcrumb.push({ label: tile.label });
       }
     }
   }

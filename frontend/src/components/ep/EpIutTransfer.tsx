@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowRight, Search } from "lucide-react";
 import { api } from "@/lib/api";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -221,6 +223,9 @@ export function EpIutTransfer() {
   };
 
   const handleGetRegn = () => {
+    if (pageHasInvalidDateInputs()) {
+      return toast.error("Please enter a valid date (dd/mm/yyyy)");
+    }
     if (!parentUnit || !domainId || !subDomainId || !rvNo || !rvDate || !receivingUnit) {
       return toast.error("Please fill all required fields");
     }
@@ -389,11 +394,7 @@ export function EpIutTransfer() {
             />
           </FormRow>
           <FormRow label="RV Date" required>
-            <Input
-              type="date"
-              value={rvDate}
-              onChange={(e) => setRvDate(e.target.value)}
-            />
+            <DateInput value={rvDate} onChange={setRvDate} />
           </FormRow>
           <FormRow label="Upload RV" required className="sm:col-span-2">
             <Input type="file" className="h-auto py-0.5" />

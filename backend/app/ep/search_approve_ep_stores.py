@@ -66,6 +66,7 @@ class ApproveEpOut(BaseModel):
 def _to_out(row: EpTransaction, unit_name: str | None) -> EpTxnOut:
     status = (row.op_status or "").upper()
     auth = row.auth_date
+    iv = row.iv_date
     return EpTxnOut(
         id=row.id,
         sus_no=row.to_sus_no,
@@ -76,7 +77,7 @@ def _to_out(row: EpTransaction, unit_name: str | None) -> EpTxnOut:
         auth_letter_no=row.auth_letter_no,
         auth_date=auth.date().isoformat() if isinstance(auth, datetime) else None,
         iv_no=row.iv_no,
-        iv_date=row.iv_date,
+        iv_date=iv.date().isoformat() if isinstance(iv, datetime) else None,
         qty=row.qty,
         eqpt_regn_no=row.eqpt_regn_no,
         service_status=row.service_status,

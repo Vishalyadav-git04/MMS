@@ -172,6 +172,10 @@
     font-size: 0.8125rem;
     line-height: 1.2;
   }
+  /* Room for the calendar icon flush at the right corner */
+  .compact-form input[data-date-input] {
+    padding-right: 1.85rem;
+  }
   .compact-form input[type="file"] {
     height: auto;
     min-height: 1.65rem;
@@ -191,7 +195,7 @@
     font-size: 0.8125rem;
     line-height: 1.15;
   }
-  .compact-form button:not([role="radio"]) {
+  .compact-form button:not([role="radio"]):not([data-date-calendar]) {
     height: 1.75rem;
     min-height: 1.75rem;
     padding-left: 0.6rem;

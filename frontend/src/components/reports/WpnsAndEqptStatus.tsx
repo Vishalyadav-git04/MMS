@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MonthInput } from "@/components/ui/date-input";
 import { toast } from "sonner";
 import {
   ARMS,
@@ -99,7 +100,7 @@ export function WpnsAndEqptStatus() {
             />
           </FormRow>
           <FormRow label="Period" className="sm:grid-cols-[80px_minmax(0,1fr)]">
-            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
+            <MonthInput value={period} onChange={setPeriod} />
           </FormRow>
         </FormGrid>
 

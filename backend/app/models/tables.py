@@ -63,12 +63,7 @@ class MlccsEquipmentMaster(Base):
 
 
 class EpDomainMaster(Base):
-    """MMS_EP_DOMAIN_MASTER — EQPT category domains for EP Stores.
-
-    CREATED_DATE / MODIFIED_DATE are TIMESTAMP WITH TIME ZONE and are omitted
-    here — oracledb thin mode raises DPY-3022 on named time zones. DB defaults
-    still apply on INSERT for unmapped columns.
-    """
+    """MMS_EP_DOMAIN_MASTER — EQPT category domains for EP Stores."""
 
     __tablename__ = "MMS_EP_DOMAIN_MASTER"
 
@@ -76,14 +71,13 @@ class EpDomainMaster(Base):
     domain_id: Mapped[int] = mapped_column("DOMAIN_ID", Integer, nullable=False)
     eqpt_cat: Mapped[str] = mapped_column("EQPT_CAT", String(255), unique=True, nullable=False)
     created_by: Mapped[str | None] = mapped_column("CREATED_BY", String(255))
+    created_date: Mapped[datetime | None] = mapped_column("CREATED_DATE", DateTime)
     modified_by: Mapped[str | None] = mapped_column("MODIFIED_BY", String(255))
+    modified_date: Mapped[datetime | None] = mapped_column("MODIFIED_DATE", DateTime)
 
 
 class EpSubDomain(Base):
-    """MMS_EP_SUB_DOMAIN — sub-domains under an EQPT domain.
-
-    Timestamp columns omitted for oracledb thin-mode DPY-3022 compatibility.
-    """
+    """MMS_EP_SUB_DOMAIN — sub-domains under an EQPT domain."""
 
     __tablename__ = "MMS_EP_SUB_DOMAIN"
 
@@ -96,7 +90,9 @@ class EpSubDomain(Base):
         "SUB_DOMAIN_NAME", String(4000), unique=True, nullable=False
     )
     created_by: Mapped[str | None] = mapped_column("CREATED_BY", String(255))
+    created_date: Mapped[datetime | None] = mapped_column("CREATED_DATE", DateTime)
     modified_by: Mapped[str | None] = mapped_column("MODIFIED_BY", String(255))
+    modified_date: Mapped[datetime | None] = mapped_column("MODIFIED_DATE", DateTime)
 
 
 class EpMstr(Base):
@@ -183,7 +179,7 @@ class EpTransaction(Base):
     from_sus_no: Mapped[str | None] = mapped_column("FROM_SUS_NO", String(255))
     from_tr_date: Mapped[datetime | None] = mapped_column("FROM_TR_DATE", DateTime)
     issued_from: Mapped[str | None] = mapped_column("ISSUED_FROM", String(255))
-    iv_date: Mapped[str | None] = mapped_column("IV_DATE", String(255))
+    iv_date: Mapped[datetime | None] = mapped_column("IV_DATE", DateTime)
     iv_no: Mapped[str | None] = mapped_column("IV_NO", String(255))
     iv_sus_no: Mapped[str | None] = mapped_column("IV_SUS_NO", String(255))
     op_status: Mapped[str | None] = mapped_column("OP_STATUS", String(255))
@@ -213,9 +209,9 @@ class DomainValue(Base):
     label_short: Mapped[str | None] = mapped_column("LABEL_SHORT", String(10))
     disp_order: Mapped[str | None] = mapped_column("DISP_ORDER", String(10))
     updated_by: Mapped[str | None] = mapped_column("UPDATED_BY", String(255))
-    updated_date: Mapped[str | None] = mapped_column("UPDATED_DATE", String(255))
+    updated_date: Mapped[datetime | None] = mapped_column("UPDATED_DATE", DateTime)
     created_by: Mapped[str | None] = mapped_column("CREATED_BY", String(255))
-    created_date: Mapped[str | None] = mapped_column("CREATED_DATE", String(255))
+    created_date: Mapped[datetime | None] = mapped_column("CREATED_DATE", DateTime)
     version_no: Mapped[str | None] = mapped_column("VERSION_NO", String(10))
     module: Mapped[str | None] = mapped_column("MODULE", String(255))
 

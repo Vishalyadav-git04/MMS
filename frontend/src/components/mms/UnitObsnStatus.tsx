@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MonthInput } from "@/components/ui/date-input";
 import {
   Select,
   SelectContent,
@@ -150,7 +151,7 @@ export function UnitObsnStatus() {
             />
           </FormRow>
           <FormRow label="Period">
-            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
+            <MonthInput value={period} onChange={setPeriod} />
           </FormRow>
           <FormRow label="Status">
             <Select value={status} onValueChange={setStatus}>

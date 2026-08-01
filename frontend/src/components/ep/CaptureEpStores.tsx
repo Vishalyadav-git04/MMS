@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, ApiError } from "@/lib/api";
+import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 interface EquipRow {
@@ -248,6 +250,10 @@ export function CaptureEpStores() {
   };
 
   const handleSubmit = async () => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     if (
       !issuer.sanctioningAuth ||
       !issuer.issuingAuthority ||
@@ -415,11 +421,10 @@ export function CaptureEpStores() {
             />
           </FormRow>
           <FormRow label="Date" required>
-            <Input
-              type="date"
+            <DateInput
               value={issuer.date}
               disabled={busy}
-              onChange={(e) => updIssuer("date", e.target.value)}
+              onChange={(v) => updIssuer("date", v)}
             />
           </FormRow>
           <FormRow label="Upload Auth Letter">
@@ -491,11 +496,10 @@ export function CaptureEpStores() {
             />
           </FormRow>
           <FormRow label="IV Date" required>
-            <Input
-              type="date"
+            <DateInput
               value={holding.ivDate}
               disabled={busy}
-              onChange={(e) => updHolding("ivDate", e.target.value)}
+              onChange={(v) => updHolding("ivDate", v)}
             />
           </FormRow>
           <FormRow label="Eqpt Category/Domain Name" required>

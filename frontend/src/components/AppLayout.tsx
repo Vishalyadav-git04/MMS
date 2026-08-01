@@ -51,12 +51,17 @@ const NAV: NavItem[] = [
   { id: "it-asset", label: "IT Asset", icon: HardDrive },
 ];
 
+export interface BreadcrumbItem {
+  label: string;
+  onClick?: () => void;
+}
+
 interface Props {
   active: ModuleId;
   activeSub: WeaponSub | null;
   onSelect: (m: ModuleId, sub?: WeaponSub) => void;
   children: ReactNode;
-  breadcrumb: string[];
+  breadcrumb: BreadcrumbItem[];
 }
 
 export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }: Props) {
@@ -284,21 +289,41 @@ export function AppLayout({ active, activeSub, onSelect, children, breadcrumb }:
 
           {/* Breadcrumb bar */}
           <div className="bg-primary text-primary-foreground px-4 py-1.5 text-[13px] flex items-center gap-2">
-            <LayoutDashboard className="h-3.5 w-3.5 text-accent" />
-            {breadcrumb.map((b, i) => (
-              <span key={i} className="flex items-center gap-2">
-                {i > 0 && <span className="text-primary-foreground/40">/</span>}
-                <span
-                  className={cn(
-                    i === breadcrumb.length - 1
-                      ? "font-semibold text-accent"
-                      : "text-primary-foreground/80",
+            <button
+              type="button"
+              onClick={() => onSelect("dashboard")}
+              className="text-accent hover:opacity-80"
+              aria-label="Home"
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+            </button>
+            {breadcrumb.map((b, i) => {
+              const isLast = i === breadcrumb.length - 1;
+              return (
+                <span key={`${b.label}-${i}`} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-primary-foreground/40">/</span>}
+                  {isLast || !b.onClick ? (
+                    <span
+                      className={cn(
+                        isLast
+                          ? "font-semibold text-accent"
+                          : "text-primary-foreground/80",
+                      )}
+                    >
+                      {b.label}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={b.onClick}
+                      className="text-primary-foreground/80 hover:text-accent hover:underline underline-offset-2"
+                    >
+                      {b.label}
+                    </button>
                   )}
-                >
-                  {b}
                 </span>
-              </span>
-            ))}
+              );
+            })}
           </div>
         </header>
 

@@ -7,8 +7,7 @@ Monorepo for the MMS frontend (TanStack / React) and FastAPI backend.
 ```
 MMS/
 ├── frontend/            # TanStack / React UI
-├── backend/
-│   └── mms/             # FastAPI MMS API
+├── backend/             # FastAPI MMS API (app, migrations, main.py, …)
 └── docs/ARCHITECTURE.md
 ```
 
@@ -33,8 +32,7 @@ npm run dev
 ```sh
 cd backend
 pip install -r requirements.txt
-pip install -e ./mms
-cd mms
+pip install -e .
 python -m uvicorn main:app --reload --port 8001
 ```
 

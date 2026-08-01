@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { format, parse } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -14,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { isoToDmyDash, pageHasInvalidDateInputs } from "@/lib/date";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -155,6 +152,10 @@ export function GenEpCensus() {
   };
 
   const handleSave = async () => {
+    if (pageHasInvalidDateInputs()) {
+      toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
     if (
       !form.subDomainId ||
       !form.censusNo ||
@@ -178,7 +179,7 @@ export function GenEpCensus() {
           sub_domain_id: form.subDomainId,
           census_no: form.censusNo,
           auth_letter_no: form.authLetterNo,
-          auth_date: form.date,
+          auth_date: isoToDmyDash(form.date) || form.date,
           cat_part_no: form.catPartNo,
           accounting_unit: form.accountingUnit,
           brief_description: form.briefDescription,
@@ -343,8 +344,8 @@ function MlccsEpForm({
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Date" required className="sm:grid-cols-[52px_minmax(0,1fr)]">
-            <DatePickerField
+          <FormRow label="Date" required className="sm:grid-cols-[52px_minmax(10rem,1fr)]">
+            <DateInput
               value={form.date}
               onChange={(v) => upd("date", v)}
               disabled={busy}
@@ -498,60 +499,6 @@ function MlccsEpForm({
         </FormGrid>
       </div>
     </FormPanel>
-  );
-}
-
-function DatePickerField({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected =
-    value.trim() !== ""
-      ? parse(value, "dd-MM-yyyy", new Date())
-      : undefined;
-  const validSelected =
-    selected && !Number.isNaN(selected.getTime()) ? selected : undefined;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={disabled}
-          className={cn(
-            "h-9 w-full min-w-0 justify-start overflow-hidden px-3 text-left font-normal shadow-sm",
-            !validSelected && "text-muted-foreground",
-          )}
-        >
-          <CalendarIcon className="mr-2 size-4 shrink-0 opacity-70" />
-          <span className="truncate">
-            {validSelected ? format(validSelected, "dd-MM-yyyy") : "DD-MM-YYYY"}
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          captionLayout="dropdown"
-          selected={validSelected}
-          defaultMonth={validSelected}
-          startMonth={new Date(1990, 0)}
-          endMonth={new Date(new Date().getFullYear() + 5, 11)}
-          onSelect={(day) => {
-            if (!day) return;
-            onChange(format(day, "dd-MM-yyyy"));
-            setOpen(false);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
   );
 }
 

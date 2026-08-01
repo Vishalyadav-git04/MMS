@@ -43,6 +43,13 @@ def _disp_order_key():
     return func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0")
 
 
+def _fmt_dt(value: datetime | None) -> str | None:
+    """Keep API date fields as strings for the existing UI contract."""
+    if value is None:
+        return None
+    return value.isoformat(timespec="seconds")
+
+
 def _to_out(row: DomainValue) -> DomainValueOut:
     return DomainValueOut(
         id=row.id,
@@ -53,9 +60,9 @@ def _to_out(row: DomainValue) -> DomainValueOut:
         disp_order=row.disp_order,
         module=row.module,
         created_by=row.created_by,
-        created_date=row.created_date,
+        created_date=_fmt_dt(row.created_date),
         updated_by=row.updated_by,
-        updated_date=row.updated_date,
+        updated_date=_fmt_dt(row.updated_date),
         version_no=row.version_no,
     )
 
@@ -131,7 +138,7 @@ def create_domain_value(
             detail=f"Code '{code}' already exists in domain '{domain}'",
         )
 
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now()
     actor = principal.username
     row = DomainValue(
         id=str(next_int_id(session, DomainValue)),
