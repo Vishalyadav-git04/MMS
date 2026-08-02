@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -73,14 +73,6 @@ const emptyHolding = {
   voucherFile: "",
   remarks: "",
 };
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="-mx-3 sm:-mx-4 mb-2 border-y border-border bg-muted/60 px-3 sm:px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-foreground">
-      {title}
-    </div>
-  );
-}
 
 function SuggestInput({
   value,
@@ -317,7 +309,6 @@ export function CaptureEpStores() {
             Clear
           </Button>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             disabled={busy}
             onClick={() => void handleSubmit()}
           >
@@ -327,7 +318,7 @@ export function CaptureEpStores() {
       }
     >
       <div className="space-y-3">
-        <SectionHeader title="ISSUER DETAILS" />
+        <FormSection title="Issuer details" />
         <FormGrid>
           <FormRow label="Sanctioning Auth" required>
             <Select
@@ -439,7 +430,7 @@ export function CaptureEpStores() {
           </FormRow>
         </FormGrid>
 
-        <SectionHeader title="EP HOLDING DETAILS" />
+        <FormSection title="EP holding details" />
         <FormGrid>
           <FormRow label="Unit Name" required>
             <SuggestInput

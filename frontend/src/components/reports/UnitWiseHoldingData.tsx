@@ -49,13 +49,11 @@ export function UnitWiseHoldingData() {
       footer={
         <>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={() => toast.message("List Holding Data — functionality coming soon")}
           >
             List Holding Data
           </Button>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={() => toast.message("Holding Data Summary — functionality coming soon")}
           >
             Holding Data Summary

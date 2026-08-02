@@ -316,7 +316,6 @@ function MlccsEpForm({
             Clear
           </Button>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             disabled={busy}
             onClick={onSave}
           >

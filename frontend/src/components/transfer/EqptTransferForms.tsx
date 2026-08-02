@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -59,14 +59,6 @@ const MOCK_REGN_POOL = [
   "REGN-IN-24244",
   "REGN-IN-24309",
 ];
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="-mx-2 sm:-mx-3 my-0.5 border-y border-border bg-muted/60 px-2 py-0.5 text-center text-[12px] font-bold uppercase tracking-wide text-foreground">
-      {title}
-    </div>
-  );
-}
 
 function SelectField({
   value,
@@ -356,7 +348,6 @@ function TransferForm({
                 Clear List
               </Button>
               <Button
-                className="bg-success hover:bg-success/90 text-success-foreground"
                 onClick={handleSubmit}
                 disabled={transferRegns.length === 0}
               >
@@ -368,7 +359,7 @@ function TransferForm({
       }
     >
       <div className="space-y-1">
-        <SectionHeader title="PARENT UNIT DETAILS" />
+        <FormSection title="Parent unit details" />
         <UnitLookup
           label={parentLabel}
           search={parentSearch}
@@ -425,7 +416,7 @@ function TransferForm({
           )}
         </FormGrid>
 
-        <SectionHeader title="RECEIVING UNIT DETAILS" />
+        <FormSection title="Receiving unit details" />
         <UnitLookup
           label={receivingLabel}
           search={receivingSearch}
@@ -454,7 +445,7 @@ function TransferForm({
 
         {listLoaded && (
           <>
-            <SectionHeader title="Regn No to be Transfer" />
+            <FormSection title="Regn no to be transfer" />
             <div
               className={cn(
                 "flex flex-wrap items-center gap-2 rounded border border-border px-2 py-1.5",
@@ -492,7 +483,6 @@ function TransferForm({
                   type="button"
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8"
                   onClick={moveToTransfer}
                   title="Move selected to transfer list"
                 >
@@ -502,7 +492,6 @@ function TransferForm({
                   type="button"
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8"
                   onClick={moveBackToAvailable}
                   title="Move selected back"
                 >

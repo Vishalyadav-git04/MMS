@@ -173,52 +173,13 @@
 }
 
 /*
- * Compact form density retained for viewport-fit behaviour (conflict with design-system
- * 38px control height — see restyle notes). Colours inherit from tokens.
+ * Legacy .compact-form alias → design-system 38px density.
+ * Prefer .mms-form on FormPanel; keep this so older classnames still match tokens.
  */
 @layer components {
-  .compact-form input,
-  .compact-form select,
-  .compact-form [data-slot="select-trigger"],
-  .compact-form button[role="combobox"] {
-    height: 1.65rem;
-    min-height: 1.65rem;
-    padding-top: 0;
-    padding-bottom: 0;
-    padding-left: 0.45rem;
-    padding-right: 0.45rem;
-    font-size: 0.8125rem;
-    line-height: 1.2;
-  }
-  .compact-form input[data-date-input] {
-    padding-right: 1.85rem;
-  }
-  .compact-form input[type="file"] {
-    height: auto;
-    min-height: 1.65rem;
-    padding-top: 0.1rem;
-    padding-bottom: 0.1rem;
-  }
-  .compact-form textarea {
-    min-height: 2rem;
-    height: 2rem;
-    padding-top: 0.15rem;
-    padding-bottom: 0.15rem;
-    font-size: 0.8125rem;
-    line-height: 1.2;
-    resize: none;
-  }
-  .compact-form label {
-    font-size: 0.8125rem;
-    line-height: 1.15;
-    color: #54606c;
-    font-weight: 600;
-  }
-  .compact-form button:not([role="radio"]):not([data-date-calendar]) {
-    height: 1.75rem;
-    min-height: 1.75rem;
-    padding-left: 0.6rem;
-    padding-right: 0.6rem;
-    font-size: 0.8125rem;
+  .compact-form,
+  .mms-form {
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
   }
 }

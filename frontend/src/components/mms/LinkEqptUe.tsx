@@ -4,6 +4,13 @@ import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -13,6 +20,7 @@ interface CensusSuggestion {
   cat_part_no?: string | null;
   prf_group?: string | null;
   item_code?: string | null;
+  cos_section?: string | null;
 }
 
 interface LinkDetails {
@@ -22,6 +30,12 @@ interface LinkDetails {
   item_code?: string | null;
   cat_part_no?: string | null;
   prf_group?: string | null;
+  cos_section?: string | null;
+}
+
+interface ItemOption {
+  value: string;
+  label: string;
 }
 
 function errMsg(e: unknown): string {
@@ -40,12 +54,14 @@ export function LinkEqptUe() {
   const [fetched, setFetched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [itemCode, setItemCode] = useState("");
+  const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
   const [details, setDetails] = useState({
     catPartNo: "",
     prfGroup: "",
+    cosSection: "",
   });
 
-  // Census No typeahead — autofill nomenclature on exact match / pick
+  // Census No typeahead — from MMS_MLCCS_EQUIPMENT_MASTER
   useEffect(() => {
     if (fetched) return;
     if (suppressCensusSuggestRef.current) {
@@ -60,7 +76,7 @@ export function LinkEqptUe() {
     }
     const handle = window.setTimeout(() => {
       void api<CensusSuggestion[]>(
-        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+        `/admin/link-census-no-with-item-code/suggest-census?q=${encodeURIComponent(q)}`,
       )
         .then((rows) => {
           const exact = rows.find((r) => r.census_no.toUpperCase() === q.toUpperCase());
@@ -78,6 +94,7 @@ export function LinkEqptUe() {
     return () => window.clearTimeout(handle);
   }, [censusNo, fetched]);
 
+  // Nomenclature typeahead — from MMS_MLCCS_EQUIPMENT_MASTER
   useEffect(() => {
     if (fetched) return;
     if (suppressNomSuggestRef.current) {
@@ -92,7 +109,7 @@ export function LinkEqptUe() {
     }
     const handle = window.setTimeout(() => {
       void api<CensusSuggestion[]>(
-        `/admin/capture-mlccs-details/suggest-census?q=${encodeURIComponent(q)}`,
+        `/admin/link-census-no-with-item-code/suggest-census?q=${encodeURIComponent(q)}`,
       )
         .then((rows) => {
           const matched = rows.filter((r) =>
@@ -114,6 +131,36 @@ export function LinkEqptUe() {
     }, 250);
     return () => window.clearTimeout(handle);
   }, [nomenclature, fetched]);
+
+  // Load Linked Item Code options for the fetched PRF from MMS_PRF_GRP_MSTR
+  useEffect(() => {
+    if (!fetched) {
+      setItemOptions([]);
+      return;
+    }
+    const grp = details.prfGroup.trim();
+    if (!grp) {
+      setItemOptions([]);
+      return;
+    }
+    const cos = details.cosSection.trim();
+    const params = new URLSearchParams({ prf_group: grp });
+    if (cos) params.set("cos_section", cos);
+
+    let cancelled = false;
+    void api<ItemOption[]>(
+      `/admin/link-census-no-with-item-code/item-codes?${params.toString()}`,
+    )
+      .then((rows) => {
+        if (!cancelled) setItemOptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setItemOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetched, details.prfGroup, details.cosSection]);
 
   const pickCensusSuggestion = (row: CensusSuggestion) => {
     suppressNomSuggestRef.current = true;
@@ -138,7 +185,8 @@ export function LinkEqptUe() {
     setNomSuggestions([]);
     setFetched(false);
     setItemCode("");
-    setDetails({ catPartNo: "", prfGroup: "" });
+    setItemOptions([]);
+    setDetails({ catPartNo: "", prfGroup: "", cosSection: "" });
   };
 
   const handleFetch = async () => {
@@ -160,6 +208,7 @@ export function LinkEqptUe() {
       setDetails({
         catPartNo: rec.cat_part_no ?? "",
         prfGroup: rec.prf_group ?? "",
+        cosSection: rec.cos_section ?? "",
       });
       setItemCode(rec.item_code ?? "");
       setFetched(true);
@@ -175,7 +224,7 @@ export function LinkEqptUe() {
 
   const handleUpdate = async () => {
     if (!itemCode.trim()) {
-      toast.error("Item code is required");
+      toast.error("Linked Item Code is required");
       return;
     }
     setBusy(true);
@@ -195,6 +244,12 @@ export function LinkEqptUe() {
       setBusy(false);
     }
   };
+
+  // Ensure current linked code appears in the list even if not under PRF
+  const selectOptions =
+    itemCode && !itemOptions.some((o) => o.value === itemCode)
+      ? [{ value: itemCode, label: itemCode }, ...itemOptions]
+      : itemOptions;
 
   return (
     <FormPanel
@@ -218,11 +273,7 @@ export function LinkEqptUe() {
           </>
         ) : (
           <>
-            <Button
-              onClick={() => void handleUpdate()}
-              disabled={busy}
-              className="bg-success hover:bg-success/90 text-success-foreground"
-            >
+            <Button onClick={() => void handleUpdate()} disabled={busy}>
               {busy ? "Updating…" : "Update"}
             </Button>
             <Button
@@ -238,7 +289,8 @@ export function LinkEqptUe() {
               onClick={() => {
                 setFetched(false);
                 setItemCode("");
-                setDetails({ catPartNo: "", prfGroup: "" });
+                setItemOptions([]);
+                setDetails({ catPartNo: "", prfGroup: "", cosSection: "" });
               }}
             >
               Cancel
@@ -324,12 +376,30 @@ export function LinkEqptUe() {
             <Input value={details.prfGroup} disabled />
           </FormRow>
           <FormRow label="Linked Item Code" required>
-            <Input
-              value={itemCode}
-              onChange={(e) => setItemCode(e.target.value)}
-              placeholder="Enter item code"
-              autoComplete="off"
-            />
+            <Select
+              value={itemCode || undefined}
+              onValueChange={setItemCode}
+              disabled={busy}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    !details.prfGroup
+                      ? "No PRF Group on record"
+                      : selectOptions.length
+                        ? "-- Select Item Code --"
+                        : "No item codes for this PRF"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {selectOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </FormRow>
         </div>
       )}

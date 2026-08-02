@@ -11,6 +11,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+class PrfGrpMstr(Base):
+    """MMS_PRF_GRP_MSTR — COS section / PRF / item hierarchy master."""
+
+    __tablename__ = "MMS_PRF_GRP_MSTR"
+
+    cos_sec: Mapped[str] = mapped_column("COS_SEC", String(10), primary_key=True)
+    prf_code: Mapped[int] = mapped_column("PRF_CODE", Integer, primary_key=True)
+    prf_grp: Mapped[str] = mapped_column("PRF_GRP", String(150), nullable=False)
+    item_code: Mapped[int] = mapped_column("ITEM_CODE", Integer, primary_key=True)
+    item_name: Mapped[str] = mapped_column("ITEM_NAME", String(255), nullable=False)
+
+
 class MlccsEquipmentMaster(Base):
     """MMS_MLCCS_EQUIPMENT_MASTER — Master List of Controlled and Census Stores."""
 
@@ -135,6 +147,18 @@ class EpMstr(Base):
     modified_date: Mapped[datetime | None] = mapped_column("MODIFIED_DATE", DateTime)
 
 
+class OrbatUnitDetl(Base):
+    """MMS_ORBAT_UNIT_DETL — ORBAT unit master (name / SUS / form / status)."""
+
+    __tablename__ = "MMS_ORBAT_UNIT_DETL"
+
+    id: Mapped[str] = mapped_column("ID", String(36), primary_key=True)
+    unit_name: Mapped[str] = mapped_column("UNIT_NAME", String(255), nullable=False)
+    sus_no: Mapped[str] = mapped_column("SUS_NO", String(50), nullable=False)
+    form_code: Mapped[str | None] = mapped_column("FORM_CODE", String(50))
+    status: Mapped[str] = mapped_column("STATUS", String(10), nullable=False)  # ACTIVE | INACTIVE
+
+
 class EpIssuerUnit(Base):
     """MMS_EP_ISSUER_UNIT — dummy issuer auth units for Capture EP Stores."""
 
@@ -249,12 +273,99 @@ class UnitMasterDetail(Base):
     approved_by: Mapped[str | None] = mapped_column("APPROVED_BY", String(25))
     approved_date: Mapped[datetime | None] = mapped_column("APPROVED_DATE", DateTime)
     op_status: Mapped[str | None] = mapped_column("OP_STATUS", String(3))
-    tfr_status: Mapped[str | None] = mapped_column("TFR_STATUS", String(2))
+    tfr_status: Mapped[str | None] = mapped_column("TFR_STATUS", String(10))
     iv_no: Mapped[str | None] = mapped_column("IV_NO", String(25))
     iv_date: Mapped[datetime | None] = mapped_column("IV_DATE", DateTime)
     prf_code: Mapped[str | None] = mapped_column("PRF_CODE", String(8))
     depres_dur_year: Mapped[Decimal | None] = mapped_column("DEPRES_DUR_YEAR", Numeric(12, 2))
-    upload_iv: Mapped[str | None] = mapped_column("UPLOAD_IV", String(8))
+    upload_iv: Mapped[str | None] = mapped_column("UPLOAD_IV", String(100))
+
+
+class OthMaster(Base):
+    """MMS_OTH_MASTER — sector / loan / ACSFP other-store holdings."""
+
+    __tablename__ = "MMS_OTH_MASTER"
+
+    id: Mapped[str] = mapped_column("ID", String(36), primary_key=True)
+    stores_type: Mapped[str | None] = mapped_column("STORES_TYPE", String(15))
+    sanction_auth: Mapped[str | None] = mapped_column("SANCTION_AUTH", String(30))
+    govt_sanction_no: Mapped[str | None] = mapped_column("GOVT_SANCTION_NO", String(50))
+    auth_letter_no: Mapped[str | None] = mapped_column("AUTH_LETTER_NO", String(50))
+    auth_date: Mapped[datetime | None] = mapped_column("AUTH_DATE", DateTime)
+    issued_from: Mapped[str | None] = mapped_column("ISSUED_FROM", String(10))
+    iv_sus_no: Mapped[str | None] = mapped_column("IV_SUS_NO", String(9))
+    iv_no: Mapped[str | None] = mapped_column("IV_NO", String(50))
+    iv_date: Mapped[datetime | None] = mapped_column("IV_DATE", DateTime)
+    loan_expiry_date: Mapped[datetime | None] = mapped_column("LOAN_EXPIRY_DATE", DateTime)
+    prf_code: Mapped[str | None] = mapped_column("PRF_CODE", String(8))
+    census_no: Mapped[str | None] = mapped_column("CENSUS_NO", String(9))
+    type_of_hldg: Mapped[str | None] = mapped_column("TYPE_OF_HLDG", String(3))
+    type_of_eqpt: Mapped[str | None] = mapped_column("TYPE_OF_EQPT", String(2))
+    qty: Mapped[int | None] = mapped_column("QTY", Integer)
+    eqpt_regn_no: Mapped[str | None] = mapped_column("EQPT_REGN_NO", String(25))
+    regn_seq_no: Mapped[str | None] = mapped_column("REGN_SEQ_NO", String(20))
+    from_sus_no: Mapped[str | None] = mapped_column("FROM_SUS_NO", String(8))
+    from_form_code: Mapped[str | None] = mapped_column("FROM_FORM_CODE", String(10))
+    from_tr_date: Mapped[datetime | None] = mapped_column("FROM_TR_DATE", DateTime)
+    to_sus_no: Mapped[str | None] = mapped_column("TO_SUS_NO", String(8))
+    to_form_code: Mapped[str | None] = mapped_column("TO_FORM_CODE", String(10))
+    to_tr_date: Mapped[datetime | None] = mapped_column("TO_TR_DATE", DateTime)
+    service_status: Mapped[str | None] = mapped_column("SERVICE_STATUS", String(2))
+    spl_remarks: Mapped[str | None] = mapped_column("SPL_REMARKS", String(200))
+    remarks: Mapped[str | None] = mapped_column("REMARKS", String(200))
+    created_by: Mapped[str | None] = mapped_column("CREATED_BY", String(25))
+    created_date: Mapped[datetime | None] = mapped_column("CREATED_DATE", DateTime)
+    upload_by: Mapped[str | None] = mapped_column("UPLOAD_BY", String(25))
+    upload_date: Mapped[datetime | None] = mapped_column("UPLOAD_DATE", DateTime)
+    approved_by: Mapped[str | None] = mapped_column("APPROVED_BY", String(25))
+    approved_date: Mapped[datetime | None] = mapped_column("APPROVED_DATE", DateTime)
+    op_status: Mapped[str | None] = mapped_column("OP_STATUS", String(3))
+    tfr_status: Mapped[str | None] = mapped_column("TFR_STATUS", String(2))
+    upload_voucher: Mapped[str | None] = mapped_column("UPLOAD_VOUCHER", String(50))
+    sector_expiry_date: Mapped[datetime | None] = mapped_column("SECTOR_EXPIRY_DATE", DateTime)
+    upload_auth_letter: Mapped[str | None] = mapped_column("UPLOAD_AUTH_LETTER", String(50))
+    upload_picture: Mapped[str | None] = mapped_column("UPLOAD_PICTURE", String(50))
+
+
+class DepotMaster(Base):
+    """MMS_DEPOT_MASTER — depot holdings (non unit / other-store types)."""
+
+    __tablename__ = "MMS_DEPOT_MASTER"
+
+    id: Mapped[str] = mapped_column("ID", String(36), primary_key=True)
+    sus_no: Mapped[str | None] = mapped_column("SUS_NO", String(9))
+    census_seq_no: Mapped[int | None] = mapped_column("CENSUS_SEQ_NO", Integer)
+    census_no: Mapped[str | None] = mapped_column("CENSUS_NO", String(9))
+    type_of_hldg: Mapped[str | None] = mapped_column("TYPE_OF_HLDG", String(15))
+    type_of_eqpt: Mapped[str | None] = mapped_column("TYPE_OF_EQPT", String(3))
+    eqpt_regn_no: Mapped[str | None] = mapped_column("EQPT_REGN_NO", String(25))
+    regn_seq_no: Mapped[str | None] = mapped_column("REGN_SEQ_NO", String(20))
+    from_sus_no: Mapped[str | None] = mapped_column("FROM_SUS_NO", String(8))
+    from_form_code: Mapped[str | None] = mapped_column("FROM_FORM_CODE", String(15))
+    from_tr_date: Mapped[datetime | None] = mapped_column("FROM_TR_DATE", DateTime)
+    to_sus_no: Mapped[str | None] = mapped_column("TO_SUS_NO", String(8))
+    to_form_code: Mapped[str | None] = mapped_column("TO_FORM_CODE", String(15))
+    to_tr_date: Mapped[datetime | None] = mapped_column("TO_TR_DATE", DateTime)
+    barrel1_detl: Mapped[str | None] = mapped_column("BARREL1_DETL", String(150))
+    barrel2_detl: Mapped[str | None] = mapped_column("BARREL2_DETL", String(150))
+    barrel3_detl: Mapped[str | None] = mapped_column("BARREL3_DETL", String(150))
+    barrel4_detl: Mapped[str | None] = mapped_column("BARREL4_DETL", String(150))
+    service_status: Mapped[str | None] = mapped_column("SERVICE_STATUS", String(2))
+    spl_remarks: Mapped[str | None] = mapped_column("SPL_REMARKS", String(200))
+    remarks: Mapped[str | None] = mapped_column("REMARKS", String(200))
+    created_by: Mapped[str | None] = mapped_column("CREATED_BY", String(25))
+    created_date: Mapped[datetime | None] = mapped_column("CREATED_DATE", DateTime)
+    upload_by: Mapped[str | None] = mapped_column("UPLOAD_BY", String(25))
+    upload_date: Mapped[datetime | None] = mapped_column("UPLOAD_DATE", DateTime)
+    approved_by: Mapped[str | None] = mapped_column("APPROVED_BY", String(25))
+    approved_date: Mapped[datetime | None] = mapped_column("APPROVED_DATE", DateTime)
+    op_status: Mapped[str | None] = mapped_column("OP_STATUS", String(3))
+    tfr_status: Mapped[str | None] = mapped_column("TFR_STATUS", String(10))
+    iv_no: Mapped[str | None] = mapped_column("IV_NO", String(25))
+    iv_date: Mapped[datetime | None] = mapped_column("IV_DATE", DateTime)
+    prf_code: Mapped[str | None] = mapped_column("PRF_CODE", String(8))
+    depres_dur_year: Mapped[Decimal | None] = mapped_column("DEPRES_DUR_YEAR", Numeric(12, 2))
+    upload_iv: Mapped[str | None] = mapped_column("UPLOAD_IV", String(255))
 
 
 class ObsnDetail(Base):

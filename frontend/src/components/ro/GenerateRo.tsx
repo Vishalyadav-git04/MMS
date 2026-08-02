@@ -200,10 +200,7 @@ export function GenerateRo() {
         </div>
 
         <div className="flex flex-wrap justify-center gap-2 border-y border-border bg-muted/40 py-2">
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            onClick={handleClear}
-          >
+          <Button variant="secondary" onClick={handleClear}>
             Clear
           </Button>
           <Button onClick={handleSubmit}>Submit</Button>
@@ -216,7 +213,7 @@ export function GenerateRo() {
               <TableHeader>
                 <TableRow className="bg-destructive/10 hover:bg-destructive/10">
                   {["Unit Name", "ITEM", "UE", "UH", "DEFI", "SURP", "ISSUE QTY"].map((h) => (
-                    <TableHead key={h} className="h-8 px-2 text-[12px] font-bold text-destructive">
+                    <TableHead key={h} className="font-bold text-destructive">
                       {h}
                     </TableHead>
                   ))}
@@ -224,7 +221,7 @@ export function GenerateRo() {
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
+                  <TableCell colSpan={7} className="h-24 text-center text-[14px] text-muted-foreground">
                     —
                   </TableCell>
                 </TableRow>
@@ -269,7 +266,7 @@ export function GenerateRo() {
                     "Issue Date",
                     "Action",
                   ].map((h) => (
-                    <TableHead key={h} className="h-8 px-2 text-[12px] font-bold text-destructive">
+                    <TableHead key={h} className="font-bold text-destructive">
                       {h}
                     </TableHead>
                   ))}

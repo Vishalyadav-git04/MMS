@@ -122,7 +122,6 @@ export function UnitObsnStatus() {
           <Button
             disabled={busy}
             onClick={() => void handleSearch()}
-            className="bg-success hover:bg-success/90 text-success-foreground"
           >
             {busy ? "Searching…" : "Search"}
           </Button>

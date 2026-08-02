@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormPanel } from "@/components/FormPanel";
 import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { Button } from "@/components/ui/button";
@@ -39,9 +39,17 @@ interface MlccsListItem {
   status?: string | null;
 }
 
+interface MlccsSearchResponse {
+  items: MlccsListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 const ALL_CLASS = "__all__";
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_PAGE_SIZE = 20;
+const EXPORT_PAGE_SIZE = 5000;
 
 function mapRow(r: MlccsListItem): MlccsRow {
   return {
@@ -190,7 +198,6 @@ async function printResults(rows: MlccsRow[]) {
     if (el) el.remove();
   };
 
-  // Allow the iframe document to finish layout before invoking print
   window.setTimeout(() => {
     try {
       frameWindow.focus();
@@ -208,8 +215,10 @@ export function ViewMlccs() {
   const [classOfEqpt, setClassOfEqpt] = useState(ALL_CLASS);
   const [classOptions, setClassOptions] = useState<string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
+  const [debouncedResultFilter, setDebouncedResultFilter] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [rows, setRows] = useState<MlccsRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
@@ -217,6 +226,15 @@ export function ViewMlccs() {
     censusNo: string;
     nomenclature: string;
   } | null>(null);
+
+  // Applied search criteria (updated on Search click / initial load)
+  const [appliedText, setAppliedText] = useState("");
+  const [appliedField, setAppliedField] = useState<SearchField>("Nomenclature");
+  const [appliedClass, setAppliedClass] = useState(ALL_CLASS);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const requestIdRef = useRef(0);
+  const toastOnLoadRef = useRef(false);
 
   useEffect(() => {
     api<{ class_of_eqpt?: { value: string; label: string }[] }>("/mlccs/options")
@@ -228,62 +246,102 @@ export function ViewMlccs() {
       });
   }, []);
 
+  // Debounce "Search in Result" so we don't hit the API on every keystroke
   useEffect(() => {
-    void handleSearch(true);
-    // Initial load of all records
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const t = window.setTimeout(() => {
+      setDebouncedResultFilter(resultFilter.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [resultFilter]);
 
-  const filtered = useMemo(() => {
-    if (!resultFilter.trim()) return rows;
-    const q = resultFilter.trim().toLowerCase();
-    return rows.filter(
-      (row) =>
-        row.materialNo.toLowerCase().includes(q) ||
-        row.censusNo.toLowerCase().includes(q) ||
-        row.nomenclature.toLowerCase().includes(q) ||
-        row.classOfEqpt.toLowerCase().includes(q) ||
-        row.catPartNo.toLowerCase().includes(q) ||
-        row.au.toLowerCase().includes(q) ||
-        row.status.toLowerCase().includes(q),
-    );
-  }, [rows, resultFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageStart = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const pageEnd = Math.min(currentPage * pageSize, filtered.length);
-  const paged = useMemo(
-    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [filtered, currentPage, pageSize],
-  );
-
-  useEffect(() => {
-    setPage(1);
-  }, [resultFilter, rows, pageSize]);
-
-  const handleSearch = async (silent = false) => {
+  const fetchPage = async (opts: {
+    page: number;
+    pageSize: number;
+    text: string;
+    field: SearchField;
+    classOfEqpt: string;
+    resultQ: string;
+  }) => {
+    const reqId = ++requestIdRef.current;
+    const showToast = toastOnLoadRef.current;
+    toastOnLoadRef.current = false;
     setBusy(true);
     setSelectedId("");
-    setPage(1);
     try {
-      const data = await api<MlccsListItem[]>("/mlccs/search", {
+      const data = await api<MlccsSearchResponse>("/mlccs/search", {
         method: "POST",
         body: JSON.stringify({
-          text: searchText.trim() || null,
-          field: searchIn,
-          class_of_eqpt: classOfEqpt === ALL_CLASS ? null : classOfEqpt,
+          text: opts.text || null,
+          field: opts.field,
+          class_of_eqpt: opts.classOfEqpt === ALL_CLASS ? null : opts.classOfEqpt,
+          result_q: opts.resultQ || null,
+          page: opts.page,
+          page_size: opts.pageSize,
         }),
       });
-      const mapped = data.map(mapRow);
-      setRows(mapped);
-      if (!silent) toast.success(`${mapped.length} record(s) found`);
+      if (reqId !== requestIdRef.current) return;
+      setRows(data.items.map(mapRow));
+      setTotal(data.total);
+      if (showToast) toast.success(`${data.total} record(s) found`);
     } catch (e) {
+      if (reqId !== requestIdRef.current) return;
       setRows([]);
+      setTotal(0);
       toast.error(e instanceof ApiError ? e.message : "Search failed");
     } finally {
-      setBusy(false);
+      if (reqId === requestIdRef.current) setBusy(false);
     }
+  };
+
+  // Load current page whenever page / size / applied filters / result filter change
+  useEffect(() => {
+    void fetchPage({
+      page,
+      pageSize,
+      text: appliedText,
+      field: appliedField,
+      classOfEqpt: appliedClass,
+      resultQ: debouncedResultFilter,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    page,
+    pageSize,
+    appliedText,
+    appliedField,
+    appliedClass,
+    debouncedResultFilter,
+    reloadToken,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, total);
+
+  const handleSearch = () => {
+    toastOnLoadRef.current = true;
+    setAppliedText(searchText.trim());
+    setAppliedField(searchIn);
+    setAppliedClass(classOfEqpt);
+    setPage(1);
+    setReloadToken((n) => n + 1);
+  };
+
+  const fetchAllMatching = async (): Promise<MlccsRow[]> => {
+    const data = await api<MlccsSearchResponse>("/mlccs/search", {
+      method: "POST",
+      body: JSON.stringify({
+        text: appliedText || null,
+        field: appliedField,
+        class_of_eqpt: appliedClass === ALL_CLASS ? null : appliedClass,
+        result_q: debouncedResultFilter || null,
+        page: 1,
+        page_size: Math.min(Math.max(total, 1), EXPORT_PAGE_SIZE),
+      }),
+    });
+    return data.items.map(mapRow);
   };
 
   const handleModify = () => {
@@ -299,21 +357,37 @@ export function ViewMlccs() {
     setModifyTarget({ censusNo: row.censusNo, nomenclature: row.nomenclature });
   };
 
-  const handleExport = () => {
-    if (filtered.length === 0) {
+  const handleExport = async () => {
+    if (total === 0) {
       toast.error("No records to export");
       return;
     }
-    exportCsv(filtered);
-    toast.success(`Exported ${filtered.length} record(s)`);
+    setBusy(true);
+    try {
+      const all = await fetchAllMatching();
+      exportCsv(all);
+      toast.success(`Exported ${all.length} record(s)`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Export failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handlePrint = () => {
-    if (filtered.length === 0) {
+  const handlePrint = async () => {
+    if (total === 0) {
       toast.error("No records to print");
       return;
     }
-    printResults(filtered);
+    setBusy(true);
+    try {
+      const all = await fetchAllMatching();
+      await printResults(all);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Print failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (modifyTarget) {
@@ -322,7 +396,7 @@ export function ViewMlccs() {
         initialModify={modifyTarget}
         onBack={() => {
           setModifyTarget(null);
-          void handleSearch(true);
+          setReloadToken((n) => n + 1);
         }}
       />
     );
@@ -336,22 +410,20 @@ export function ViewMlccs() {
         <>
           <Button
             size="sm"
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            disabled={busy || filtered.length === 0}
-            onClick={handleExport}
+            disabled={busy || total === 0}
+            onClick={() => void handleExport()}
           >
             Export
           </Button>
           <Button
             size="sm"
-            disabled={busy || filtered.length === 0}
-            onClick={handlePrint}
+            disabled={busy || total === 0}
+            onClick={() => void handlePrint()}
           >
             Print Page
           </Button>
           <Button
             size="sm"
-            className="bg-success hover:bg-success/90 text-success-foreground"
             disabled={busy}
             onClick={handleModify}
           >
@@ -360,21 +432,21 @@ export function ViewMlccs() {
         </>
       }
     >
-      <div className="absolute inset-0 flex flex-col gap-1.5 overflow-hidden bg-card p-2 sm:p-3">
-        <div className="shrink-0 rounded border border-border bg-muted/30 p-2">
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="absolute inset-0 flex flex-col gap-3 overflow-hidden">
+        <div className="shrink-0 rounded-[10px] border border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] p-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Input
-              className="h-8 max-w-xs"
+              className="max-w-xs"
               placeholder="Search..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void handleSearch();
+                if (e.key === "Enter") handleSearch();
               }}
             />
-            <span className="text-xs text-muted-foreground">in</span>
+            <span className="text-[12px] font-semibold text-[var(--ink-soft,#54606c)]">in</span>
             <Select value={searchIn} onValueChange={(v) => setSearchIn(v as SearchField)}>
-              <SelectTrigger className="h-8 w-[160px]">
+              <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -384,9 +456,11 @@ export function ViewMlccs() {
                 <SelectItem value="Cat Part No">Cat Part No</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-xs font-medium text-foreground">Class of Eqpt</span>
+            <span className="text-[12px] font-semibold text-[var(--ink-soft,#54606c)]">
+              Class of Eqpt
+            </span>
             <Select value={classOfEqpt} onValueChange={setClassOfEqpt}>
-              <SelectTrigger className="h-8 w-[180px]">
+              <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="--Select--" />
               </SelectTrigger>
               <SelectContent>
@@ -398,23 +472,26 @@ export function ViewMlccs() {
                 ))}
               </SelectContent>
             </Select>
-            <Button size="sm" className="h-8" disabled={busy} onClick={() => void handleSearch()}>
+            <Button disabled={busy} onClick={handleSearch}>
               {busy ? "Searching..." : "Search"}
             </Button>
           </div>
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-primary">
+          <p className="text-[12.5px] font-semibold text-[var(--accent,#14568c)]">
             Select a Census No to Modify Data
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-[12px] text-[var(--ink-soft,#54606c)]">
               Show
               <select
-                className="h-7 rounded border border-border bg-card px-1.5 text-xs text-foreground"
+                className="h-[38px] rounded-[8px] border border-[var(--line,#cddcec)] bg-[var(--surface,#fff)] px-2 text-[14px] text-[var(--ink,#15202b)] shadow-[var(--shadow-sm)]"
                 value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
               >
                 {PAGE_SIZE_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -425,11 +502,11 @@ export function ViewMlccs() {
               entries
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[12px] text-[var(--ink-soft,#54606c)]">
                 Search in Result({pageSize}):
               </span>
               <Input
-                className="h-7 w-40"
+                className="w-40"
                 value={resultFilter}
                 onChange={(e) => setResultFilter(e.target.value)}
               />
@@ -437,44 +514,30 @@ export function ViewMlccs() {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-border">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--line,#cddcec)]">
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <table className="w-full caption-bottom border-collapse text-xs">
+            <table className="w-full caption-bottom border-collapse text-[14px]">
               <thead className="sticky top-0 z-10">
-                <tr className="bg-primary">
-                  <th className="h-8 w-10 px-2 py-0 text-left text-xs font-medium text-primary-foreground" />
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Material No
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Census No
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Nomenclature
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Class of Eqpt
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Cat Part No
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    A/U
-                  </th>
-                  <th className="h-8 px-2 py-0 text-left text-xs font-medium text-primary-foreground">
-                    Status
-                  </th>
+                <tr>
+                  <th className="w-10 text-left" />
+                  <th className="text-left">Material No</th>
+                  <th className="text-left">Census No</th>
+                  <th className="text-left">Nomenclature</th>
+                  <th className="text-left">Class of Eqpt</th>
+                  <th className="text-left">Cat Part No</th>
+                  <th className="text-left">A/U</th>
+                  <th className="text-left">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {paged.map((row, idx) => {
+                {rows.map((row, idx) => {
                   const selected = selectedId === row.id;
                   return (
                     <tr
                       key={row.id}
                       onClick={() => setSelectedId(row.id)}
                       className={cn(
-                        "h-8 cursor-pointer border-b border-border",
+                        "cursor-pointer border-b border-[var(--line-soft,#dfe9f4)]",
                         selected ? "bg-primary/15" : idx % 2 === 1 ? "bg-muted/40" : undefined,
                       )}
                     >
@@ -503,7 +566,7 @@ export function ViewMlccs() {
                     </tr>
                   );
                 })}
-                {!busy && filtered.length === 0 && (
+                {!busy && total === 0 && (
                   <tr>
                     <td colSpan={8} className="h-16 text-center text-sm text-muted-foreground">
                       No records found
@@ -516,7 +579,7 @@ export function ViewMlccs() {
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground">
             <div>
-              Showing {pageStart} to {pageEnd} of {filtered.length} entries
+              Showing {pageStart} to {pageEnd} of {total} entries
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -524,7 +587,7 @@ export function ViewMlccs() {
                 variant="outline"
                 size="sm"
                 className="h-7 px-2 text-[12px]"
-                disabled={currentPage <= 1}
+                disabled={currentPage <= 1 || busy}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 Previous
@@ -552,6 +615,7 @@ export function ViewMlccs() {
                       variant={n === currentPage ? "default" : "outline"}
                       size="sm"
                       className="h-7 min-w-7 px-2 text-[12px]"
+                      disabled={busy}
                       onClick={() => setPage(n)}
                     >
                       {n}
@@ -563,7 +627,7 @@ export function ViewMlccs() {
                 variant="outline"
                 size="sm"
                 className="h-7 px-2 text-[12px]"
-                disabled={currentPage >= totalPages || filtered.length === 0}
+                disabled={currentPage >= totalPages || total === 0 || busy}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
                 Next

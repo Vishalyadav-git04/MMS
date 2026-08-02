@@ -67,6 +67,40 @@ def _to_out(row: DomainValue) -> DomainValueOut:
     )
 
 
+def _assert_unique_within_domain(
+    session: Session,
+    *,
+    domain: str,
+    code: str,
+    label: str,
+    short: str,
+    order: str | None,
+    exclude_id: str | None = None,
+) -> None:
+    """Within one DOMAIN_NAME, code/label/short/display order must each be unique."""
+    domain_u = domain.upper()
+    checks: list[tuple[str, object, str]] = [
+        ("Code Value", DomainValue.code_value, code),
+        ("Label Name", DomainValue.label_name, label),
+        ("Label Short", DomainValue.label_short, short),
+    ]
+    if order is not None:
+        checks.append(("Display Order", DomainValue.disp_order, order))
+
+    for field_label, column, value in checks:
+        stmt = select(DomainValue).where(
+            func.upper(DomainValue.domain_name) == domain_u,
+            func.upper(func.trim(column)) == value.upper(),
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(DomainValue.id != exclude_id)
+        if session.scalar(stmt) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{field_label} '{value}' already exists in domain '{domain}'",
+            )
+
+
 @router.get("/domains")
 def list_domain_names(session: Session = Depends(get_db_session)) -> list[str]:
     rows = session.scalars(
@@ -126,17 +160,14 @@ def create_domain_value(
     short = (body.label_short or "").strip() or label
     order = (body.disp_order or "").strip() or None
 
-    clash = session.scalar(
-        select(DomainValue).where(
-            func.upper(DomainValue.domain_name) == domain.upper(),
-            func.upper(DomainValue.code_value) == code.upper(),
-        )
+    _assert_unique_within_domain(
+        session,
+        domain=domain,
+        code=code,
+        label=label,
+        short=short[:10],
+        order=order,
     )
-    if clash is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Code '{code}' already exists in domain '{domain}'",
-        )
 
     now = datetime.now()
     actor = principal.username
@@ -157,3 +188,63 @@ def create_domain_value(
     session.add(row)
     session.flush()
     return _to_out(row)
+
+
+@router.put("/{row_id}", response_model=DomainValueOut)
+def update_domain_value(
+    row_id: str,
+    body: DomainValueIn,
+    session: Session = Depends(get_db_session),
+    principal: Principal = Depends(get_principal),
+) -> DomainValueOut:
+    row = session.get(DomainValue, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Domain value not found")
+
+    domain = body.domain_name.strip()
+    code = body.code_value.strip()
+    label = body.label_name.strip()
+    short = ((body.label_short or "").strip() or label)[:10]
+    order = (body.disp_order or "").strip() or None
+
+    _assert_unique_within_domain(
+        session,
+        domain=domain,
+        code=code,
+        label=label,
+        short=short,
+        order=order,
+        exclude_id=row_id,
+    )
+
+    now = datetime.now()
+    try:
+        next_ver = str(int((row.version_no or "1").strip() or "1") + 1)
+    except ValueError:
+        next_ver = "1"
+
+    row.domain_name = domain
+    row.code_value = code
+    row.label_name = label
+    row.label_short = short
+    row.disp_order = order
+    row.module = (body.module or row.module or "MMS").strip() or "MMS"
+    row.updated_by = principal.username
+    row.updated_date = now
+    row.version_no = next_ver
+    session.flush()
+    return _to_out(row)
+
+
+@router.delete("/{row_id}")
+def delete_domain_value(
+    row_id: str,
+    session: Session = Depends(get_db_session),
+    _principal: Principal = Depends(get_principal),
+) -> dict[str, str]:
+    row = session.get(DomainValue, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Domain value not found")
+    session.delete(row)
+    session.flush()
+    return {"status": "deleted", "id": row_id}

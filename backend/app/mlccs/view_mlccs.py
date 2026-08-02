@@ -2,6 +2,9 @@
 
 Search / list / class-of-eqpt options against MMS_MLCCS_EQUIPMENT_MASTER.
 Mirrors frontend src/components/mlccs/ViewMlccs.tsx.
+
+Uses column-only selects + server-side OFFSET/LIMIT pagination so the
+screen can open quickly even when the master table is large.
 """
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session
@@ -21,6 +24,19 @@ router = APIRouter(
     tags=["mlccs: view mlccs"],
 )
 
+# Columns required by the View MLCCS grid only (avoids SELECT *).
+_LIST_COLUMNS = (
+    MlccsEquipmentMaster.id,
+    MlccsEquipmentMaster.material_no,
+    MlccsEquipmentMaster.census_no,
+    MlccsEquipmentMaster.nomen,
+    MlccsEquipmentMaster.class_category,
+    MlccsEquipmentMaster.cat_part_no,
+    MlccsEquipmentMaster.au,
+    MlccsEquipmentMaster.op_status,
+    MlccsEquipmentMaster.item_status,
+)
+
 
 class MlccsSearchRequest(BaseModel):
     text: str | None = None
@@ -29,7 +45,12 @@ class MlccsSearchRequest(BaseModel):
         description="Nomenclature | Census No | Material No | Cat Part No",
     )
     class_of_eqpt: str | None = None
-    limit: int = Field(default=500, ge=1, le=2000)
+    result_q: str | None = Field(
+        default=None,
+        description="Optional secondary filter across visible result columns",
+    )
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=5000)
 
 
 class MlccsListItem(BaseModel):
@@ -41,6 +62,13 @@ class MlccsListItem(BaseModel):
     cat_part_no: str | None = None
     au: str | None = None
     status: str | None = None
+
+
+class MlccsSearchResponse(BaseModel):
+    items: list[MlccsListItem]
+    total: int
+    page: int
+    page_size: int
 
 
 @router.get("/status")
@@ -63,14 +91,11 @@ def mlccs_options(session: Session = Depends(get_db_session)) -> dict[str, list[
     return {"class_of_eqpt": class_of_eqpt}
 
 
-@router.post("/search", response_model=list[MlccsListItem])
-def search_mlccs(
-    body: MlccsSearchRequest,
-    session: Session = Depends(get_db_session),
-) -> list[MlccsListItem]:
-    """Search MMS_MLCCS_EQUIPMENT_MASTER for the View MLCCS screen."""
-    stmt = select(MlccsEquipmentMaster)
+def _like(col: Any, pattern: str) -> ColumnElement[bool]:
+    return func.upper(col).like(pattern)
 
+
+def _apply_filters(stmt: Select[Any], body: MlccsSearchRequest) -> Select[Any]:
     if body.class_of_eqpt and body.class_of_eqpt.strip():
         stmt = stmt.where(
             func.upper(MlccsEquipmentMaster.class_category)
@@ -89,33 +114,79 @@ def search_mlccs(
         }
         col = column_map.get(field)
         if col is not None:
-            stmt = stmt.where(func.upper(col).like(q))
+            stmt = stmt.where(_like(col, q))
         else:
             stmt = stmt.where(
                 or_(
-                    func.upper(MlccsEquipmentMaster.nomen).like(q),
-                    func.upper(MlccsEquipmentMaster.census_no).like(q),
-                    func.upper(MlccsEquipmentMaster.material_no).like(q),
-                    func.upper(MlccsEquipmentMaster.cat_part_no).like(q),
+                    _like(MlccsEquipmentMaster.nomen, q),
+                    _like(MlccsEquipmentMaster.census_no, q),
+                    _like(MlccsEquipmentMaster.material_no, q),
+                    _like(MlccsEquipmentMaster.cat_part_no, q),
                 )
             )
 
-    stmt = stmt.order_by(
-        MlccsEquipmentMaster.census_no.asc(),
-        MlccsEquipmentMaster.nomen.asc(),
-    ).limit(body.limit)
-
-    rows = session.scalars(stmt).all()
-    return [
-        MlccsListItem(
-            id=r.id,
-            material_no=r.material_no,
-            census_no=r.census_no,
-            nomenclature=r.nomen,
-            class_of_eqpt=r.class_category,
-            cat_part_no=r.cat_part_no,
-            au=r.au,
-            status=r.op_status or r.item_status,
+    result_q = (body.result_q or "").strip()
+    if result_q:
+        rq = f"%{result_q.upper()}%"
+        stmt = stmt.where(
+            or_(
+                _like(MlccsEquipmentMaster.material_no, rq),
+                _like(MlccsEquipmentMaster.census_no, rq),
+                _like(MlccsEquipmentMaster.nomen, rq),
+                _like(MlccsEquipmentMaster.class_category, rq),
+                _like(MlccsEquipmentMaster.cat_part_no, rq),
+                _like(MlccsEquipmentMaster.au, rq),
+                _like(MlccsEquipmentMaster.op_status, rq),
+                _like(MlccsEquipmentMaster.item_status, rq),
+            )
         )
-        for r in rows
-    ]
+
+    return stmt
+
+
+def _row_to_item(row: Any) -> MlccsListItem:
+    return MlccsListItem(
+        id=row.id,
+        material_no=row.material_no,
+        census_no=row.census_no,
+        nomenclature=row.nomen,
+        class_of_eqpt=row.class_category,
+        cat_part_no=row.cat_part_no,
+        au=row.au,
+        status=row.op_status or row.item_status,
+    )
+
+
+@router.post("/search", response_model=MlccsSearchResponse)
+def search_mlccs(
+    body: MlccsSearchRequest,
+    session: Session = Depends(get_db_session),
+) -> MlccsSearchResponse:
+    """Paginated search of MMS_MLCCS_EQUIPMENT_MASTER for View MLCCS.
+
+    Empty text + no class filter returns the full table page-by-page
+    (used on screen open). Only grid columns are selected.
+    """
+    base = _apply_filters(select(*_LIST_COLUMNS), body)
+    count_stmt = _apply_filters(
+        select(func.count(MlccsEquipmentMaster.id)),
+        body,
+    )
+    total = int(session.scalar(count_stmt) or 0)
+
+    offset = (body.page - 1) * body.page_size
+    stmt = (
+        base.order_by(
+            MlccsEquipmentMaster.census_no.asc(),
+            MlccsEquipmentMaster.nomen.asc(),
+        )
+        .offset(offset)
+        .limit(body.page_size)
+    )
+    rows = session.execute(stmt).all()
+    return MlccsSearchResponse(
+        items=[_row_to_item(r) for r in rows],
+        total=total,
+        page=body.page,
+        page_size=body.page_size,
+    )

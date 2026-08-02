@@ -33,7 +33,6 @@ export function AllIndiaHolding() {
       footer={
         <>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={handleGetAih}
           >
             Get AIH

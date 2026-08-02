@@ -1,19 +1,11 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
-import { FormPanel } from "@/components/FormPanel";
+import { FormPanel, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="-mx-2 sm:-mx-3 border-y border-border bg-muted/60 px-2 py-1 text-center text-[12px] font-semibold text-foreground">
-      {title}
-    </div>
-  );
-}
 
 export function DrrDirUpload() {
   const [type, setType] = useState<"DRR" | "DIR">("DRR");
@@ -38,7 +30,6 @@ export function DrrDirUpload() {
       footer={
         <>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={handleSubmit}
           >
             Submit
@@ -49,10 +40,10 @@ export function DrrDirUpload() {
         </>
       }
     >
-      <div className="-mt-2 flex flex-col sm:-mt-3">
-        <SectionHeader title="Receive / Issue" />
+      <div className="flex flex-col gap-1">
+        <FormSection title="Receive / issue" />
 
-        <div className="px-1 py-3">
+        <div className="py-3">
           <RadioGroup
             value={type}
             onValueChange={(v) => setType(v as "DRR" | "DIR")}
@@ -74,7 +65,7 @@ export function DrrDirUpload() {
                   id={opt.id}
                   className="h-4 w-4 p-0"
                 />
-                <Label htmlFor={opt.id} className="cursor-pointer text-sm font-normal">
+                <Label htmlFor={opt.id} className="cursor-pointer text-[14px] font-normal">
                   {opt.value}
                 </Label>
               </div>
@@ -82,31 +73,32 @@ export function DrrDirUpload() {
           </RadioGroup>
         </div>
 
-        <SectionHeader title="Upload" />
+        <FormSection title="Upload" />
 
-        <div className="flex flex-col gap-4 px-1 py-3">
+        <div className="flex flex-col gap-4 py-3">
           <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] sm:gap-6">
-            <p className="text-[12px] leading-snug text-foreground">
-              <span className="mr-0.5 text-destructive">*</span>
+            <p className="text-[12px] font-semibold leading-snug text-[var(--ink-soft,#54606c)]">
+              <span className="mr-0.5 text-[var(--danger,#b3261e)]">*</span>
               Click Choose File/Browse button below and pick the sample Excel file
               or another excel file
             </p>
             <Input
               type="file"
               accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="h-auto max-w-md py-0.5"
+              className="h-auto max-w-md py-1.5"
               onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
             />
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-[12px] font-medium text-foreground">
+            <span className="text-[12px] font-semibold text-[var(--ink-soft,#54606c)]">
               Download Format
             </span>
             <button
               type="button"
+              data-size="icon"
               onClick={() => toast.info(`Downloading ${type} format template...`)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700"
+              className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[var(--accent,#14568c)] text-white shadow-[var(--shadow-sm)] hover:bg-[#1d74b8]"
               aria-label={`Download ${type} format`}
               title="Download Format"
             >

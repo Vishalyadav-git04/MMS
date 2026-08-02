@@ -43,10 +43,7 @@ export function WpnAndEqptDetails() {
       lockBodyScroll
       footer={
         <>
-          <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
-            onClick={handleClear}
-          >
+          <Button variant="secondary" onClick={handleClear}>
             Clear
           </Button>
           <Button onClick={handleSearch}>Search</Button>

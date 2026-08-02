@@ -40,7 +40,6 @@ interface FullForm {
   countryOfOrigin: string;
   nodalDte: string;
   eqptCategory: string;
-  inclInAih: string;
   yearOfInduction: string;
   digestCategory: string;
   cost: string;
@@ -70,7 +69,6 @@ interface MlccsRecord {
   country_of_origin?: string | null;
   nodal_dte?: string | null;
   eqpt_category?: string | null;
-  incl_in_aih?: string | null;
   year_of_induction?: string | null;
   digest_category?: string | null;
   cost_rs?: string | null;
@@ -93,15 +91,14 @@ const emptyForm: FullForm = {
   prfGroup: "",
   itemCode: "",
   catPartNo: "",
-  accountingUnit: "NOS",
+  accountingUnit: "",
   briefDescription: "",
-  itemStatus: "CUR",
+  itemStatus: "",
   itemCategory: "",
   classOfEqpt: "",
   countryOfOrigin: "",
   nodalDte: "",
   eqptCategory: "",
-  inclInAih: "",
   yearOfInduction: "2026",
   digestCategory: "",
   cost: "",
@@ -123,15 +120,14 @@ function recordToForm(r: MlccsRecord): FullForm {
     prfGroup: r.prf_group ?? "",
     itemCode: r.item_code ?? "",
     catPartNo: r.cat_part_no ?? "",
-    accountingUnit: r.accounting_unit ?? "NOS",
+    accountingUnit: r.accounting_unit ?? "",
     briefDescription: r.brief_description ?? "",
-    itemStatus: r.item_status ?? "CUR",
+    itemStatus: r.item_status ?? "",
     itemCategory: r.item_category ?? "",
     classOfEqpt: r.class_of_eqpt ?? "",
     countryOfOrigin: r.country_of_origin ?? "",
     nodalDte: r.nodal_dte ?? "",
     eqptCategory: r.eqpt_category ?? "",
-    inclInAih: r.incl_in_aih ?? "",
     yearOfInduction: r.year_of_induction ?? "",
     digestCategory: r.digest_category ?? "",
     cost: r.cost_rs ?? "",
@@ -162,7 +158,6 @@ function formToBody(form: FullForm): MlccsRecord {
     country_of_origin: form.countryOfOrigin || null,
     nodal_dte: form.nodalDte || null,
     eqpt_category: form.eqptCategory || null,
-    incl_in_aih: form.inclInAih || null,
     year_of_induction: form.yearOfInduction || null,
     digest_category: form.digestCategory || null,
     cost_rs: form.cost || null,
@@ -179,6 +174,30 @@ function errMsg(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error) return e.message;
   return "Request failed";
+}
+
+/** Full COS Section: A-01 … Z-99 (letter, hyphen, 01–99). */
+const COS_SEC_RE = /^[A-Z]-(0[1-9]|[1-9][0-9])$/;
+
+/** Restrict typing to progressive A / A- / A-0 / A-01 shape (max 4 chars). */
+function sanitizeCosSection(raw: string): string {
+  const up = raw.toUpperCase();
+  let out = "";
+  for (let i = 0; i < up.length && out.length < 4; i++) {
+    const ch = up[i]!;
+    if (out.length === 0) {
+      if (/[A-Z]/.test(ch)) out += ch;
+    } else if (out.length === 1) {
+      if (ch === "-") out += ch;
+    } else if (/[0-9]/.test(ch)) {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function isValidCosSection(value: string): boolean {
+  return COS_SEC_RE.test(value.trim().toUpperCase());
 }
 
 function ActionButtons({
@@ -200,7 +219,6 @@ function ActionButtons({
         size="sm"
         disabled={busy}
         onClick={onPrimary}
-        className="bg-success hover:bg-success/90 text-success-foreground"
       >
         {primaryLabel}
       </Button>
@@ -244,13 +262,27 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
 
   useEffect(() => {
     api<OptionsMap>("/admin/capture-mlccs-details/options")
-      .then(setOptions)
+      .then((opts) => {
+        setOptions(opts);
+        // Replace any label defaults (NOS/CUR) with CODE_VALUE once options load
+        const fix = (f: FullForm): FullForm => ({
+          ...f,
+          accountingUnit: resolveOptionCode(
+            opts.accounting_unit,
+            f.accountingUnit,
+            "NOS",
+          ),
+          itemStatus: resolveOptionCode(opts.item_status, f.itemStatus, "CUR"),
+        });
+        setAddForm((f) => fix(f));
+        setModForm((f) => fix(f));
+      })
       .catch(() => {
         /* keep hardcoded fallbacks in SelectField */
       });
   }, []);
 
-  // COS Section typeahead — prefer local options list, fall back to API
+  // COS Section typeahead from MMS_PRF_GRP_MSTR (options first, then API)
   useEffect(() => {
     if (mode !== "add" || showAddFull) return;
     const q = addCos.trim().toUpperCase();
@@ -408,12 +440,16 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
       toast.error("COS Section and Nomenclature are required");
       return;
     }
+    if (!isValidCosSection(addCos)) {
+      toast.error("COS Section must be like A-01 (letter A–Z, hyphen, 01–99)");
+      return;
+    }
     setBusy(true);
     try {
       const rec = await api<MlccsRecord>("/admin/capture-mlccs-details/generate", {
         method: "POST",
         body: JSON.stringify({
-          cos_section: addCos.trim(),
+          cos_section: addCos.trim().toUpperCase(),
           nomenclature: addNom.trim(),
         }),
       });
@@ -549,13 +585,24 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
               <>
                 <FormRow label="COS Section" required>
                   <SuggestInput
-                    placeholder="Search..."
+                    placeholder="e.g. A-01"
                     value={addCos}
                     disabled={busy}
                     suggestions={cosSuggestions}
-                    onChange={setAddCos}
-                    onPick={(idx) => pickCosSuggestion(cosSuggestions[idx]!)}
+                    onChange={(v) => setAddCos(sanitizeCosSection(v))}
+                    onPick={(idx) =>
+                      pickCosSuggestion(sanitizeCosSection(cosSuggestions[idx]!))
+                    }
                   />
+                  {addCos.length > 0 && !isValidCosSection(addCos) ? (
+                    <p className="mt-1 text-xs text-destructive">
+                      Format: A-01 to Z-99 (letter, hyphen, 01–99)
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Format: A-01 to Z-99
+                    </p>
+                  )}
                 </FormRow>
                 <FormRow label="Nomenclature" required>
                   <Input
@@ -797,9 +844,39 @@ function SuggestInput({
   );
 }
 
-function optionValues(options: OptionsMap, key: string, fallback: string[]): string[] {
-  const fromApi = options[key]?.map((o) => o.value).filter(Boolean) ?? [];
-  return fromApi.length > 0 ? fromApi : fallback;
+type SelectOption = { value: string; label: string };
+
+/** Prefer CODE_VALUE; if current text is a LABEL_NAME, map it to the matching code. */
+function resolveOptionCode(
+  options: SelectOption[] | undefined,
+  current: string,
+  preferredLabel?: string,
+): string {
+  const list = options ?? [];
+  const cur = current.trim();
+  if (cur && list.some((o) => o.value === cur)) return cur;
+  if (cur) {
+    const byLabel = list.find(
+      (o) => o.label.trim().toUpperCase() === cur.toUpperCase(),
+    );
+    if (byLabel) return byLabel.value;
+  }
+  if (preferredLabel) {
+    const want = preferredLabel.trim().toUpperCase();
+    const byPref = list.find(
+      (o) =>
+        o.label.trim().toUpperCase() === want ||
+        o.value.trim().toUpperCase() === want,
+    );
+    if (byPref) return byPref.value;
+  }
+  return cur;
+}
+
+function optionValues(options: OptionsMap, key: string, fallback: string[]): SelectOption[] {
+  const fromApi = options[key]?.filter((o) => o.value) ?? [];
+  if (fromApi.length > 0) return fromApi;
+  return fallback.map((v) => ({ value: v, label: v }));
 }
 
 function FullEqptForm({
@@ -815,6 +892,54 @@ function FullEqptForm({
 }) {
   const upd = <K extends keyof FullForm>(k: K, v: FullForm[K]) => setForm({ ...form, [k]: v });
   const isLocked = (k: keyof FullForm) => lockedFields.includes(k);
+
+  const [prfOptions, setPrfOptions] = useState<SelectOption[]>([]);
+  const [itemOptions, setItemOptions] = useState<SelectOption[]>([]);
+
+  // Load PRF groups for the filled COS Section (from MMS_PRF_GRP_MSTR)
+  useEffect(() => {
+    const cos = form.cosSection.trim().toUpperCase();
+    if (!isValidCosSection(cos)) {
+      setPrfOptions([]);
+      return;
+    }
+    let cancelled = false;
+    void api<SelectOption[]>(
+      `/admin/capture-mlccs-details/prf-groups?cos_section=${encodeURIComponent(cos)}`,
+    )
+      .then((rows) => {
+        if (!cancelled) setPrfOptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setPrfOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.cosSection]);
+
+  // Load item codes for selected PRF Group under that COS
+  useEffect(() => {
+    const cos = form.cosSection.trim().toUpperCase();
+    const grp = form.prfGroup.trim();
+    if (!isValidCosSection(cos) || !grp) {
+      setItemOptions([]);
+      return;
+    }
+    let cancelled = false;
+    void api<SelectOption[]>(
+      `/admin/capture-mlccs-details/item-codes?cos_section=${encodeURIComponent(cos)}&prf_group=${encodeURIComponent(grp)}`,
+    )
+      .then((rows) => {
+        if (!cancelled) setItemOptions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setItemOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.cosSection, form.prfGroup]);
 
   return (
     <div className="space-y-1.5">
@@ -845,15 +970,26 @@ function FullEqptForm({
         <FormRow label="PRF Group" required>
           <SelectField
             value={form.prfGroup}
-            onChange={(v) => upd("prfGroup", v)}
-            options={optionValues(options, "prf_group", ["GROUP-0", "GROUP-1", "GROUP-2"])}
+            onChange={(v) => setForm({ ...form, prfGroup: v, itemCode: "" })}
+            options={prfOptions}
+            placeholder={
+              prfOptions.length ? "--Select PRF Group--" : "No PRF groups for this COS"
+            }
           />
         </FormRow>
         <FormRow label="Item Code" required>
           <SelectField
             value={form.itemCode}
             onChange={(v) => upd("itemCode", v)}
-            options={optionValues(options, "item_code", ["ITEMCODE-1", "ITEMCODE-2", "ITEMCODE-3"])}
+            options={itemOptions}
+            placeholder={
+              !form.prfGroup
+                ? "Select PRF Group first"
+                : itemOptions.length
+                  ? "--Select Item Code--"
+                  : "No item codes for this PRF"
+            }
+            disabled={!form.prfGroup}
           />
         </FormRow>
         <FormRow label="Cat/Part No" required>
@@ -867,28 +1003,28 @@ function FullEqptForm({
           <SelectField
             value={form.accountingUnit}
             onChange={(v) => upd("accountingUnit", v)}
-            options={optionValues(options, "accounting_unit", ["NOS", "EA", "KG", "LTR"])}
+            options={optionValues(options, "accounting_unit", [])}
           />
         </FormRow>
         <FormRow label="Item Status" required>
           <SelectField
             value={form.itemStatus}
             onChange={(v) => upd("itemStatus", v)}
-            options={optionValues(options, "item_status", ["CUR", "ACT", "OBS"])}
+            options={optionValues(options, "item_status", [])}
           />
         </FormRow>
         <FormRow label="Item Category" required>
           <SelectField
             value={form.itemCategory}
             onChange={(v) => upd("itemCategory", v)}
-            options={optionValues(options, "item_category", ["Weapon", "Ammunition", "Vehicle"])}
+            options={optionValues(options, "item_category", [])}
           />
         </FormRow>
         <FormRow label="Class of Eqpt" required>
           <SelectField
             value={form.classOfEqpt}
             onChange={(v) => upd("classOfEqpt", v)}
-            options={optionValues(options, "class_of_eqpt", ["Class I", "Class II", "Class III"])}
+            options={optionValues(options, "class_of_eqpt", [])}
           />
         </FormRow>
         <FormRow label="Country of Origin">
@@ -902,21 +1038,14 @@ function FullEqptForm({
           <SelectField
             value={form.nodalDte}
             onChange={(v) => upd("nodalDte", v)}
-            options={optionValues(options, "nodal_dte", ["DGOS", "DGAS", "DGEME"])}
+            options={optionValues(options, "nodal_dte", [])}
           />
         </FormRow>
         <FormRow label="Eqpt Category">
           <SelectField
             value={form.eqptCategory}
             onChange={(v) => upd("eqptCategory", v)}
-            options={optionValues(options, "eqpt_category", ["A", "B", "C"])}
-          />
-        </FormRow>
-        <FormRow label="Incl in AIH">
-          <SelectField
-            value={form.inclInAih}
-            onChange={(v) => upd("inclInAih", v)}
-            options={optionValues(options, "incl_in_aih", ["Y", "N"])}
+            options={optionValues(options, "eqpt_category", [])}
           />
         </FormRow>
         <FormRow label="Year of Induction">
@@ -929,7 +1058,7 @@ function FullEqptForm({
           <SelectField
             value={form.digestCategory}
             onChange={(v) => upd("digestCategory", v)}
-            options={optionValues(options, "digest_category", ["Cat-I", "Cat-II"])}
+            options={optionValues(options, "digest_category", [])}
           />
         </FormRow>
         <FormRow label="Cost (Rs.)">
@@ -999,22 +1128,37 @@ function SelectField({
   onChange,
   options,
   placeholder = "--Select--",
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options: Array<string | SelectOption>;
   placeholder?: string;
+  disabled?: boolean;
 }) {
-  const all = value && !options.includes(value) ? [value, ...options] : options;
+  const normalized: SelectOption[] = options.map((o) =>
+    typeof o === "string" ? { value: o, label: o } : o,
+  );
+  // If form holds a label (legacy), bind Select to the matching CODE_VALUE
+  const resolved = resolveOptionCode(normalized, value);
+  const hasValue =
+    Boolean(resolved) && !normalized.some((o) => o.value === resolved);
+  const all = hasValue
+    ? [{ value: resolved, label: resolved }, ...normalized]
+    : normalized;
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={resolved || undefined}
+      onValueChange={onChange}
+      disabled={disabled}
+    >
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {all.map((o) => (
-          <SelectItem key={o} value={o}>
-            {o}
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
           </SelectItem>
         ))}
       </SelectContent>

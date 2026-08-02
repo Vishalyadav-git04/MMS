@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -49,14 +49,6 @@ interface SubDomainRow {
   sub_domain_id: number;
   sub_domain_name: string;
   eqpt_cat?: string | null;
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="-mx-2 sm:-mx-3 my-0.5 border-y border-border bg-muted/60 px-2 py-0.5 text-center text-[12px] font-bold uppercase tracking-wide text-foreground">
-      {title}
-    </div>
-  );
 }
 
 function UnitLookup({
@@ -322,7 +314,6 @@ export function EpIutTransfer() {
                 Clear List
               </Button>
               <Button
-                className="bg-success hover:bg-success/90 text-success-foreground"
                 onClick={handleSubmit}
                 disabled={transferRegns.length === 0}
               >
@@ -334,7 +325,7 @@ export function EpIutTransfer() {
       }
     >
       <div className="space-y-1">
-        <SectionHeader title="PARENT UNIT DETAILS" />
+        <FormSection title="Parent unit details" />
         <UnitLookup
           label="Parent Unit"
           search={parentSearch}
@@ -401,7 +392,7 @@ export function EpIutTransfer() {
           </FormRow>
         </FormGrid>
 
-        <SectionHeader title="RECEIVING UNIT DETAILS" />
+        <FormSection title="Receiving unit details" />
         <UnitLookup
           label="Receiving Unit"
           search={receivingSearch}
@@ -414,7 +405,7 @@ export function EpIutTransfer() {
 
         {listLoaded && (
           <>
-            <SectionHeader title="Regn No to be Transfer" />
+            <FormSection title="Regn no to be transfer" />
             <div
               className={cn(
                 "flex flex-wrap items-center gap-2 rounded border border-border px-2 py-1.5",
@@ -452,7 +443,6 @@ export function EpIutTransfer() {
                   type="button"
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8"
                   onClick={moveToTransfer}
                   title="Move selected to transfer list"
                 >
@@ -462,7 +452,6 @@ export function EpIutTransfer() {
                   type="button"
                   size="icon"
                   variant="outline"
-                  className="h-8 w-8"
                   onClick={moveBackToAvailable}
                   title="Move selected back"
                 >

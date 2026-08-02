@@ -1,7 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Pencil, Trash2 } from "lucide-react";
 import { FormPanel, FormRow, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,6 +42,58 @@ const emptyAdd = {
   dispOrder: "",
 };
 
+function rowToForm(row: DomainRow) {
+  return {
+    domainName: row.domain_name ?? "",
+    codeValue: row.code_value ?? "",
+    labelName: row.label_name ?? "",
+    labelShort: row.label_short ?? "",
+    dispOrder: row.disp_order ?? "",
+  };
+}
+
+/** Within one domain, code/label/short/display order must each be unique. */
+function uniquenessError(
+  form: typeof emptyAdd,
+  siblings: DomainRow[],
+  excludeId?: string,
+): string | null {
+  const domain = form.domainName.trim().toUpperCase();
+  if (!domain) return null;
+  const code = form.codeValue.trim().toUpperCase();
+  const label = form.labelName.trim().toUpperCase();
+  const short = (form.labelShort.trim() || form.labelName.trim()).toUpperCase();
+  const order = form.dispOrder.trim();
+
+  const others = siblings.filter(
+    (r) =>
+      r.id !== excludeId &&
+      (r.domain_name ?? "").trim().toUpperCase() === domain,
+  );
+
+  if (code && others.some((r) => (r.code_value ?? "").trim().toUpperCase() === code)) {
+    return `Code Value '${form.codeValue.trim()}' already exists in domain '${form.domainName.trim()}'`;
+  }
+  if (label && others.some((r) => (r.label_name ?? "").trim().toUpperCase() === label)) {
+    return `Label Name '${form.labelName.trim()}' already exists in domain '${form.domainName.trim()}'`;
+  }
+  if (
+    short &&
+    others.some(
+      (r) => (r.label_short ?? r.label_name ?? "").trim().toUpperCase() === short,
+    )
+  ) {
+    return `Label Short '${form.labelShort.trim() || form.labelName.trim()}' already exists in domain '${form.domainName.trim()}'`;
+  }
+  if (
+    order &&
+    others.some((r) => (r.disp_order ?? "").trim() === order)
+  ) {
+    return `Display Order '${order}' already exists in domain '${form.domainName.trim()}'`;
+  }
+  return null;
+}
+
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 export function MmsDomainMaster() {
@@ -48,6 +109,9 @@ export function MmsDomainMaster() {
 
   const [addForm, setAddForm] = useState(emptyAdd);
   const [searchDomain, setSearchDomain] = useState("");
+  const [editRow, setEditRow] = useState<DomainRow | null>(null);
+  const [editForm, setEditForm] = useState(emptyAdd);
+  const [deleteRow, setDeleteRow] = useState<DomainRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = tableQuery.trim().toLowerCase();
@@ -119,6 +183,15 @@ export function MmsDomainMaster() {
     }
     setBusy(true);
     try {
+      // Prefer live domain siblings so uniqueness is checked even before Search tab runs.
+      const siblings = await api<DomainRow[]>(
+        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(addForm.domainName.trim())}`,
+      );
+      const localErr = uniquenessError(addForm, siblings);
+      if (localErr) {
+        toast.error(localErr);
+        return;
+      }
       await api<DomainRow>("/admin/mms-domain-master/", {
         method: "POST",
         body: JSON.stringify({
@@ -162,10 +235,81 @@ export function MmsDomainMaster() {
     }
   };
 
+  const clearAdd = () => {
+    setAddForm(emptyAdd);
+    setDomainSuggestions([]);
+  };
+
+  const clearSearch = () => {
+    setSearchDomain("");
+    setResults([]);
+    setSearched(false);
+    setTableQuery("");
+    setPage(1);
+  };
+
+  const openEdit = (row: DomainRow) => {
+    setEditRow(row);
+    setEditForm(rowToForm(row));
+  };
+
+  const handleUpdate = async () => {
+    if (!editRow) return;
+    if (!editForm.domainName.trim() || !editForm.codeValue.trim() || !editForm.labelName.trim()) {
+      toast.error("Domain Name, Code Value and Label Name are required");
+      return;
+    }
+    setBusy(true);
+    try {
+      const siblings = await api<DomainRow[]>(
+        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(editForm.domainName.trim())}`,
+      );
+      const localErr = uniquenessError(editForm, siblings, editRow.id);
+      if (localErr) {
+        toast.error(localErr);
+        return;
+      }
+      const updated = await api<DomainRow>(`/admin/mms-domain-master/${editRow.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          domain_name: editForm.domainName.trim(),
+          code_value: editForm.codeValue.trim(),
+          label_name: editForm.labelName.trim(),
+          label_short: editForm.labelShort.trim() || null,
+          disp_order: editForm.dispOrder.trim() || null,
+          module: editRow.module || "MMS",
+        }),
+      });
+      setResults((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEditRow(null);
+      refreshDomains();
+      toast.success("Domain value updated");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteRow) return;
+    setBusy(true);
+    try {
+      await api(`/admin/mms-domain-master/${deleteRow.id}`, { method: "DELETE" });
+      setResults((prev) => prev.filter((r) => r.id !== deleteRow.id));
+      setDeleteRow(null);
+      refreshDomains();
+      toast.success("Domain value deleted");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Delete failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <FormPanel
       title="MMS Domain Master"
-      fill={mode === "search"}
       tabs={
         <SwitchTabs<Mode>
           tabs={[
@@ -179,9 +323,36 @@ export function MmsDomainMaster() {
           }}
         />
       }
+      footer={
+        mode === "add" ? (
+          <>
+            <Button disabled={busy} onClick={() => void handleSubmit()}>
+              {busy ? "Saving…" : "Submit"}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={clearAdd}>
+              Clear
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={clearAdd}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button disabled={busy} onClick={() => void handleSearch()}>
+              {busy ? "Searching…" : "Search"}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={clearSearch}>
+              Clear
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={clearSearch}>
+              Cancel
+            </Button>
+          </>
+        )
+      }
     >
       {mode === "add" ? (
-        <div className="w-full space-y-3 overflow-visible px-2 pt-2 sm:px-4">
+        <div className="mx-auto w-full max-w-2xl space-y-1">
           <FormRow label="Domain Name" required className="sm:grid-cols-[140px_minmax(0,1fr)]">
             <SuggestInput
               value={addForm.domainName}
@@ -223,76 +394,31 @@ export function MmsDomainMaster() {
               onChange={(e) => setAddForm({ ...addForm, dispOrder: e.target.value })}
             />
           </FormRow>
-
-          <div className="flex flex-wrap justify-center gap-2 pt-4 pb-1">
-            <Button
-              disabled={busy}
-              className="bg-success hover:bg-success/90 text-success-foreground"
-              onClick={() => void handleSubmit()}
-            >
-              {busy ? "Saving…" : "Submit"}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => {
-                setAddForm(emptyAdd);
-                setDomainSuggestions([]);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
         </div>
       ) : (
-        <div className="flex h-full min-h-0 flex-col gap-3 px-2 pt-2 sm:px-4">
-          <div className="w-full shrink-0">
-            <FormRow label="Domain Name" className="sm:grid-cols-[140px_minmax(0,1fr)]">
-              <Select
-                value={searchDomain || "__all__"}
-                onValueChange={(v) => setSearchDomain(v === "__all__" ? "" : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="-- ALL --" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">-- ALL --</SelectItem>
-                  {domains.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormRow>
-          </div>
-
-          <div className="flex shrink-0 flex-wrap justify-center gap-2">
-            <Button
-              disabled={busy}
-              className="bg-success hover:bg-success/90 text-success-foreground"
-              onClick={() => void handleSearch()}
+        <div className="mx-auto w-full max-w-3xl space-y-3">
+          <FormRow label="Domain Name" className="sm:grid-cols-[140px_minmax(0,1fr)]">
+            <Select
+              value={searchDomain || "__all__"}
+              onValueChange={(v) => setSearchDomain(v === "__all__" ? "" : v)}
             >
-              {busy ? "Searching…" : "Search"}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => {
-                setSearchDomain("");
-                setResults([]);
-                setSearched(false);
-                setTableQuery("");
-                setPage(1);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
+              <SelectTrigger>
+                <SelectValue placeholder="-- ALL --" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">-- ALL --</SelectItem>
+                {domains.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
 
           {searched && (
-            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md border border-border">
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-b border-border bg-secondary/60 px-3 py-1.5 text-[12px]">
+            <div className="overflow-hidden rounded-md border border-border">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/60 px-3 py-1.5 text-[12px]">
                 <div className="flex items-center gap-1.5">
                   Show{" "}
                   <select
@@ -318,24 +444,19 @@ export function MmsDomainMaster() {
                 </div>
               </div>
 
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-                style={{ maxHeight: "calc(100vh - 360px)" }}
-              >
-                <table className="w-full caption-bottom border-collapse text-xs">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-primary">
+              <div className="overflow-x-auto">
+                <table className="w-full caption-bottom border-collapse text-[14px]">
+                  <thead>
+                    <tr>
                       {[
                         "Domain",
                         "Code Value",
                         "Label Name",
                         "Label Short",
                         "Display Order",
+                        "Action",
                       ].map((h) => (
-                        <th
-                          key={h}
-                          className="h-8 px-2 py-0 text-left text-[12px] font-semibold text-primary-foreground"
-                        >
+                        <th key={h} className="text-left">
                           {h}
                         </th>
                       ))}
@@ -345,7 +466,7 @@ export function MmsDomainMaster() {
                     {pageRows.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="py-6 text-center text-xs text-muted-foreground"
                         >
                           No data available in table
@@ -359,6 +480,32 @@ export function MmsDomainMaster() {
                           <td className="px-2 py-1.5 align-middle">{r.label_name}</td>
                           <td className="px-2 py-1.5 align-middle">{r.label_short}</td>
                           <td className="px-2 py-1.5 align-middle">{r.disp_order}</td>
+                          <td className="px-2 py-1.5 align-middle">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1 px-2 text-[12px]"
+                                disabled={busy}
+                                onClick={() => openEdit(r)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="h-7 gap-1 px-2 text-[12px]"
+                                disabled={busy}
+                                onClick={() => setDeleteRow(r)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                Delete
+                              </Button>
+                            </div>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -366,7 +513,7 @@ export function MmsDomainMaster() {
                 </table>
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground">
                 <div>
                   Showing {pageStart} to {pageEnd} of {filtered.length} entries
                 </div>
@@ -426,6 +573,86 @@ export function MmsDomainMaster() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={editRow != null}
+        onOpenChange={(open) => {
+          if (!open) setEditRow(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Domain Value</DialogTitle>
+            <DialogDescription>Update the selected MMS domain master record.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <FormRow label="Domain Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                value={editForm.domainName}
+                onChange={(e) => setEditForm({ ...editForm, domainName: e.target.value })}
+              />
+            </FormRow>
+            <FormRow label="Code Value" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                value={editForm.codeValue}
+                onChange={(e) => setEditForm({ ...editForm, codeValue: e.target.value })}
+              />
+            </FormRow>
+            <FormRow label="Label Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                value={editForm.labelName}
+                onChange={(e) => setEditForm({ ...editForm, labelName: e.target.value })}
+              />
+            </FormRow>
+            <FormRow label="Label Short" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                value={editForm.labelShort}
+                maxLength={10}
+                onChange={(e) => setEditForm({ ...editForm, labelShort: e.target.value })}
+              />
+            </FormRow>
+            <FormRow label="Display Order" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                value={editForm.dispOrder}
+                onChange={(e) => setEditForm({ ...editForm, dispOrder: e.target.value })}
+              />
+            </FormRow>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" disabled={busy} onClick={() => setEditRow(null)}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={() => void handleUpdate()}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteRow != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRow(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Domain Value</DialogTitle>
+            <DialogDescription>
+              Delete <strong>{deleteRow?.domain_name}</strong> / code{" "}
+              <strong>{deleteRow?.code_value}</strong>? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" disabled={busy} onClick={() => setDeleteRow(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={() => void handleDelete()}>
+              {busy ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </FormPanel>
   );
 }

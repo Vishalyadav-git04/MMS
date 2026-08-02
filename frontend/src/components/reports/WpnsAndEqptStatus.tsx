@@ -57,7 +57,6 @@ export function WpnsAndEqptStatus() {
       footer={
         <>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={() => {
               if (!requireUnit()) return;
               toast.message("List Eqpt Data — functionality coming soon");
@@ -66,7 +65,6 @@ export function WpnsAndEqptStatus() {
             List Eqpt Data
           </Button>
           <Button
-            className="bg-success hover:bg-success/90 text-success-foreground"
             onClick={() => {
               if (!requireUnit()) return;
               toast.message("Eqpt Data Summary — functionality coming soon");

@@ -278,11 +278,27 @@ export function AppLayout({
             screenLabel={screenLabel}
           />
 
-          <div className="mms-stage min-h-0 flex-1 overflow-y-auto">
-            <div className="mms-content-inner h-full min-h-0 px-[14px] pb-12 pt-2 sm:px-[34px] sm:pb-[60px] sm:pt-3">
+          <div
+            className={
+              formOpen
+                ? "mms-stage min-h-0 flex-1 overflow-hidden"
+                : "mms-stage min-h-0 flex-1 overflow-y-auto"
+            }
+          >
+            <div
+              className={
+                formOpen
+                  ? "mms-content-inner flex h-full min-h-0 flex-col px-[12px] pb-3 pt-2 sm:px-[24px] sm:pb-4 sm:pt-3"
+                  : "mms-content-inner min-h-full px-[14px] pb-12 pt-[18px] sm:px-[34px] sm:pb-[60px] sm:pt-[26px]"
+              }
+            >
               <motion.div
                 key={key}
-                className="mms-stage__card h-full min-h-0"
+                className={
+                  formOpen
+                    ? "mms-stage__card flex min-h-0 flex-1 flex-col"
+                    : "mms-stage__card"
+                }
                 initial={reduced ? stageFade : stageEnter}
                 animate={stageCentre}
                 transition={{ duration: 0.42, ease: EASE_OUT }}

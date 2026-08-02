@@ -4,15 +4,21 @@ import { PageHeader } from "@/components/PageHeader";
 
 export function FormPanel({
   title,
+  note,
+  extra,
   children,
   footer,
   tabs,
-  /** When true, panel fills the viewport (long forms). Short forms leave this false so no empty gap. */
+  /** When true, panel absolutely fills the FormScreen slot (best for nested scroll regions). */
   fill = false,
-  /** When fill is true, keep body from scrolling so children can manage their own scroll regions. */
+  /** Keep body from scrolling so children can manage their own scroll regions. */
   lockBodyScroll = false,
 }: {
   title: string;
+  /** Optional caption under the panel title (design-system panel note). */
+  note?: string;
+  /** Optional actions in the panel head (export / records, etc.). */
+  extra?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   tabs?: ReactNode;
@@ -22,36 +28,45 @@ export function FormPanel({
   return (
     <div
       className={cn(
-        "mms-panel mms-rise flex flex-col",
-        fill
-          ? "absolute inset-0 min-h-0 overflow-hidden"
-          : "w-full max-h-full overflow-visible",
+        /* Hug content when short; cap at slot height so long bodies scroll with footer pinned. */
+        "mms-panel mms-rise flex min-h-0 max-h-full w-full flex-col overflow-hidden",
+        fill && "absolute inset-0",
       )}
     >
-      <div className="mms-panel__head shrink-0 px-3 py-1.5 sm:px-5">
-        <h2 className="mms-panel__title text-[13px] sm:text-[15px] uppercase tracking-wide">
-          {title}
-        </h2>
+      <div className="mms-panel__head shrink-0">
+        <h2 className="mms-panel__title">{title}</h2>
+        {note ? <p className="mms-panel__note">{note}</p> : null}
+        {extra ? <div className="mms-panel__extra">{extra}</div> : null}
       </div>
       {tabs && (
-        <div className="shrink-0 border-b border-border bg-secondary/60 px-3 pt-1">{tabs}</div>
+        <div className="shrink-0 border-b border-[var(--line-soft,#dfe9f4)] bg-[var(--surface-alt,#eff5fb)] px-6 pt-2">
+          {tabs}
+        </div>
       )}
       <div
         className={cn(
-          "compact-form p-2 sm:p-3",
-          fill
-            ? cn(
-                "relative flex min-h-0 flex-1 flex-col",
-                lockBodyScroll ? "overflow-hidden" : "overflow-y-auto",
-              )
-            : "overflow-visible",
+          /* flex-1 + min-h-0 so body shrinks under max-h panel and scrolls above the footer
+             (avoids footer overlapping the results). Short forms still hug content because
+             the panel height stays content-driven when under the max. */
+          "mms-form mms-panel__body relative min-h-0 flex-1",
+          lockBodyScroll
+            ? "flex flex-col overflow-hidden"
+            : "overflow-y-auto overscroll-contain",
         )}
       >
         {children}
       </div>
-      {footer && (
-        <div className="mms-panel__foot shrink-0 px-3 py-1.5 sm:px-5">{footer}</div>
-      )}
+      {footer && <div className="mms-panel__foot shrink-0">{footer}</div>}
+    </div>
+  );
+}
+
+/** Uppercase section label + hairline rule (breaks long forms into groups). */
+export function FormSection({ title }: { title: string }) {
+  return (
+    <div className="mms-section mms-span-full">
+      <span className="mms-section__title">{title}</span>
+      <hr className="mms-section__rule" />
     </div>
   );
 }
@@ -68,14 +83,9 @@ export function FormRow({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "grid grid-cols-1 sm:grid-cols-[112px_minmax(0,1fr)] items-center gap-x-1.5 gap-y-0",
-        className,
-      )}
-    >
-      <label className="text-[12px] font-semibold leading-tight text-muted-foreground sm:text-right">
-        {required && <span className="text-destructive mr-0.5">*</span>}
+    <div className={cn("mms-form-row", className)}>
+      <label className="mms-form__label">
+        {required && <span className="mr-0.5 text-[var(--danger,#b3261e)]">*</span>}
         {label}
       </label>
       <div className="min-w-0">{children}</div>
@@ -95,12 +105,12 @@ export function FormGrid({
   return (
     <div
       className={cn(
-        "grid gap-x-2 gap-y-1",
+        "mms-form-grid",
         cols === 4
-          ? "sm:grid-cols-2 lg:grid-cols-4"
+          ? "mms-form-grid--4"
           : cols === 3
-            ? "sm:grid-cols-2 lg:grid-cols-3"
-            : "sm:grid-cols-2",
+            ? "mms-form-grid--3"
+            : "mms-form-grid--2",
         className,
       )}
     >
@@ -119,7 +129,7 @@ export function SwitchTabs<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="tablist" className="flex flex-wrap gap-0.5 -mb-px">
+    <div role="tablist" className="flex flex-wrap gap-1 -mb-px">
       {tabs.map((t) => {
         const active = value === t.id;
         return (
@@ -130,10 +140,10 @@ export function SwitchTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(t.id)}
             className={cn(
-              "px-3 py-1 text-[13px] font-semibold rounded-t-lg border border-b-0 transition-colors",
+              "h-8 px-3 text-[12px] font-semibold rounded-t-[8px] border border-b-0 transition-[color,background-color,border-color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
               active
-                ? "bg-card text-primary border-border border-t-2 border-t-primary"
-                : "bg-transparent text-muted-foreground border-transparent hover:text-primary",
+                ? "bg-[var(--surface,#fff)] text-[var(--accent,#14568c)] border-[var(--line,#cddcec)] border-t-2 border-t-[var(--accent,#14568c)]"
+                : "bg-transparent text-[var(--ink-soft,#54606c)] border-transparent hover:text-[var(--accent,#14568c)]",
             )}
           >
             {t.label}
@@ -157,24 +167,26 @@ export function FormScreen({
   children: ReactNode;
 }) {
   return (
-    <div className="mms-rise flex h-full min-h-0 flex-col gap-1 overflow-hidden">
+    <div className="mms-rise flex h-full min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
       <PageHeader
-        compact
         eyebrow={section}
         title={title}
+        compact
         className="shrink-0"
         action={
           <button
             type="button"
             onClick={onBack}
-            className="shrink-0 rounded-lg border border-border bg-card px-2.5 py-1 text-[13px] font-semibold text-primary shadow-sm hover:bg-secondary"
+            className="inline-flex h-8 shrink-0 items-center rounded-[8px] border border-[var(--line,#cddcec)] bg-[var(--surface,#fff)] px-3 text-[13px] font-semibold text-[var(--accent,#14568c)] shadow-[var(--shadow-sm)] hover:bg-[var(--surface-alt,#eff5fb)]"
           >
-            ← Back to sub-modules
+            ← Back
           </button>
         }
       />
-      {/* Absolute fill so FormPanel height is exact viewport remainder (footer never clips) */}
-      <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
+      {/* Constrained slot: FormPanel body scrolls; footer stays pinned */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </div>
     </div>
   );
 }

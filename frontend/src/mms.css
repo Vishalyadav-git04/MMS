@@ -122,7 +122,7 @@
   font-size: 11px;
 }
 
-/* ── Panel (white paper on icy canvas) ── */
+/* ── Panel (white paper on icy canvas) — §4.5 / §5.1 ── */
 .mms-panel {
   display: flex;
   flex-direction: column;
@@ -137,15 +137,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 12px 24px;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
   background-color: var(--surface-alt, #eff5fb);
   border-bottom: 1px solid var(--line-soft, #dfe9f4);
 }
 
 .mms-panel__title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--accent, #14568c);
@@ -154,8 +155,25 @@
   text-decoration: none;
 }
 
+.mms-panel__note {
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-faint, #616d79);
+  text-align: center;
+}
+
+.mms-panel__extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .mms-panel__body {
-  padding: 16px 20px;
+  padding: 12px 16px;
 }
 
 .mms-panel__foot {
@@ -164,9 +182,235 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 24px;
+  padding: 10px 16px;
   background-color: var(--surface-alt, #eff5fb);
   border-top: 1px solid var(--line-soft, #dfe9f4);
+}
+
+/* Clear / secondary actions must contrast against the foot strip */
+.mms-panel__foot button.bg-secondary,
+.mms-panel__foot button.bg-card,
+.mms-form-actions button.bg-secondary,
+.mms-form-actions button.bg-card {
+  background-color: var(--surface, #ffffff) !important;
+  border: 1px solid var(--line, #cddcec);
+  color: var(--accent, #14568c);
+}
+
+/* Form section divider — uppercase label + 1px rule */
+.mms-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 2px;
+}
+
+.mms-section__title {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #14568c);
+}
+
+.mms-section__rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line, #cddcec);
+  border: 0;
+}
+
+/* Compact form density — same look, less chrome so more fields fit */
+.mms-form {
+  font-size: 13px;
+  color: var(--ink, #15202b);
+  font-variant-numeric: tabular-nums;
+}
+
+.mms-form input,
+.mms-form select,
+.mms-form textarea,
+.mms-form [data-slot="select-trigger"],
+.mms-form button[role="combobox"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.mms-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.mms-form select,
+.mms-form [data-slot="select-trigger"],
+.mms-form button[role="combobox"] {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 10px;
+  padding-right: 10px;
+  font-size: 13px !important;
+  line-height: 1.2;
+  border-radius: 8px;
+  background-color: var(--surface, #ffffff);
+  border: 1px solid var(--line, #cddcec);
+  color: var(--ink, #15202b);
+  box-shadow: var(--shadow-sm);
+}
+
+.mms-form input[data-date-input] {
+  padding-right: 2rem;
+}
+
+.mms-form input[type="file"] {
+  height: auto;
+  min-height: 32px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.mms-form textarea {
+  min-height: 56px;
+  height: auto;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  resize: vertical;
+  border-radius: 8px;
+}
+
+.mms-form label,
+.mms-form .mms-form__label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-soft, #54606c);
+}
+
+/* Footer / primary actions — compact 32px */
+.mms-panel__foot button,
+.mms-form .mms-form-actions button {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+.mms-form button[data-size="icon"],
+.mms-panel__foot button[data-size="icon"] {
+  width: 32px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.mms-form input:focus-visible,
+.mms-form select:focus-visible,
+.mms-form textarea:focus-visible,
+.mms-form [data-slot="select-trigger"]:focus-visible,
+.mms-form button[role="combobox"]:focus-visible {
+  outline: none;
+  border-color: #1d74b8;
+  box-shadow: 0 0 0 3px rgba(20, 86, 140, 0.14);
+}
+
+/* Side-by-side label + control — packs ~2× more fields than stacked labels */
+.mms-form-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.mms-form-row > label,
+.mms-form-row > .mms-form__label {
+  text-align: right;
+}
+
+.mms-form-grid {
+  display: grid;
+  gap: 0 14px;
+}
+
+/* Tables inside panels — denser rows, same header treatment */
+.mms-panel table,
+.mms-form table {
+  font-variant-numeric: tabular-nums;
+}
+
+.mms-panel table thead tr.bg-primary,
+.mms-form table thead tr.bg-primary,
+.mms-panel table thead tr.bg-primary:hover,
+.mms-form table thead tr.bg-primary:hover {
+  background-color: var(--surface-alt, #eff5fb) !important;
+}
+
+.mms-panel table th,
+.mms-form table th {
+  height: auto !important;
+  min-height: 34px;
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #54606c);
+  background-color: var(--surface-alt, #eff5fb) !important;
+}
+
+.mms-panel table th.text-primary-foreground,
+.mms-form table th.text-primary-foreground {
+  color: var(--ink-soft, #54606c) !important;
+}
+
+.mms-panel table td,
+.mms-form table td {
+  padding: 6px 8px !important;
+  font-size: 13px !important;
+  color: var(--ink, #15202b);
+}
+
+.mms-panel table tbody tr:hover,
+.mms-form table tbody tr:hover {
+  background-color: var(--surface-alt, #eff5fb);
+}
+
+.mms-form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mms-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mms-form-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .mms-form-row {
+    grid-template-columns: 1fr;
+  }
+  .mms-form-row > label,
+  .mms-form-row > .mms-form__label {
+    text-align: left;
+  }
+}
+
+@media (max-width: 760px) {
+  .mms-form-grid--2,
+  .mms-form-grid--3,
+  .mms-form-grid--4 {
+    grid-template-columns: 1fr;
+  }
+  .mms-panel__body {
+    padding: 10px 12px;
+  }
+  .mms-panel__head,
+  .mms-panel__foot {
+    padding: 8px 12px;
+  }
 }
 
 /* ── Grid helpers ── */

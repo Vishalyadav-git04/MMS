@@ -355,7 +355,6 @@
 .mms-stage__card {
   transform-style: preserve-3d;
   will-change: transform, opacity;
-  height: 100%;
   min-height: 0;
 }
 

@@ -143,7 +143,6 @@ function DialogActions({
       </Button>
       {onUpdate && updateLabel && (
         <Button
-          className="bg-success hover:bg-success/90 text-success-foreground"
           onClick={onUpdate}
         >
           {updateLabel}
@@ -427,7 +426,7 @@ function StripInspectionForm({
                 <Button
                   type="button"
                   size="icon"
-                  className="h-7 w-7 bg-success hover:bg-success/90 text-success-foreground"
+                  className="h-7 w-7"
                   onClick={handleAdd}
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -587,7 +586,6 @@ export function UpdateArtyEqptData() {
               Clear
             </Button>
             <Button
-              className="bg-success hover:bg-success/90 text-success-foreground"
               onClick={handleSearch}
             >
               Search

@@ -152,7 +152,6 @@ function DialogActions({
       </Button>
       {onUpdate && updateLabel && (
         <Button
-          className="bg-success hover:bg-success/90 text-success-foreground"
           onClick={onUpdate}
         >
           {updateLabel}
@@ -342,7 +341,6 @@ export function UpdateEqptData() {
               Clear
             </Button>
             <Button
-              className="bg-success hover:bg-success/90 text-success-foreground"
               onClick={handleSearch}
             >
               Search
