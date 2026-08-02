@@ -16,7 +16,10 @@ import {
   type AuthRole,
   type AuthUser,
 } from "@/lib/auth";
-import { setCachedClientIp } from "@/lib/session-watermark";
+import {
+  resolveClientIp,
+  setCachedClientIp,
+} from "@/lib/session-watermark";
 
 type LoginResponse = {
   access_token: string;
@@ -62,7 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ username, password }),
       skipAuth: true,
     });
+    // Cache API IP only when it is a real remote address (not localhost).
     if (res.client_ip) setCachedClientIp(res.client_ip);
+    // Prefer workstation LAN IP for the session watermark (WebRTC).
+    void resolveClientIp(true);
     const next = toUser(res);
     setSession(next);
     setUser(next);

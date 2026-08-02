@@ -1,23 +1,32 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+/* Register A — imported once via the global stylesheet (consumed under .mms-root). */
+@import "./mms.css";
+/* Register B + signature chrome (glass, nav, stage, splash, live-hero). */
+@import "./aid.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Cinzel", ui-serif, Georgia, serif;
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
-  /* Text scale shifted up one notch from Tailwind defaults for readability. */
+  /* System stacks only — air-gapped; no webfonts. */
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", Consolas, monospace;
+
   --text-xs: 0.8125rem;
   --text-sm: 0.9375rem;
   --text-base: 1.0625rem;
   --text-lg: 1.1875rem;
   --text-xl: 1.375rem;
   --text-2xl: 1.625rem;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -53,85 +62,91 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 8px;
 
-  /* Navy blue palette with brass gold accents */
-  --background: oklch(0.98 0.006 255);
-  --foreground: oklch(0.22 0.025 258);
+  /*
+   * MISO design-system palette mapped onto shadcn tokens.
+   * Primary = deep azure (#14568c). Accent role for Tailwind `accent` maps to
+   * saffron (#a85711) so existing `text-accent` / gold callouts become the
+   * restrained national accent rather than brass fill.
+   */
+  --background: #dfeaf6;
+  --foreground: #15202b;
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.025 258);
+  --card: #ffffff;
+  --card-foreground: #15202b;
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.025 258);
+  --popover: #ffffff;
+  --popover-foreground: #15202b;
 
-  /* Deep navy blue */
-  --primary: oklch(0.34 0.075 258);
-  --primary-foreground: oklch(0.98 0.012 250);
+  --primary: #14568c;
+  --primary-foreground: #ffffff;
 
-  /* Cool secondary */
-  --secondary: oklch(0.93 0.02 255);
-  --secondary-foreground: oklch(0.28 0.055 258);
+  --secondary: #eff5fb;
+  --secondary-foreground: #14568c;
 
-  --muted: oklch(0.96 0.012 255);
-  --muted-foreground: oklch(0.45 0.03 258);
+  --muted: #eff5fb;
+  --muted-foreground: #54606c;
 
-  /* Brass gold accent */
-  --accent: oklch(0.72 0.13 82);
-  --accent-foreground: oklch(0.18 0.02 258);
+  /* Saffron — considered accent, not a fill colour */
+  --accent: #a85711;
+  --accent-foreground: #ffffff;
 
-  --destructive: oklch(0.52 0.19 27);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
 
-  --success: oklch(0.52 0.13 155);
-  --success-foreground: oklch(0.98 0 0);
+  --success: #1f7a4d;
+  --success-foreground: #ffffff;
 
-  --border: oklch(0.88 0.015 255);
-  --input: oklch(0.9 0.014 255);
-  --ring: oklch(0.34 0.075 258);
+  --border: #cddcec;
+  --input: #cddcec;
+  --ring: #2ea8d5;
 
-  /* Brand tokens (army-olive kept as alias for primary navy) */
-  --army-olive: oklch(0.34 0.075 258);
-  --army-gold: oklch(0.72 0.13 82);
-  --army-khaki: oklch(0.85 0.04 250);
+  /* Legacy aliases → design-system values (keep class names working) */
+  --army-olive: #14568c;
+  --army-gold: #a85711;
+  --army-khaki: #e8f2fa;
 
-  /* Sidebar: deep navy with gold accents */
-  --sidebar: oklch(0.26 0.06 258);
-  --sidebar-foreground: oklch(0.94 0.015 250);
-  --sidebar-primary: oklch(0.72 0.13 82);
-  --sidebar-primary-foreground: oklch(0.18 0.02 258);
-  --sidebar-accent: oklch(0.32 0.07 258);
-  --sidebar-accent-foreground: oklch(0.96 0.012 250);
-  --sidebar-border: oklch(0.32 0.06 258);
-  --sidebar-ring: oklch(0.72 0.13 82);
+  --sidebar: #0f3a5c;
+  --sidebar-foreground: #f4f8fc;
+  --sidebar-primary: #2ea8d5;
+  --sidebar-primary-foreground: #0f3a5c;
+  --sidebar-accent: #14568c;
+  --sidebar-accent-foreground: #f4f8fc;
+  --sidebar-border: rgba(46, 168, 213, 0.22);
+  --sidebar-ring: #2ea8d5;
 }
 
+/*
+ * Dark mode is intentionally unused (design system: light theme only).
+ * Tokens kept so a stray .dark class does not crash; values stay light-leaning.
+ */
 .dark {
-  --background: oklch(0.16 0.025 258);
-  --foreground: oklch(0.96 0.012 250);
-  --card: oklch(0.2 0.03 258);
-  --card-foreground: oklch(0.96 0.012 250);
-  --popover: oklch(0.2 0.03 258);
-  --popover-foreground: oklch(0.96 0.012 250);
-  --primary: oklch(0.72 0.13 82);
-  --primary-foreground: oklch(0.18 0.02 258);
-  --secondary: oklch(0.28 0.04 258);
-  --secondary-foreground: oklch(0.96 0.012 250);
-  --muted: oklch(0.24 0.03 258);
-  --muted-foreground: oklch(0.7 0.02 250);
-  --accent: oklch(0.72 0.13 82);
-  --accent-foreground: oklch(0.18 0.02 258);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.72 0.13 82);
-  --sidebar: oklch(0.2 0.035 258);
-  --sidebar-foreground: oklch(0.96 0.012 250);
-  --sidebar-primary: oklch(0.72 0.13 82);
-  --sidebar-primary-foreground: oklch(0.18 0.02 258);
-  --sidebar-accent: oklch(0.28 0.045 258);
-  --sidebar-accent-foreground: oklch(0.96 0.012 250);
-  --sidebar-border: oklch(0.28 0.045 258);
-  --sidebar-ring: oklch(0.72 0.13 82);
+  --background: #dfeaf6;
+  --foreground: #15202b;
+  --card: #ffffff;
+  --card-foreground: #15202b;
+  --popover: #ffffff;
+  --popover-foreground: #15202b;
+  --primary: #14568c;
+  --primary-foreground: #ffffff;
+  --secondary: #eff5fb;
+  --secondary-foreground: #14568c;
+  --muted: #eff5fb;
+  --muted-foreground: #54606c;
+  --accent: #a85711;
+  --accent-foreground: #ffffff;
+  --border: #cddcec;
+  --input: #cddcec;
+  --ring: #2ea8d5;
+  --sidebar: #0f3a5c;
+  --sidebar-foreground: #f4f8fc;
+  --sidebar-primary: #2ea8d5;
+  --sidebar-primary-foreground: #0f3a5c;
+  --sidebar-accent: #14568c;
+  --sidebar-accent-foreground: #f4f8fc;
+  --sidebar-border: rgba(46, 168, 213, 0.22);
+  --sidebar-ring: #2ea8d5;
 }
 
 @layer base {
@@ -147,17 +162,20 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 }
 
+/* Panel head — surface-alt paper strip (replaces navy+gold gradient). */
 @utility panel-title {
-  background: linear-gradient(180deg, oklch(0.32 0.075 258), oklch(0.28 0.07 258));
-  color: var(--color-army-gold);
-  border-bottom: 2px solid var(--color-army-gold);
+  background-color: #eff5fb;
+  color: #14568c;
+  border-bottom: 1px solid #dfe9f4;
 }
 
-/* Compact form density: all fields + footer buttons fit one viewport (no scroll). */
+/*
+ * Compact form density retained for viewport-fit behaviour (conflict with design-system
+ * 38px control height — see restyle notes). Colours inherit from tokens.
+ */
 @layer components {
   .compact-form input,
   .compact-form select,
@@ -172,7 +190,6 @@
     font-size: 0.8125rem;
     line-height: 1.2;
   }
-  /* Room for the calendar icon flush at the right corner */
   .compact-form input[data-date-input] {
     padding-right: 1.85rem;
   }
@@ -194,6 +211,8 @@
   .compact-form label {
     font-size: 0.8125rem;
     line-height: 1.15;
+    color: #54606c;
+    font-weight: 600;
   }
   .compact-form button:not([role="radio"]):not([data-date-calendar]) {
     height: 1.75rem;

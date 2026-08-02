@@ -5,6 +5,8 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -12,14 +14,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { motion } from "framer-motion";
+import { CHART_BLUES, CHART_ALERT } from "@/theme";
+import { chartIn } from "@/lib/motion";
+import { AnomalyDot } from "@/components/aid/AnomalyDot";
 
-const COLORS = {
-  olive: "#3d5c40",
-  gold: "#c4a035",
-  khaki: "#9a8b5c",
-  moss: "#5a7a52",
-  sand: "#d4c48a",
-};
+/** Blues only — anomaly red is reserved so a single non-blue stands out. */
+const BLUES = CHART_BLUES;
+const GRID = "rgba(20,86,140,0.10)";
+const AXIS = { fontSize: 11, fill: "#616d79" };
 
 interface EpCounts {
   domain: number;
@@ -34,33 +37,70 @@ interface Props {
   loadingEp?: boolean;
 }
 
-function ChartPanel({
-  title,
-  subtitle,
-  children,
+type TipPayload = {
+  name?: string;
+  value?: number;
+  payload?: { anomaly?: boolean; reason?: string; module?: string };
+};
+
+function GlassTip({
+  active,
+  payload,
+  label,
 }: {
-  title: string;
-  subtitle: string;
-  children: ReactNode;
+  active?: boolean;
+  payload?: TipPayload[];
+  label?: string;
 }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0];
+  const anomalous = !!row.payload?.anomaly;
+  const mod = row.payload?.module;
   return (
-    <div className="rounded-lg border border-border bg-card shadow-sm">
-      <div className="border-b border-border px-4 py-3">
-        <div className="text-sm font-semibold text-primary">{title}</div>
-        <div className="text-[13px] text-muted-foreground">{subtitle}</div>
+    <div className={anomalous ? "aid-tip aid-tip--alert" : "aid-tip"}>
+      <div className="font-semibold">
+        {mod ? `${mod} · ` : ""}
+        {label ?? row.name}
       </div>
-      <div className="h-56 p-3">{children}</div>
+      <div className="tabular-nums">
+        {typeof row.value === "number" ? row.value.toLocaleString("en-IN") : row.value}
+      </div>
+      {anomalous && (
+        <div className="aid-tip__alert">⚠ {row.payload?.reason ?? "Anomaly"}</div>
+      )}
     </div>
   );
 }
 
-function tooltipStyle() {
-  return {
-    backgroundColor: "#fff",
-    border: "1px solid #e5e0d4",
-    borderRadius: 8,
-    fontSize: 12,
-  };
+function ChartPanel({
+  title,
+  subtitle,
+  children,
+  alert,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+  alert?: boolean;
+}) {
+  return (
+    <motion.div
+      className={`mms-stat overflow-hidden aid-glass aid-glass--strong !shadow-none${alert ? " aid-card--alert" : ""}`}
+      variants={chartIn}
+      initial="hidden"
+      animate="show"
+    >
+      <div className="border-b border-[rgba(20,86,140,0.10)] bg-white/40 px-4 py-3">
+        <div className="text-sm font-semibold tracking-tight text-primary">{title}</div>
+        <div
+          className={`text-[13px]${alert ? " font-bold text-[#d32020]" : " text-muted-foreground"}`}
+        >
+          {subtitle}
+        </div>
+      </div>
+      <div className="h-[236px] p-3">{children}</div>
+    </motion.div>
+  );
 }
 
 export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
@@ -81,14 +121,24 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
   ];
 
   const overviewData = [
-    { name: "Census No.", module: "MLCCS", value: mlccs.unique_census_no, fill: COLORS.olive },
-    { name: "PRF Group", module: "MLCCS", value: mlccs.prf_group, fill: COLORS.gold },
-    { name: "Domain", module: "EP", value: ep.domain, fill: COLORS.moss },
-    { name: "Sub Domain", module: "EP", value: ep.sub_domain, fill: COLORS.khaki },
-    { name: "Regn No.", module: "EP", value: ep.regn_no, fill: COLORS.sand },
-    { name: "UE", module: "MMS", value: mms.ue, fill: COLORS.olive },
-    { name: "UH", module: "MMS", value: mms.uh, fill: COLORS.gold },
+    { name: "Census No.", module: "MLCCS", value: mlccs.unique_census_no, fill: BLUES[0] },
+    { name: "PRF Group", module: "MLCCS", value: mlccs.prf_group, fill: BLUES[1] },
+    { name: "Domain", module: "EP", value: ep.domain, fill: BLUES[2] },
+    { name: "Sub Domain", module: "EP", value: ep.sub_domain, fill: BLUES[3] },
+    {
+      name: "Regn No.",
+      module: "EP",
+      value: ep.regn_no,
+      fill: ep.regn_no === 0 && !loadingEp ? CHART_ALERT : BLUES[4],
+      anomaly: ep.regn_no === 0 && !loadingEp,
+      reason: "No registration numbers captured",
+    },
+    { name: "UE", module: "MMS", value: mms.ue, fill: BLUES[0] },
+    { name: "UH", module: "MMS", value: mms.uh, fill: BLUES[5] },
   ];
+
+  const epEmpty = !loadingEp && ep.domain === 0 && ep.sub_domain === 0 && ep.regn_no === 0;
+  const hasAnomaly = overviewData.some((r) => r.anomaly);
 
   return (
     <div className="space-y-4">
@@ -100,13 +150,13 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
               layout="vertical"
               margin={{ left: 8, right: 12, top: 8, bottom: 0 }}
             >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e0d4" />
-              <XAxis type="number" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={78} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle()} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={22}>
+              <CartesianGrid strokeDasharray="3 4" horizontal={false} stroke={GRID} />
+              <XAxis type="number" tick={AXIS} />
+              <YAxis type="category" dataKey="name" width={78} tick={AXIS} />
+              <Tooltip content={<GlassTip />} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={68} barSize={22}>
                 {mlccsData.map((_, i) => (
-                  <Cell key={i} fill={i === 0 ? COLORS.olive : COLORS.gold} />
+                  <Cell key={i} fill={BLUES[i % BLUES.length]} />
                 ))}
               </Bar>
             </BarChart>
@@ -115,7 +165,14 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
 
         <ChartPanel
           title="EP Composition"
-          subtitle={loadingEp ? "Loading…" : "Domain · Sub Domain · Regn No."}
+          subtitle={
+            loadingEp
+              ? "Loading…"
+              : epEmpty
+                ? "No EP rows yet"
+                : "Domain · Sub Domain · Regn No."
+          }
+          alert={epEmpty}
         >
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -130,10 +187,13 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
                 paddingAngle={2}
               >
                 {epData.map((_, i) => (
-                  <Cell key={i} fill={[COLORS.olive, COLORS.gold, COLORS.khaki][i % 3]} />
+                  <Cell
+                    key={i}
+                    fill={epEmpty && i === 0 ? CHART_ALERT : BLUES[i % BLUES.length]}
+                  />
                 ))}
               </Pie>
-              <Tooltip contentStyle={tooltipStyle()} />
+              <Tooltip content={<GlassTip />} />
               <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 11 }} />
             </PieChart>
           </ResponsiveContainer>
@@ -152,48 +212,74 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
                 outerRadius={68}
                 paddingAngle={3}
               >
-                <Cell fill={COLORS.olive} />
-                <Cell fill={COLORS.gold} />
+                <Cell fill={BLUES[0]} />
+                <Cell fill={BLUES[2]} />
               </Pie>
-              <Tooltip
-                contentStyle={tooltipStyle()}
-                formatter={(v: number) => v.toLocaleString("en-IN")}
-              />
+              <Tooltip content={<GlassTip />} />
               <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontSize: 11 }} />
             </PieChart>
           </ResponsiveContainer>
         </ChartPanel>
       </div>
 
-      <ChartPanel title="All Metrics Overview" subtitle="Counts across MLCCS, EP and MMS">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={overviewData} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e0d4" />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 10 }}
-              interval={0}
-              angle={-20}
-              textAnchor="end"
-              height={48}
-            />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip
-              contentStyle={tooltipStyle()}
-              formatter={(v: number) => v.toLocaleString("en-IN")}
-              labelFormatter={(label, payload) => {
-                const mod = payload?.[0]?.payload?.module;
-                return mod ? `${mod} · ${label}` : String(label);
-              }}
-            />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={28}>
-              {overviewData.map((row) => (
-                <Cell key={row.name} fill={row.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartPanel
+          title="All Metrics Overview"
+          subtitle={hasAnomaly ? "Anomaly highlighted in red" : "Counts across MLCCS, EP and MMS"}
+          alert={hasAnomaly}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={overviewData} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 4" vertical={false} stroke={GRID} />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: "#616d79" }}
+                interval={0}
+                angle={-22}
+                textAnchor="end"
+                height={54}
+              />
+              <YAxis tick={AXIS} />
+              <Tooltip content={<GlassTip />} />
+              <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={68} barSize={28}>
+                {overviewData.map((row) => (
+                  <Cell key={row.name} fill={row.fill} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartPanel>
+
+        <ChartPanel
+          title="Metric profile"
+          subtitle="Line view with anomaly dots"
+          alert={hasAnomaly}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={overviewData} margin={{ left: 0, right: 12, top: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 4" vertical={false} stroke={GRID} />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: "#616d79" }}
+                interval={0}
+                angle={-22}
+                textAnchor="end"
+                height={54}
+              />
+              <YAxis tick={AXIS} />
+              <Tooltip content={<GlassTip />} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={BLUES[1]}
+                strokeWidth={2}
+                dot={<AnomalyDot />}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartPanel>
+      </div>
     </div>
   );
 }

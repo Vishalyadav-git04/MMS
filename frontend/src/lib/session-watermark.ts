@@ -17,16 +17,56 @@ export function normalizeClientIp(ip: string): string {
   return value;
 }
 
+export function isLoopbackIp(ip: string): boolean {
+  const normalized = normalizeClientIp(ip);
+  return (
+    !normalized ||
+    normalized === "127.0.0.1" ||
+    normalized === "0.0.0.0" ||
+    normalized === "unknown" ||
+    normalized === "N/A" ||
+    normalized === "…"
+  );
+}
+
+function isPrivateLanIpv4(ip: string): boolean {
+  return (
+    ip.startsWith("10.") ||
+    ip.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)
+  );
+}
+
+/** Only private LAN addresses belong in the session watermark (not public WAN / STUN). */
+export function isWatermarkIp(ip: string): boolean {
+  const normalized = normalizeClientIp(ip);
+  return (
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(normalized) &&
+    !isLoopbackIp(normalized) &&
+    isPrivateLanIpv4(normalized)
+  );
+}
+
 export function setCachedClientIp(ip: string): void {
   if (typeof window === "undefined") return;
   const normalized = normalizeClientIp(ip);
-  if (!normalized || normalized === "N/A" || normalized === "…") return;
+  // Never persist loopback or public WAN — watermark must show workstation LAN IP.
+  if (!isWatermarkIp(normalized)) return;
   sessionStorage.setItem(CLIENT_IP_KEY, normalized);
 }
 
 export function getCachedClientIp(): string {
   if (typeof window === "undefined") return "";
-  return normalizeClientIp(sessionStorage.getItem(CLIENT_IP_KEY) || "");
+  const cached = normalizeClientIp(sessionStorage.getItem(CLIENT_IP_KEY) || "");
+  if (!isWatermarkIp(cached)) {
+    try {
+      sessionStorage.removeItem(CLIENT_IP_KEY);
+    } catch {
+      /* ignore */
+    }
+    return "";
+  }
+  return cached;
 }
 
 export function formatWatermarkStamp(date: Date = new Date()): string {
@@ -57,27 +97,50 @@ export function buildWatermarkLine(opts?: {
     "USER"
   ).toUpperCase();
   const clientIp =
-    normalizeClientIp(opts?.clientIp || "") || getCachedClientIp() || "N/A";
+    [opts?.clientIp, getCachedClientIp()]
+      .map((v) => normalizeClientIp(v || ""))
+      .find(isWatermarkIp) || "N/A";
   // Non-breaking spaces keep IP · user · time as one unbreakable visual unit
   return `${clientIp}\u00A0·\u00A0${username}\u00A0·\u00A0${formatWatermarkStamp(opts?.date)}`;
 }
 
-/** Prefer private LAN IPv4 addresses for session watermarks. */
-function pickBestIp(candidates: string[]): string | null {
-  const normalized = candidates.map(normalizeClientIp).filter(Boolean);
-  const ipv4 = normalized.filter((ip) => /^\d{1,3}(\.\d{1,3}){3}$/.test(ip));
-  const lan = ipv4.find(
-    (ip) =>
-      ip.startsWith("10.") ||
-      ip.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip),
-  );
-  if (lan) return lan;
-  const nonLoopback = ipv4.find((ip) => ip !== "127.0.0.1" && ip !== "0.0.0.0");
-  return nonLoopback || ipv4[0] || null;
+/** Rank private NICs: office/home LAN first, then corp 10.x, then 172.16–31 (often Hyper-V). */
+function lanRank(ip: string): number {
+  if (ip.startsWith("192.168.")) return 0;
+  if (ip.startsWith("10.")) return 1;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return 2;
+  return 9;
 }
 
-/** Discover this workstation's local IP via WebRTC ICE candidates. */
+/** Private LAN IPv4 only — never public WAN (e.g. STUN srflx). */
+function pickBestIp(candidates: string[]): string | null {
+  const lan = candidates
+    .map(normalizeClientIp)
+    .filter(isWatermarkIp)
+    .sort((a, b) => lanRank(a) - lanRank(b));
+  return lan[0] || null;
+}
+
+function collectCandidateIp(candidate: RTCIceCandidate, ips: Set<string>): void {
+  const raw = candidate.candidate || "";
+  const type = candidate.type || (raw.match(/\btyp\s+(\w+)/i)?.[1] ?? "");
+  // Host NIC only — ignore srflx/prflx/relay (those are public / relayed).
+  if (type && type !== "host") return;
+
+  const address = (candidate as RTCIceCandidate & { address?: string | null }).address;
+  if (address && isWatermarkIp(address)) ips.add(normalizeClientIp(address));
+  const match = raw.match(/([0-9]{1,3}(?:\.[0-9]{1,3}){3})/);
+  if (match?.[1] && isWatermarkIp(match[1])) ips.add(match[1]);
+}
+
+/** If the app is opened via a LAN URL, that host is the watermark IP. */
+function detectIpFromPageHost(): string | null {
+  if (typeof window === "undefined") return null;
+  const host = normalizeClientIp(window.location.hostname || "");
+  return isWatermarkIp(host) ? host : null;
+}
+
+/** Discover this workstation's local LAN IP via WebRTC host ICE candidates. */
 function detectLocalIpViaWebRtc(): Promise<string | null> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || typeof RTCPeerConnection === "undefined") {
@@ -98,8 +161,9 @@ function detectLocalIpViaWebRtc(): Promise<string | null> {
       resolve(pickBestIp([...ips]));
     };
 
+    // No STUN — STUN yields your public WAN IP (e.g. 27.x), which must not be the watermark.
     const pc = new RTCPeerConnection({ iceServers: [] });
-    const timer = window.setTimeout(finish, 1500);
+    const timer = window.setTimeout(finish, 2000);
 
     try {
       pc.createDataChannel("mms-ip");
@@ -109,12 +173,11 @@ function detectLocalIpViaWebRtc(): Promise<string | null> {
           finish();
           return;
         }
-        const raw = event.candidate.candidate || "";
-        const match = raw.match(
-          /([0-9]{1,3}(?:\.[0-9]{1,3}){3})|([a-f0-9:]+:+[a-f0-9:]+)/i,
-        );
-        if (match?.[1]) ips.add(match[1]);
-        else if (match?.[2]) ips.add(normalizeClientIp(match[2]));
+        collectCandidateIp(event.candidate, ips);
+        if (pickBestIp([...ips])) {
+          window.clearTimeout(timer);
+          finish();
+        }
       };
 
       pc.createOffer()
@@ -134,7 +197,8 @@ async function detectIpFromBackend(): Promise<string | null> {
   try {
     const res = await api<{ client_ip?: string }>("/auth/me");
     const ip = normalizeClientIp(res.client_ip || "");
-    if (!ip || ip === "unknown" || ip === "N/A") return null;
+    // Only accept private LAN from API (skip loopback + public WAN).
+    if (!isWatermarkIp(ip)) return null;
     return ip;
   } catch {
     return null;
@@ -142,9 +206,15 @@ async function detectIpFromBackend(): Promise<string | null> {
 }
 
 /** Resolve and cache the client IP for watermarks (screen + print). */
-export async function resolveClientIp(): Promise<string> {
+export async function resolveClientIp(force = false): Promise<string> {
   const cached = getCachedClientIp();
-  if (cached && cached !== "127.0.0.1") return cached;
+  if (!force && cached) return cached;
+
+  const fromHost = detectIpFromPageHost();
+  if (fromHost) {
+    setCachedClientIp(fromHost);
+    return fromHost;
+  }
 
   const local = await detectLocalIpViaWebRtc();
   if (local) {

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+import socket
+from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -40,6 +44,69 @@ class MeResponse(BaseModel):
     client_ip: str
 
 
+_PRIVATE_172 = re.compile(r"^172\.(1[6-9]|2\d|3[0-1])\.")
+
+
+def _is_loopback_ip(ip: str) -> bool:
+    lower = (ip or "").strip().lower()
+    return (
+        not lower
+        or lower in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1", "unknown")
+        or lower.startswith("127.")
+    )
+
+
+def _is_private_lan_ip(ip: str) -> bool:
+    value = (ip or "").strip()
+    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", value):
+        return False
+    return (
+        value.startswith("10.")
+        or value.startswith("192.168.")
+        or bool(_PRIVATE_172.match(value))
+    )
+
+
+def _lan_rank(ip: str) -> int:
+    if ip.startswith("192.168."):
+        return 0
+    if ip.startswith("10."):
+        return 1
+    if _PRIVATE_172.match(ip):
+        return 2
+    return 9
+
+
+@lru_cache(maxsize=1)
+def _primary_lan_ip() -> str | None:
+    """Best private NIC on this host — used when the browser hits us via localhost."""
+    candidates: list[str] = []
+
+    def _add(ip: str) -> None:
+        if _is_private_lan_ip(ip) and ip not in candidates:
+            candidates.append(ip)
+
+    for target in (("8.8.8.8", 80), ("192.168.0.1", 1)):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(0.2)
+                sock.connect(target)
+                _add(sock.getsockname()[0])
+        except OSError:
+            pass
+
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, family=socket.AF_INET):
+            _add(info[4][0])
+    except OSError:
+        pass
+
+    if not candidates:
+        return None
+    candidates.sort(key=_lan_rank)
+    return candidates[0]
+
+
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -51,16 +118,22 @@ def _client_ip(request: Request) -> str:
         elif request.client and request.client.host:
             host = request.client.host
         else:
-            return "unknown"
+            host = "unknown"
 
     # Normalize IPv6 loopback / IPv4-mapped forms for display
     lower = host.lower()
     if lower in ("::1", "0:0:0:0:0:0:0:1"):
-        return "127.0.0.1"
-    if lower.startswith("::ffff:"):
-        return host.split(":")[-1]
-    if host.startswith("[") and host.endswith("]"):
-        return _client_ip_from_host(host[1:-1])
+        host = "127.0.0.1"
+    elif lower.startswith("::ffff:"):
+        host = host.split(":")[-1]
+    elif host.startswith("[") and host.endswith("]"):
+        host = _client_ip_from_host(host[1:-1])
+
+    # Localhost login: browsers hide LAN IPs; fall back to this machine's NIC.
+    if _is_loopback_ip(host):
+        lan = _primary_lan_ip()
+        if lan:
+            return lan
     return host
 
 
@@ -71,7 +144,6 @@ def _client_ip_from_host(host: str) -> str:
     if lower.startswith("::ffff:"):
         return host.split(":")[-1]
     return host
-
 
 # In-memory fallback when Oracle is unavailable (local UI work).
 _DEV_FALLBACK: dict[str, dict[str, str]] = {

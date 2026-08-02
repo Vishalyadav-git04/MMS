@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppLayout, type ModuleId, type WeaponSub } from "@/components/AppLayout";
 import { LoginScreen } from "@/components/LoginScreen";
 import { FormScreen } from "@/components/FormPanel";
@@ -35,6 +35,13 @@ import { WpnAndEqptDetails } from "@/components/reports/WpnAndEqptDetails";
 import { WpnEqptStatusNodalDte } from "@/components/reports/WpnEqptStatusNodalDte";
 import { Toaster } from "@/components/ui/sonner";
 import { DashboardCharts } from "@/components/DashboardCharts";
+import { Bokeh } from "@/components/aid/Bokeh";
+import { Magnetic } from "@/components/aid/Magnetic";
+import { StatDrillCard } from "@/components/aid/StatDrillCard";
+import { WelcomeSplash } from "@/components/aid/WelcomeSplash";
+import { LiveHero } from "@/components/aid/LiveHero";
+import { PageHeader } from "@/components/PageHeader";
+import { ASSETS } from "@/assets/images";
 import { useAuth } from "@/lib/auth-context";
 import { isAdmin } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -219,6 +226,8 @@ function Index() {
   const [activeTransfer, setActiveTransfer] = useState<TransferTile | null>(null);
   const [activeHolding, setActiveHolding] = useState<HoldingTile | null>(null);
   const [activeReport, setActiveReport] = useState<ReportTile | null>(null);
+  const [showSplash, setShowSplash] = useState(false);
+  const wasAuth = useRef(isAuthenticated);
 
   useEffect(() => {
     const onUnauthorized = () => logout();
@@ -232,6 +241,13 @@ function Index() {
       setActiveMms(null);
     }
   }, [admin, activeSub]);
+
+  // Visual-only splash after a fresh login transition (not on session restore refresh).
+  useEffect(() => {
+    if (!wasAuth.current && isAuthenticated) setShowSplash(true);
+    if (!isAuthenticated) setShowSplash(false);
+    wasAuth.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   const handleSelect = (m: ModuleId, sub?: WeaponSub) => {
     setActive(m);
@@ -252,6 +268,10 @@ function Index() {
 
   if (!isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  if (showSplash) {
+    return <WelcomeSplash onDone={() => setShowSplash(false)} />;
   }
 
   const breadcrumb: { label: string; onClick?: () => void }[] = [
@@ -322,6 +342,35 @@ function Index() {
   const activeHoldingTile = HOLDING_TILES.find((t) => t.id === activeHolding);
   const activeReportTile = REPORT_TILES.find((t) => t.id === activeReport);
 
+  const formOpen = Boolean(
+    activeMms ||
+      activeEp ||
+      activeRo ||
+      activeMlccs ||
+      activeTransfer ||
+      activeHolding ||
+      activeReport,
+  );
+  const screenLabel =
+    activeTile?.label ||
+    activeEpTile?.label ||
+    activeRoTile?.label ||
+    activeMlccsTile?.label ||
+    activeTransferTile?.label ||
+    activeHoldingTile?.label ||
+    activeReportTile?.label;
+  const stageKey = [
+    active,
+    activeSub ?? "",
+    activeMms ?? "",
+    activeEp ?? "",
+    activeRo ?? "",
+    activeMlccs ?? "",
+    activeTransfer ?? "",
+    activeHolding ?? "",
+    activeReport ?? "",
+  ].join(":");
+
   return (
     <>
       <AppLayout
@@ -329,6 +378,9 @@ function Index() {
         activeSub={activeSub}
         onSelect={handleSelect}
         breadcrumb={breadcrumb}
+        stageKey={stageKey}
+        formOpen={formOpen}
+        screenLabel={screenLabel}
       >
         {active === "dashboard" && (
           <DashboardScreen admin={admin} onNavigate={handleSelect} />
@@ -538,13 +590,18 @@ function Index() {
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="flex items-end justify-between gap-4 border-b border-border pb-3">
-      <div>
-        <h2 className="text-xl font-bold text-primary tracking-tight">{title}</h2>
-        {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
-      </div>
-      <div className="h-1 w-16 rounded-full bg-accent" />
-    </div>
+    <PageHeader
+      eyebrow="Overview"
+      title={title}
+      subtitle={subtitle}
+      action={
+        <div
+          className="h-1 w-16 rounded-full"
+          style={{ backgroundColor: "#a85711" }}
+          aria-hidden
+        />
+      }
+    />
   );
 }
 
@@ -556,12 +613,6 @@ interface DashboardCounts {
 
 const DUMMY_MLCCS = { unique_census_no: 1284, prf_group: 86 };
 const DUMMY_MMS = { ue: 4520, uh: 18976 };
-
-function formatCount(n: number | undefined, loading: boolean): string {
-  if (loading) return "—";
-  if (n == null) return "0";
-  return n.toLocaleString("en-IN");
-}
 
 function DashboardScreen({
   admin,
@@ -660,74 +711,71 @@ function DashboardScreen({
   ];
 
   return (
-    <div className="space-y-5">
-      <SectionHeading title="Dashboard" subtitle="MLCCS · EP · MMS overview" />
-      <div className="grid gap-4 lg:grid-cols-3">
-        {sections.map((section) => {
-          const Icon = section.icon;
-          return (
-            <div
-              key={section.id}
-              role={section.navigate ? "button" : undefined}
-              tabIndex={section.navigate ? 0 : undefined}
-              onClick={
-                section.navigate
-                  ? () => onNavigate("weapon", section.id)
-                  : undefined
-              }
-              onKeyDown={
-                section.navigate
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onNavigate("weapon", section.id);
-                      }
-                    }
-                  : undefined
-              }
-              className={
-                section.navigate
-                  ? "group flex cursor-pointer flex-col rounded-lg border border-border bg-card text-left shadow-sm transition-all hover:border-accent/60 hover:shadow-md"
-                  : "flex flex-col rounded-lg border border-border bg-card text-left shadow-sm"
-              }
-            >
-              <div className="flex items-center gap-3 border-b border-border bg-primary px-4 py-3 text-primary-foreground">
-                <div className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-base font-semibold tracking-tight">{section.title}</div>
-                  <div className="text-[13px] leading-snug text-primary-foreground/70">
-                    {section.subtitle}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col gap-3 p-4">
-                {section.stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="flex items-end justify-between gap-3 border-b border-border/60 pb-2 last:border-0 last:pb-0"
-                  >
-                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      {stat.label}
-                    </span>
-                    <span className="text-2xl font-bold tabular-nums text-primary">
-                      {formatCount(stat.value, section.loadingStats)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div className="aid relative space-y-5">
+      <Bokeh count={12} />
+      <div className="relative z-[1] space-y-5">
+        <LiveHero
+          image={ASSETS.heroPinned}
+          height={200}
+          pinSubject
+          className="mms-banner shadow-[var(--shadow-md)]"
+        >
+          <div className="flex h-full flex-col justify-end p-5 sm:p-6">
+            <div className="mms-page-header__eyebrow text-[#fbf0e4]/90!">Indian Army · MISO</div>
+            <h2 className="hero-title text-[24px] font-bold tracking-[-0.02em] text-white sm:text-[32px]">
+              Holdings at a glance
+            </h2>
+            <p className="mt-1 max-w-[68ch] text-[13.5px] text-white/80">
+              MLCCS · EP · MMS overview — open a module card to continue.
+            </p>
+          </div>
+        </LiveHero>
 
-      <DashboardCharts
-        mlccs={DUMMY_MLCCS}
-        ep={epCounts}
-        mms={DUMMY_MMS}
-        loadingEp={loading}
-      />
+        <PageHeader
+          eyebrow="Analytics"
+          title="Dashboard"
+          subtitle="MLCCS · EP · MMS overview"
+          className="mb-0"
+          titleClassName="aid-h1 truncate"
+        />
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          {sections.map((section, i) => {
+            const card = (
+              <StatDrillCard
+                title={section.title}
+                subtitle={section.subtitle}
+                icon={section.icon}
+                stats={section.stats}
+                loading={section.loadingStats}
+                delayMs={i * 60}
+                drillable={section.navigate}
+                onOpen={
+                  section.navigate
+                    ? () => onNavigate("weapon", section.id)
+                    : undefined
+                }
+              />
+            );
+            return section.navigate ? (
+              <Magnetic key={section.id} strength={0.12}>
+                {card}
+              </Magnetic>
+            ) : (
+              <div key={section.id}>{card}</div>
+            );
+          })}
+        </div>
+
+        <div className="aid-glass aid-glass--strong p-3 sm:p-4">
+          <DashboardCharts
+            mlccs={DUMMY_MLCCS}
+            ep={epCounts}
+            mms={DUMMY_MMS}
+            loadingEp={loading}
+          />
+        </div>
+      </div>
     </div>
   );
 }

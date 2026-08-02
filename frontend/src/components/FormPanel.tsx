@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/PageHeader";
 
 export function FormPanel({
   title,
@@ -21,19 +22,19 @@ export function FormPanel({
   return (
     <div
       className={cn(
-        "flex flex-col rounded-md border border-border bg-card shadow-sm",
+        "mms-panel mms-rise flex flex-col",
         fill
           ? "absolute inset-0 min-h-0 overflow-hidden"
           : "w-full max-h-full overflow-visible",
       )}
     >
-      <div className="panel-title shrink-0 px-3 py-1 text-center">
-        <h2 className="text-[13px] font-bold uppercase tracking-wider underline underline-offset-2">
+      <div className="mms-panel__head shrink-0 px-3 py-1.5 sm:px-5">
+        <h2 className="mms-panel__title text-[13px] sm:text-[15px] uppercase tracking-wide">
           {title}
         </h2>
       </div>
       {tabs && (
-        <div className="shrink-0 border-b border-border bg-secondary/40 px-3 pt-1">{tabs}</div>
+        <div className="shrink-0 border-b border-border bg-secondary/60 px-3 pt-1">{tabs}</div>
       )}
       <div
         className={cn(
@@ -49,9 +50,7 @@ export function FormPanel({
         {children}
       </div>
       {footer && (
-        <div className="shrink-0 border-t border-border bg-muted/40 px-3 py-1.5 flex flex-wrap justify-center gap-2">
-          {footer}
-        </div>
+        <div className="mms-panel__foot shrink-0 px-3 py-1.5 sm:px-5">{footer}</div>
       )}
     </div>
   );
@@ -75,7 +74,7 @@ export function FormRow({
         className,
       )}
     >
-      <label className="text-[12px] font-medium leading-tight text-foreground sm:text-right">
+      <label className="text-[12px] font-semibold leading-tight text-muted-foreground sm:text-right">
         {required && <span className="text-destructive mr-0.5">*</span>}
         {label}
       </label>
@@ -120,17 +119,20 @@ export function SwitchTabs<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-0.5 -mb-px">
+    <div role="tablist" className="flex flex-wrap gap-0.5 -mb-px">
       {tabs.map((t) => {
         const active = value === t.id;
         return (
           <button
             key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
             onClick={() => onChange(t.id)}
             className={cn(
-              "px-3 py-1 text-[13px] font-semibold rounded-t-md border border-b-0 transition-colors",
+              "px-3 py-1 text-[13px] font-semibold rounded-t-lg border border-b-0 transition-colors",
               active
-                ? "bg-card text-primary border-border border-t-2 border-t-accent"
+                ? "bg-card text-primary border-border border-t-2 border-t-primary"
                 : "bg-transparent text-muted-foreground border-transparent hover:text-primary",
             )}
           >
@@ -155,21 +157,22 @@ export function FormScreen({
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
-            {section}
-          </div>
-          <h2 className="truncate text-sm font-bold text-primary tracking-tight">{title}</h2>
-        </div>
-        <button
-          onClick={onBack}
-          className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1 text-[13px] font-semibold text-primary hover:bg-secondary"
-        >
-          ← Back to sub-modules
-        </button>
-      </div>
+    <div className="mms-rise flex h-full min-h-0 flex-col gap-1 overflow-hidden">
+      <PageHeader
+        compact
+        eyebrow={section}
+        title={title}
+        className="shrink-0"
+        action={
+          <button
+            type="button"
+            onClick={onBack}
+            className="shrink-0 rounded-lg border border-border bg-card px-2.5 py-1 text-[13px] font-semibold text-primary shadow-sm hover:bg-secondary"
+          >
+            ← Back to sub-modules
+          </button>
+        }
+      />
       {/* Absolute fill so FormPanel height is exact viewport remainder (footer never clips) */}
       <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
