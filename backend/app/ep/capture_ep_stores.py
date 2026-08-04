@@ -294,7 +294,8 @@ def _next_txn_id(session: Session) -> int:
 def _get_domain_code(session: Session, domain_name: str, preferred: str, fallback: str) -> str:
     dv = session.scalar(
         select(DomainValue.code_value).where(
-            func.upper(DomainValue.domain_name) == domain_name.upper(),
+            func.replace(func.upper(DomainValue.domain_name), "_", "")
+            == domain_name.replace("_", "").upper(),
             or_(
                 func.upper(func.trim(DomainValue.code_value)) == preferred.upper(),
                 func.upper(func.trim(DomainValue.label_name)) == preferred.upper(),
@@ -433,9 +434,9 @@ def submit_capture(
     auth_dt = datetime.combine(body.auth_date, datetime.min.time())
     iv_dt = datetime.combine(body.iv_date, datetime.min.time())
 
-    # Look up OP_STATUS and TFR_STATUS code values from MMS_DOMAIN_VALUES
-    op_status_code = _get_domain_code(session, "OP_STATUS", "PENDING", "0")
-    tfr_status_code = _get_domain_code(session, "TFR_STATUS", "PTFR", "PTFR")
+    # Look up OPSTATUS and TFRSTATUS code values from MMS_DOMAIN_VALUES
+    op_status_code = _get_domain_code(session, "OPSTATUS", "PENDING", "0")
+    tfr_status_code = _get_domain_code(session, "TFRSTATUS", "PTFR", "PTFR")
 
     next_id = _next_txn_id(session)
     saved_ids: list[str] = []

@@ -65,7 +65,7 @@ export function SubDomainMaster() {
   };
 
   const handleSave = async () => {
-    const name = subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
+    const name = subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
     if (!eqptCatId || !name) {
       toast.error("EQPT CAT and Sub Domain Name are required");
       return;
@@ -97,7 +97,7 @@ export function SubDomainMaster() {
       if (subDomain.trim())
         params.set(
           "sub_domain_name",
-          subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""),
+          subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, ""),
         );
       const q = params.toString() ? `?${params.toString()}` : "";
       const rows = await api<EpSubDomainRow[]>(`/ep/sub-domain-master/search${q}`);
@@ -155,7 +155,7 @@ export function SubDomainMaster() {
           <Input
             value={subDomain}
             onChange={(e) =>
-              setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""))
+              setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
             }
             placeholder="Enter Sub Domain"
             disabled={busy}

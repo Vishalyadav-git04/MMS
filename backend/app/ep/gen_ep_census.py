@@ -31,7 +31,10 @@ def _option_list(session: Session, *domains: str) -> list[OptionOut]:
     for domain in domains:
         rows = session.scalars(
             select(DomainValue)
-            .where(func.upper(DomainValue.domain_name) == domain.upper())
+            .where(
+                func.replace(func.upper(DomainValue.domain_name), "_", "")
+                == domain.replace("_", "").upper()
+            )
             .order_by(
                 func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
                 DomainValue.label_name,
@@ -165,7 +168,7 @@ def list_options(
     return {
         "accounting_unit": _option_list(session, "ACCOUNTINGUNITS"),
         "item_status": _option_list(session, "ITEMSTATUS"),
-        "item_category": _option_list(session, "MMSITEMSCATEGORY", "TYPE_OF_EQPT"),
+        "item_category": _option_list(session, "MMSITEMSCATEGORY", "TYPEOFEQPT"),
         "class_of_equipment": _option_list(session, "MMSCLASSA"),
         "nodal_directorate": _option_list(session, "SPONSERDTE"),
         "digest_category": _option_list(session, "DIGESTCATEGORY"),
@@ -214,7 +217,7 @@ def save_census(
 
     opstatus_approved = session.scalar(
         select(DomainValue).where(
-            func.upper(DomainValue.domain_name).in_(["OPSTATUS", "OP_STATUS"]),
+            func.upper(DomainValue.domain_name) == "OPSTATUS",
             or_(
                 func.upper(func.trim(DomainValue.code_value)) == "APPROVED",
                 func.upper(func.trim(DomainValue.label_name)) == "APPROVED",

@@ -145,7 +145,8 @@ def _domain_rows(session: Session, domain: str) -> list[DomainValue]:
     return list(
         session.scalars(
             select(DomainValue).where(
-                func.upper(DomainValue.domain_name) == domain.upper()
+                func.replace(func.upper(DomainValue.domain_name), "_", "")
+                == domain.replace("_", "").upper()
             )
         ).all()
     )
@@ -265,7 +266,7 @@ def _apply_body(
     row.item_status = _domain_code(
         session, "ITEMSTATUS", body.item_status or "CUR", max_len=3
     )
-    row.item_category = _domain_code(session, "TYPE_OF_EQPT", body.item_category)
+    row.item_category = _domain_code(session, "TYPEOFEQPT", body.item_category)
     row.origin_country = body.country_of_origin
     row.manuf_agency = body.manufacturing_agency
     row.ahsp_agency = body.ahsp_agency
@@ -499,7 +500,10 @@ def _option_list(session: Session, domain: str) -> list[dict[str, str]]:
     """Options from MMS_DOMAIN_VALUES: value=CODE_VALUE, label=LABEL_NAME."""
     rows = session.scalars(
         select(DomainValue)
-        .where(func.upper(DomainValue.domain_name) == domain.upper())
+        .where(
+            func.replace(func.upper(DomainValue.domain_name), "_", "")
+            == domain.replace("_", "").upper()
+        )
         .order_by(
             func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
             DomainValue.label_name,
@@ -640,14 +644,14 @@ def list_options(session: Session = Depends(get_db_session)) -> dict[str, list[d
         "cos_section": _distinct_column(session, PrfGrpMstr.cos_sec),
         "accounting_unit": _option_list(session, "ACCOUNTINGUNITS"),
         "item_status": _option_list(session, "ITEMSTATUS"),
-        "item_category": _option_list(session, "TYPE_OF_EQPT"),
+        "item_category": _option_list(session, "TYPEOFEQPT"),
         "class_of_eqpt": _option_list(session, "MMSCLASSA"),
         "country_of_origin": _distinct_column(session, MlccsEquipmentMaster.origin_country),
         "nodal_dte": _option_list(session, "SPONSERDTE"),
         "eqpt_category": _option_list(session, "DTEEQPTCATEGORY"),
         "digest_category": _option_list(session, "DIGESTCATEGORY"),
-        "type_of_hldg": _option_list(session, "TYPE_OF_HLDG"),
-        "type_of_eqpt": _option_list(session, "TYPE_OF_EQPT"),
+        "type_of_hldg": _option_list(session, "TYPE_OF_HOLDING"),
+        "type_of_eqpt": _option_list(session, "TYPEOFEQPT"),
         "service_status": _option_list(session, "SERVICE_STATUS"),
-        "op_status": _option_list(session, "OP_STATUS"),
+        "op_status": _option_list(session, "OPSTATUS"),
     }

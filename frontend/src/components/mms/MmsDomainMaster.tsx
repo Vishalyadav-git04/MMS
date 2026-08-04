@@ -42,6 +42,9 @@ const emptyAdd = {
   dispOrder: "",
 };
 
+const sanitizeText = (val: string) => val.replace(/[^a-zA-Z0-9\s]/g, "");
+const sanitizeOrder = (val: string) => val.replace(/[^0-9]/g, "");
+
 function rowToForm(row: DomainRow) {
   return {
     domainName: row.domain_name ?? "",
@@ -177,17 +180,30 @@ export function MmsDomainMaster() {
   }, [addForm.domainName, mode, domains]);
 
   const handleSubmit = async () => {
-    if (!addForm.domainName.trim() || !addForm.codeValue.trim() || !addForm.labelName.trim()) {
+    const domainNameUpper = sanitizeText(addForm.domainName).trim().toUpperCase();
+    const codeValueUpper = sanitizeText(addForm.codeValue).trim().toUpperCase();
+    const labelNameUpper = sanitizeText(addForm.labelName).trim().toUpperCase();
+    const labelShortUpper = sanitizeText(addForm.labelShort).trim().toUpperCase();
+    const dispOrderClean = sanitizeOrder(addForm.dispOrder).trim();
+
+    if (!domainNameUpper || !codeValueUpper || !labelNameUpper) {
       toast.error("Domain Name, Code Value and Label Name are required");
       return;
     }
     setBusy(true);
     try {
+      const sanitizedForm = {
+        domainName: domainNameUpper,
+        codeValue: codeValueUpper,
+        labelName: labelNameUpper,
+        labelShort: labelShortUpper,
+        dispOrder: dispOrderClean,
+      };
       // Prefer live domain siblings so uniqueness is checked even before Search tab runs.
       const siblings = await api<DomainRow[]>(
-        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(addForm.domainName.trim())}`,
+        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(domainNameUpper)}`,
       );
-      const localErr = uniquenessError(addForm, siblings);
+      const localErr = uniquenessError(sanitizedForm, siblings);
       if (localErr) {
         toast.error(localErr);
         return;
@@ -195,11 +211,11 @@ export function MmsDomainMaster() {
       await api<DomainRow>("/admin/mms-domain-master/", {
         method: "POST",
         body: JSON.stringify({
-          domain_name: addForm.domainName.trim(),
-          code_value: addForm.codeValue.trim(),
-          label_name: addForm.labelName.trim(),
-          label_short: addForm.labelShort.trim() || null,
-          disp_order: addForm.dispOrder.trim() || null,
+          domain_name: domainNameUpper,
+          code_value: codeValueUpper,
+          label_name: labelNameUpper,
+          label_short: labelShortUpper || null,
+          disp_order: dispOrderClean || null,
           module: "MMS",
         }),
       });
@@ -255,16 +271,29 @@ export function MmsDomainMaster() {
 
   const handleUpdate = async () => {
     if (!editRow) return;
-    if (!editForm.domainName.trim() || !editForm.codeValue.trim() || !editForm.labelName.trim()) {
+    const domainNameUpper = sanitizeText(editForm.domainName).trim().toUpperCase();
+    const codeValueUpper = sanitizeText(editForm.codeValue).trim().toUpperCase();
+    const labelNameUpper = sanitizeText(editForm.labelName).trim().toUpperCase();
+    const labelShortUpper = sanitizeText(editForm.labelShort).trim().toUpperCase();
+    const dispOrderClean = sanitizeOrder(editForm.dispOrder).trim();
+
+    if (!domainNameUpper || !codeValueUpper || !labelNameUpper) {
       toast.error("Domain Name, Code Value and Label Name are required");
       return;
     }
     setBusy(true);
     try {
+      const sanitizedForm = {
+        domainName: domainNameUpper,
+        codeValue: codeValueUpper,
+        labelName: labelNameUpper,
+        labelShort: labelShortUpper,
+        dispOrder: dispOrderClean,
+      };
       const siblings = await api<DomainRow[]>(
-        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(editForm.domainName.trim())}`,
+        `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(domainNameUpper)}`,
       );
-      const localErr = uniquenessError(editForm, siblings, editRow.id);
+      const localErr = uniquenessError(sanitizedForm, siblings, editRow.id);
       if (localErr) {
         toast.error(localErr);
         return;
@@ -272,11 +301,11 @@ export function MmsDomainMaster() {
       const updated = await api<DomainRow>(`/admin/mms-domain-master/${editRow.id}`, {
         method: "PUT",
         body: JSON.stringify({
-          domain_name: editForm.domainName.trim(),
-          code_value: editForm.codeValue.trim(),
-          label_name: editForm.labelName.trim(),
-          label_short: editForm.labelShort.trim() || null,
-          disp_order: editForm.dispOrder.trim() || null,
+          domain_name: domainNameUpper,
+          code_value: codeValueUpper,
+          label_name: labelNameUpper,
+          label_short: labelShortUpper || null,
+          disp_order: dispOrderClean || null,
           module: editRow.module || "MMS",
         }),
       });
@@ -358,9 +387,9 @@ export function MmsDomainMaster() {
               value={addForm.domainName}
               placeholder="Please Enter Domain Name..."
               suggestions={domainSuggestions}
-              onChange={(v) => setAddForm({ ...addForm, domainName: v })}
+              onChange={(v) => setAddForm({ ...addForm, domainName: sanitizeText(v) })}
               onPick={(idx) => {
-                setAddForm({ ...addForm, domainName: domainSuggestions[idx] ?? "" });
+                setAddForm({ ...addForm, domainName: sanitizeText(domainSuggestions[idx] ?? "") });
                 setDomainSuggestions([]);
               }}
             />
@@ -369,14 +398,14 @@ export function MmsDomainMaster() {
             <Input
               placeholder="Please Enter Code Value..."
               value={addForm.codeValue}
-              onChange={(e) => setAddForm({ ...addForm, codeValue: e.target.value })}
+              onChange={(e) => setAddForm({ ...addForm, codeValue: sanitizeText(e.target.value) })}
             />
           </FormRow>
           <FormRow label="Label Name" required className="sm:grid-cols-[140px_minmax(0,1fr)]">
             <Input
               placeholder="Please Enter Label Name..."
               value={addForm.labelName}
-              onChange={(e) => setAddForm({ ...addForm, labelName: e.target.value })}
+              onChange={(e) => setAddForm({ ...addForm, labelName: sanitizeText(e.target.value) })}
             />
           </FormRow>
           <FormRow label="Label Short" className="sm:grid-cols-[140px_minmax(0,1fr)]">
@@ -384,14 +413,14 @@ export function MmsDomainMaster() {
               placeholder="Please Enter Label Short..."
               value={addForm.labelShort}
               maxLength={10}
-              onChange={(e) => setAddForm({ ...addForm, labelShort: e.target.value })}
+              onChange={(e) => setAddForm({ ...addForm, labelShort: sanitizeText(e.target.value) })}
             />
           </FormRow>
           <FormRow label="Display Order" className="sm:grid-cols-[140px_minmax(0,1fr)]">
             <Input
               placeholder="Please Enter Display Order..."
               value={addForm.dispOrder}
-              onChange={(e) => setAddForm({ ...addForm, dispOrder: e.target.value })}
+              onChange={(e) => setAddForm({ ...addForm, dispOrder: sanitizeOrder(e.target.value) })}
             />
           </FormRow>
         </div>
@@ -439,7 +468,7 @@ export function MmsDomainMaster() {
                   <Input
                     className="h-6 w-40 border-border bg-white"
                     value={tableQuery}
-                    onChange={(e) => setTableQuery(e.target.value)}
+                    onChange={(e) => setTableQuery(sanitizeText(e.target.value))}
                   />
                 </div>
               </div>
@@ -589,32 +618,32 @@ export function MmsDomainMaster() {
             <FormRow label="Domain Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 value={editForm.domainName}
-                onChange={(e) => setEditForm({ ...editForm, domainName: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, domainName: sanitizeText(e.target.value) })}
               />
             </FormRow>
             <FormRow label="Code Value" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 value={editForm.codeValue}
-                onChange={(e) => setEditForm({ ...editForm, codeValue: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, codeValue: sanitizeText(e.target.value) })}
               />
             </FormRow>
             <FormRow label="Label Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 value={editForm.labelName}
-                onChange={(e) => setEditForm({ ...editForm, labelName: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, labelName: sanitizeText(e.target.value) })}
               />
             </FormRow>
             <FormRow label="Label Short" className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 value={editForm.labelShort}
                 maxLength={10}
-                onChange={(e) => setEditForm({ ...editForm, labelShort: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, labelShort: sanitizeText(e.target.value) })}
               />
             </FormRow>
             <FormRow label="Display Order" className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 value={editForm.dispOrder}
-                onChange={(e) => setEditForm({ ...editForm, dispOrder: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, dispOrder: sanitizeOrder(e.target.value) })}
               />
             </FormRow>
           </div>

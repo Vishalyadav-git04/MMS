@@ -207,28 +207,28 @@ function ServiceabilityStateForm({
       <FormRow label="Barrel - I" className={wideRow}>
         <Input
           value={barrelI}
-          onChange={(e) => setBarrelI(e.target.value)}
+          onChange={(e) => setBarrelI(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - II" className={wideRow}>
         <Input
           value={barrelII}
-          onChange={(e) => setBarrelII(e.target.value)}
+          onChange={(e) => setBarrelII(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - III" className={wideRow}>
         <Input
           value={barrelIII}
-          onChange={(e) => setBarrelIII(e.target.value)}
+          onChange={(e) => setBarrelIII(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - IV" className={wideRow}>
         <Input
           value={barrelIV}
-          onChange={(e) => setBarrelIV(e.target.value)}
+          onChange={(e) => setBarrelIV(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           placeholder="null"
         />
       </FormRow>
@@ -540,7 +540,7 @@ export function UpdateEqptData() {
                 <Input
                   placeholder="Search..."
                   value={form.unitSearch}
-                  onChange={(e) => upd("unitSearch", e.target.value)}
+                  onChange={(e) => upd("unitSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -606,7 +606,7 @@ export function UpdateEqptData() {
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}
-                onChange={(e) => upd("regdNo", e.target.value)}
+                onChange={(e) => upd("regdNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 className="min-w-0 flex-1 basis-[10rem]"
               />
             </div>

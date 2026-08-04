@@ -190,7 +190,7 @@ function OhDetailsForm({
           <DateInput value={ohDoneDt} onChange={setOhDoneDt} />
         </FormRow>
         <FormRow label="WKSP Name" className={pairRow}>
-          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
+          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))} />
         </FormRow>
         <FormRow label="WKSP in Dt" className={pairRow}>
           <DateInput value={wkspInDt} onChange={setWkspInDt} />
@@ -251,7 +251,7 @@ function BarrelDetailsForm({
   return (
     <div className="space-y-1.5">
       <FormRow label="Barrel Regn no" required className={pairRow}>
-        <Input value={barrelRegnNo} onChange={(e) => setBarrelRegnNo(e.target.value)} />
+        <Input value={barrelRegnNo} onChange={(e) => setBarrelRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))} />
       </FormRow>
       <FormGrid cols={2}>
         <FormRow label="Op Clearance" className={pairRow}>
@@ -266,7 +266,7 @@ function BarrelDetailsForm({
           <DateInput value={opClearanceDt} onChange={setOpClearanceDt} />
         </FormRow>
         <FormRow label="WKSP Name" className={pairRow}>
-          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value)} />
+          <Input value={wkspName} onChange={(e) => setWkspName(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))} />
         </FormRow>
         <FormRow label="WKSP In Dt" className={pairRow}>
           <DateInput value={wkspInDt} onChange={setWkspInDt} />
@@ -275,32 +275,32 @@ function BarrelDetailsForm({
           <Input
             placeholder="Ex. 0000.0000"
             value={cofrVertical}
-            onChange={(e) => setCofrVertical(e.target.value)}
+            onChange={(e) => setCofrVertical(e.target.value.replace(/[^0-9.]/g, ""))}
           />
         </FormRow>
         <FormRow label="CoFR Horizontal (mm)" className={pairRow}>
           <Input
             placeholder="Ex. 0000.0000"
             value={cofrHorizontal}
-            onChange={(e) => setCofrHorizontal(e.target.value)}
+            onChange={(e) => setCofrHorizontal(e.target.value.replace(/[^0-9.]/g, ""))}
           />
         </FormRow>
         <FormRow label="Qtr of Life" required className={pairRow}>
           <Input
             placeholder="Ex. 1,2,3,4"
             value={qtrOfLife}
-            onChange={(e) => setQtrOfLife(e.target.value)}
+            onChange={(e) => setQtrOfLife(e.target.value.replace(/[^0-9,]/g, ""))}
           />
         </FormRow>
         <FormRow label="EFC" required className={pairRow}>
           <Input
             placeholder="Ex. 0000.0000"
             value={efc}
-            onChange={(e) => setEfc(e.target.value)}
+            onChange={(e) => setEfc(e.target.value.replace(/[^0-9.]/g, ""))}
           />
         </FormRow>
         <FormRow label="Total Rds Fired" required className={pairRow}>
-          <Input value={totalRdsFired} onChange={(e) => setTotalRdsFired(e.target.value)} />
+          <Input value={totalRdsFired} onChange={(e) => setTotalRdsFired(e.target.value.replace(/\D/g, ""))} />
         </FormRow>
         <FormRow label="Last Fired Dt" required className={pairRow}>
           <DateInput value={lastFiredDt} onChange={setLastFiredDt} />
@@ -398,14 +398,14 @@ function StripInspectionForm({
                 <Input
                   className="h-7"
                   value={recoilSysRegnNo}
-                  onChange={(e) => setRecoilSysRegnNo(e.target.value)}
+                  onChange={(e) => setRecoilSysRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 />
               </TableCell>
               <TableCell className="p-1">
                 <Input
                   className="h-7"
                   value={periodicity}
-                  onChange={(e) => setPeriodicity(e.target.value)}
+                  onChange={(e) => setPeriodicity(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 />
               </TableCell>
               <TableCell className="p-1">
@@ -617,7 +617,7 @@ export function UpdateArtyEqptData() {
                 <Input
                   placeholder="Search..."
                   value={form.unitSearch}
-                  onChange={(e) => upd("unitSearch", e.target.value)}
+                  onChange={(e) => upd("unitSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 />
                 <Button
                   type="button"
@@ -674,7 +674,7 @@ export function UpdateArtyEqptData() {
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}
-                onChange={(e) => upd("regdNo", e.target.value)}
+                onChange={(e) => upd("regdNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 className="min-w-0 flex-1 basis-[10rem]"
               />
             </div>

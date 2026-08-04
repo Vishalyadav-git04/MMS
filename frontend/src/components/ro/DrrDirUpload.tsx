@@ -5,22 +5,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { uploadFileApi, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 export function DrrDirUpload() {
   const [type, setType] = useState<"DRR" | "DIR">("DRR");
-  const [fileName, setFileName] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  const handleSubmit = () => {
-    if (!fileName) {
+  const handleSubmit = async () => {
+    if (!selectedFile) {
       return toast.error("Please choose an Excel file to upload");
     }
-    toast.success(`${type} upload submitted`);
+    setUploading(true);
+    try {
+      const res = await uploadFileApi(selectedFile);
+      toast.success(`${type} uploaded successfully to D:/miso/ (${res.file_name})`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "File upload failed");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleCancel = () => {
     setType("DRR");
-    setFileName("");
+    setSelectedFile(null);
     toast("Cancelled");
   };
 
@@ -30,11 +40,12 @@ export function DrrDirUpload() {
       footer={
         <>
           <Button
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
+            disabled={uploading}
           >
-            Submit
+            {uploading ? "Uploading…" : "Submit"}
           </Button>
-          <Button variant="destructive" onClick={handleCancel}>
+          <Button variant="destructive" disabled={uploading} onClick={handleCancel}>
             Cancel
           </Button>
         </>
@@ -86,7 +97,7 @@ export function DrrDirUpload() {
               type="file"
               accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="h-auto max-w-md py-1.5"
-              onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
             />
           </div>
 

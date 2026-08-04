@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,12 @@ from app.auth.principal import Principal
 from app.deps import get_db_session, get_principal
 from app.models import DomainValue
 from app.utils.ids import next_int_id
+
+def _clean_text(val: str | None) -> str:
+    if not val:
+        return ""
+    return re.sub(r"[^A-Z0-9\s]", "", val.strip().upper())
+
 
 router = APIRouter(
     prefix="/admin/mms-domain-master",
@@ -154,18 +161,18 @@ def create_domain_value(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> DomainValueOut:
-    domain = body.domain_name.strip()
-    code = body.code_value.strip()
-    label = body.label_name.strip()
-    short = (body.label_short or "").strip() or label
-    order = (body.disp_order or "").strip() or None
+    domain = _clean_text(body.domain_name)
+    code = _clean_text(body.code_value)
+    label = _clean_text(body.label_name)
+    short = (_clean_text(body.label_short) or label)[:10]
+    order = re.sub(r"[^0-9]", "", (body.disp_order or "").strip()) or None
 
     _assert_unique_within_domain(
         session,
         domain=domain,
         code=code,
         label=label,
-        short=short[:10],
+        short=short,
         order=order,
     )
 
@@ -176,9 +183,9 @@ def create_domain_value(
         domain_name=domain,
         code_value=code,
         label_name=label,
-        label_short=short[:10],
+        label_short=short,
         disp_order=order,
-        module=(body.module or "MMS").strip() or "MMS",
+        module=_clean_text(body.module) or "MMS",
         created_by=actor,
         created_date=now,
         updated_by=actor,
@@ -201,11 +208,11 @@ def update_domain_value(
     if row is None:
         raise HTTPException(status_code=404, detail="Domain value not found")
 
-    domain = body.domain_name.strip()
-    code = body.code_value.strip()
-    label = body.label_name.strip()
-    short = ((body.label_short or "").strip() or label)[:10]
-    order = (body.disp_order or "").strip() or None
+    domain = _clean_text(body.domain_name)
+    code = _clean_text(body.code_value)
+    label = _clean_text(body.label_name)
+    short = (_clean_text(body.label_short) or label)[:10]
+    order = re.sub(r"[^0-9]", "", (body.disp_order or "").strip()) or None
 
     _assert_unique_within_domain(
         session,

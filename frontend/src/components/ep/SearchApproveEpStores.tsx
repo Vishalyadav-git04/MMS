@@ -73,7 +73,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value);
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}

@@ -128,15 +128,22 @@ class SubmitOut(BaseModel):
     target_table: str
 
 
-def _option_list(session: Session, domain: str) -> list[OptionOut]:
-    rows = session.scalars(
-        select(DomainValue)
-        .where(func.upper(DomainValue.domain_name) == domain.upper())
-        .order_by(
-            func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
-            DomainValue.label_name,
+def _option_list(
+    session: Session, domain: str, version_nos: tuple[str, ...] | None = None
+) -> list[OptionOut]:
+    stmt = select(DomainValue).where(
+        func.replace(func.upper(DomainValue.domain_name), "_", "")
+        == domain.replace("_", "").upper()
+    )
+    if version_nos:
+        stmt = stmt.where(
+            func.trim(DomainValue.version_no).in_([v.strip() for v in version_nos])
         )
-    ).all()
+    stmt = stmt.order_by(
+        func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
+        DomainValue.label_name,
+    )
+    rows = session.scalars(stmt).all()
     return [
         OptionOut(value=r.code_value or "", label=r.label_name or r.code_value or "")
         for r in rows
@@ -144,21 +151,27 @@ def _option_list(session: Session, domain: str) -> list[OptionOut]:
     ]
 
 
-def _domain_label(session: Session, domain: str, code: str) -> str | None:
-    row = session.scalar(
-        select(DomainValue).where(
-            func.upper(DomainValue.domain_name) == domain.upper(),
-            func.upper(func.trim(DomainValue.code_value)) == code.strip().upper(),
-        )
+def _domain_label(
+    session: Session, domain: str, code: str, version_nos: tuple[str, ...] | None = None
+) -> str | None:
+    stmt = select(DomainValue).where(
+        func.replace(func.upper(DomainValue.domain_name), "_", "")
+        == domain.replace("_", "").upper(),
+        func.upper(func.trim(DomainValue.code_value)) == code.strip().upper(),
     )
+    if version_nos:
+        stmt = stmt.where(
+            func.trim(DomainValue.version_no).in_([v.strip() for v in version_nos])
+        )
+    row = session.scalar(stmt)
     if row is None:
         return None
     return (row.label_name or row.code_value or "").strip()
 
 
 def _holding_bucket(session: Session, type_of_hldg_code: str) -> str:
-    """Return unit | oth | depot based on TYPE_OF_HLDG label."""
-    label = (_domain_label(session, "TYPE_OF_HLDG", type_of_hldg_code) or "").upper()
+    """Return unit | oth | depot based on TYPE_OF_HOLDING label."""
+    label = (_domain_label(session, "TYPE_OF_HOLDING", type_of_hldg_code) or "").upper()
     if label == _UNIT_HOLDING_LABEL:
         return "unit"
     if label in _OTH_HOLDING_LABELS:
@@ -272,8 +285,8 @@ def status() -> dict[str, str]:
 @router.get("/options")
 def list_options(session: Session = Depends(get_db_session)) -> dict[str, list[OptionOut]]:
     return {
-        "type_of_hldg": _option_list(session, "TYPE_OF_HLDG"),
-        "type_of_eqpt": _option_list(session, "TYPE_OF_EQPT"),
+        "type_of_hldg": _option_list(session, "TYPEOFHOLDING", version_nos=("1", "2")),
+        "type_of_eqpt": _option_list(session, "TYPEOFEQPT"),
     }
 
 
@@ -373,9 +386,9 @@ def build_items(
     session: Session = Depends(get_db_session),
     _: Principal = Depends(require_unit_or_admin),
 ) -> list[GeneratedItemOut]:
-    if _domain_label(session, "TYPE_OF_HLDG", body.type_of_hldg) is None:
+    if _domain_label(session, "TYPE_OF_HOLDING", body.type_of_hldg) is None:
         raise HTTPException(status_code=400, detail="Invalid Type of Holding")
-    if _domain_label(session, "TYPE_OF_EQPT", body.type_of_eqpt) is None:
+    if _domain_label(session, "TYPEOFEQPT", body.type_of_eqpt) is None:
         raise HTTPException(status_code=400, detail="Invalid Type of Eqpt")
 
     issuer = _orbat_by_sus(session, body.issuing_depot_sus)
@@ -444,9 +457,9 @@ def submit_items(
     if bucket not in ("unit", "depot", "oth"):
         raise HTTPException(status_code=400, detail="Unsupported Type of Holding")
 
-    if _domain_label(session, "TYPE_OF_HLDG", body.type_of_hldg) is None:
+    if _domain_label(session, "TYPE_OF_HOLDING", body.type_of_hldg) is None:
         raise HTTPException(status_code=400, detail="Invalid Type of Holding")
-    if _domain_label(session, "TYPE_OF_EQPT", body.type_of_eqpt) is None:
+    if _domain_label(session, "TYPEOFEQPT", body.type_of_eqpt) is None:
         raise HTTPException(status_code=400, detail="Invalid Type of Eqpt")
 
     issuer = _orbat_by_sus(session, body.issuing_depot_sus)

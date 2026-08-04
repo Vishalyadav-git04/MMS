@@ -27,8 +27,9 @@ type ApiInit = RequestInit & { skipAuth?: boolean };
 
 export async function api<T>(path: string, init?: ApiInit): Promise<T> {
   const { skipAuth, headers: initHeaders, ...rest } = init ?? {};
+  const isFormData = rest.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(initHeaders as Record<string, string> | undefined),
   };
 
@@ -55,4 +56,21 @@ export async function api<T>(path: string, init?: ApiInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export interface UploadResponse {
+  message: string;
+  file_name: string;
+  relative_path: string;
+  absolute_path: string;
+  size_bytes: number;
+}
+
+export async function uploadFileApi(file: File): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api<UploadResponse>("/upload", {
+    method: "POST",
+    body: formData,
+  });
 }

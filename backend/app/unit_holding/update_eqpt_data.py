@@ -124,7 +124,10 @@ class UpdateOut(BaseModel):
 def _option_list(session: Session, domain: str) -> list[OptionOut]:
     rows = session.scalars(
         select(DomainValue)
-        .where(func.upper(DomainValue.domain_name) == domain.upper())
+        .where(
+            func.replace(func.upper(DomainValue.domain_name), "_", "")
+            == domain.replace("_", "").upper()
+        )
         .order_by(
             func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
             DomainValue.label_name,
@@ -415,7 +418,7 @@ def list_holding_types(
             if v and str(v).strip():
                 values.add(str(v).strip())
 
-    labels = _domain_map(session, "TYPE_OF_HLDG")
+    labels = _domain_map(session, "TYPE_OF_HOLDING")
     return [
         HoldingTypeOut(
             value=v,
@@ -478,7 +481,7 @@ def search_eqpt(
 
     names = _orbat_name_map(session, {sus})
     unit_name = names.get(sus)
-    hldg_labels = _domain_map(session, "TYPE_OF_HLDG")
+    hldg_labels = _domain_map(session, "TYPE_OF_HOLDING")
     svc_labels = _domain_map(session, "SERVICEABLITY")
 
     regd = (body.regd_no or "").strip().upper()
@@ -525,7 +528,7 @@ def get_eqpt_detail(
     sus = (row.to_sus_no or "").strip().upper()
     names = _orbat_name_map(session, {sus} if sus else set())
     prf_group = _prf_group_for_census(session, row.census_no, row.prf_code)
-    hldg_labels = _domain_map(session, "TYPE_OF_HLDG")
+    hldg_labels = _domain_map(session, "TYPE_OF_HOLDING")
     svc_labels = _domain_map(session, "SERVICEABLITY")
     base = _row_to_out(
         source_table.strip().lower(),

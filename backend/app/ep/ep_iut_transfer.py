@@ -256,17 +256,17 @@ def submit_transfer(
     )
     rec_form_code = rec_unit.form_code if rec_unit else None
 
-    # Look up tfr_status code from MMS_DOMAIN_VALUES for TFR_STATUS
+    # Look up tfr_status code from MMS_DOMAIN_VALUES for TFRSTATUS
     tfr_status_val = session.scalar(
         select(DomainValue.code_value).where(
-            func.upper(DomainValue.domain_name) == "TFR_STATUS",
+            func.upper(DomainValue.domain_name) == "TFRSTATUS",
             func.upper(DomainValue.label_name).like("%TRANSFER%"),
         ).limit(1)
     )
     if not tfr_status_val:
         tfr_status_val = session.scalar(
             select(DomainValue.code_value).where(
-                func.upper(DomainValue.domain_name) == "TFR_STATUS"
+                func.upper(DomainValue.domain_name) == "TFRSTATUS"
             ).limit(1)
         ) or "TRANSFERRED"
 

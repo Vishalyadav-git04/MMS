@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowRight, Search } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -68,7 +68,7 @@ function UnitLookup({
           <Input
             placeholder="Search..."
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -341,6 +341,11 @@ export function EpIutTransfer() {
 
     try {
       setSubmitting(true);
+      let uploadedRvName = rvFile ? rvFile.name : null;
+      if (rvFile) {
+        const uploadRes = await uploadFileApi(rvFile);
+        uploadedRvName = uploadRes.file_name;
+      }
       const res = await api<{ count: number; transferred_regns: string[] }>("/ep/iut/transfer", {
         method: "POST",
         body: JSON.stringify({
@@ -350,7 +355,7 @@ export function EpIutTransfer() {
           sub_domain_id: subDomainId,
           rv_no: rvNo,
           rv_date: rvDate,
-          upload_rv: rvFile ? rvFile.name : null,
+          upload_rv: uploadedRvName,
           regn_numbers: transferRegns,
         }),
       });
@@ -447,7 +452,7 @@ export function EpIutTransfer() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value)}
+              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="RV Date" required>
@@ -493,7 +498,7 @@ export function EpIutTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value)}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
@@ -115,7 +115,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value);
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -157,6 +157,7 @@ export function AddNewEqpt() {
   const [toUnitHits, setToUnitHits] = useState<OrbatUnit[]>([]);
   const [toUnitField, setToUnitField] = useState<"name" | "sus" | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const [ivFile, setIvFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   const upd = <K extends keyof typeof emptyForm>(
@@ -215,6 +216,7 @@ export function AddNewEqpt() {
 
   const handleClear = () => {
     setForm(emptyForm);
+    setIvFile(null);
     setCensusOptions([]);
     setToUnitHits([]);
     setToUnitField(null);
@@ -406,6 +408,11 @@ export function AddNewEqpt() {
 
     setBusy(true);
     try {
+      let uploadedIvName = form.uploadIv.trim() || null;
+      if (ivFile) {
+        const uploadRes = await uploadFileApi(ivFile);
+        uploadedIvName = uploadRes.file_name;
+      }
       const res = await api<{ count: number; target_table: string }>(
         "/unit-holding/add-new-eqpt/submit",
         {
@@ -418,7 +425,7 @@ export function AddNewEqpt() {
             type_of_hldg: form.typeOfHolding,
             type_of_eqpt: form.typeOfEqpt,
             depres_dur_year: form.depreciationRate.trim() || null,
-            upload_iv: form.uploadIv.trim() || null,
+            upload_iv: uploadedIvName,
             items: items.map((i) => ({
               eqpt_regn_no: i.eqptRegnNo.trim(),
               regn_seq_no: i.regnSeqNo,
@@ -477,7 +484,7 @@ export function AddNewEqpt() {
             <Input
               placeholder="Enter IV No..."
               value={form.ivNo}
-              onChange={(e) => upd("ivNo", e.target.value)}
+              onChange={(e) => upd("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="IV Date" required>
@@ -566,7 +573,7 @@ export function AddNewEqpt() {
                 <Input
                   placeholder="Search..."
                   value={form.prfSearch}
-                  onChange={(e) => upd("prfSearch", e.target.value)}
+                  onChange={(e) => upd("prfSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                 />
                 <Button
                   type="button"
@@ -624,7 +631,7 @@ export function AddNewEqpt() {
             <Input
               placeholder="Enter Material No..."
               value={form.materialNo}
-              onChange={(e) => upd("materialNo", e.target.value)}
+              onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
 
@@ -632,28 +639,28 @@ export function AddNewEqpt() {
             <Input
               placeholder="Enter Qty..."
               value={form.issuedQty}
-              onChange={(e) => upd("issuedQty", e.target.value)}
+              onChange={(e) => upd("issuedQty", e.target.value.replace(/\D/g, ""))}
             />
           </FormRow>
           <FormRow label="Eqpt Make">
             <Input
               placeholder="Enter Make..."
               value={form.eqptMake}
-              onChange={(e) => upd("eqptMake", e.target.value)}
+              onChange={(e) => upd("eqptMake", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="Eqpt Model">
             <Input
               placeholder="Enter Model..."
               value={form.eqptModel}
-              onChange={(e) => upd("eqptModel", e.target.value)}
+              onChange={(e) => upd("eqptModel", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="Unit Price">
             <Input
               placeholder="Enter Unit Price..."
               value={form.unitPrice}
-              onChange={(e) => upd("unitPrice", e.target.value)}
+              onChange={(e) => upd("unitPrice", e.target.value.replace(/[^0-9.]/g, ""))}
             />
           </FormRow>
 
@@ -661,21 +668,25 @@ export function AddNewEqpt() {
             <Input
               placeholder="In %..."
               value={form.depreciationRate}
-              onChange={(e) => upd("depreciationRate", e.target.value)}
+              onChange={(e) => upd("depreciationRate", e.target.value.replace(/[^0-9.]/g, ""))}
             />
           </FormRow>
           <FormRow label="Life (Yr)">
             <Input
               placeholder="Enter Life of Assets..."
               value={form.lifeOfAsset}
-              onChange={(e) => upd("lifeOfAsset", e.target.value)}
+              onChange={(e) => upd("lifeOfAsset", e.target.value.replace(/\D/g, ""))}
             />
           </FormRow>
           <FormRow label="Upload IV" className="sm:col-span-2">
             <Input
               type="file"
               className="h-auto py-0.5"
-              onChange={(e) => upd("uploadIv", e.target.files?.[0]?.name ?? "")}
+              onChange={(e) => {
+                const selected = e.target.files?.[0] ?? null;
+                setIvFile(selected);
+                upd("uploadIv", selected?.name ?? "");
+              }}
             />
           </FormRow>
         </FormGrid>
@@ -776,7 +787,7 @@ function ItemsList({
                     className="h-7 min-w-[90px] text-[13px]"
                     aria-label={`Material No row ${idx + 1}`}
                     onChange={(e) =>
-                      onChange(row.id, { materialNo: e.target.value })
+                      onChange(row.id, { materialNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") })
                     }
                   />
                 </td>
@@ -787,7 +798,7 @@ function ItemsList({
                     className="h-7 min-w-[150px] font-mono text-[13px]"
                     aria-label={`Regn No row ${idx + 1}`}
                     onChange={(e) =>
-                      onChange(row.id, { eqptRegnNo: e.target.value })
+                      onChange(row.id, { eqptRegnNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") })
                     }
                   />
                 </td>

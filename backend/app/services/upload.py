@@ -25,15 +25,15 @@ class SavedFileInfo(NamedTuple):
 
 def save_uploaded_document(
     file: UploadFile,
-    subfolder: str = "documents",
+    subfolder: str = "",
 ) -> SavedFileInfo:
     """Save an uploaded FastAPI file to the configured UPLOAD_PATH.
 
-    Creates destination subfolder if it does not exist.
+    Creates destination directory if it does not exist.
     """
     settings = get_settings()
     base_upload_dir = Path(settings.upload_path)
-    target_dir = base_upload_dir / subfolder
+    target_dir = base_upload_dir / subfolder if subfolder else base_upload_dir
     target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = Path(file.filename or "uploaded_document").name
@@ -51,7 +51,10 @@ def save_uploaded_document(
         shutil.copyfileobj(file.file, buffer)
 
     file_size = dest_path.stat().st_size
-    rel_path = str(dest_path.relative_to(base_upload_dir)).replace("\\", "/")
+    try:
+        rel_path = str(dest_path.relative_to(base_upload_dir)).replace("\\", "/")
+    except ValueError:
+        rel_path = dest_path.name
 
     return SavedFileInfo(
         file_name=dest_path.name,

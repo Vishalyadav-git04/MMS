@@ -439,7 +439,7 @@ export function ViewMlccs() {
               className="max-w-xs"
               placeholder="Search..."
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              onChange={(e) => setSearchText(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSearch();
               }}
@@ -508,7 +508,7 @@ export function ViewMlccs() {
               <Input
                 className="w-40"
                 value={resultFilter}
-                onChange={(e) => setResultFilter(e.target.value)}
+                onChange={(e) => setResultFilter(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
               />
             </div>
           </div>

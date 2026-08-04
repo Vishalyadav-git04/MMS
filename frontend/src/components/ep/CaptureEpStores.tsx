@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
@@ -115,7 +115,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value);
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -150,6 +150,8 @@ function SuggestInput({
 export function CaptureEpStores() {
   const [issuer, setIssuer] = useState(createEmptyIssuer);
   const [holding, setHolding] = useState(createEmptyHolding);
+  const [authLetterFileObj, setAuthLetterFileObj] = useState<File | null>(null);
+  const [voucherFileObj, setVoucherFileObj] = useState<File | null>(null);
   const [equipRows, setEquipRows] = useState<EquipRow[]>([
     { regdNo: "", serviceability: "SR" },
   ]);
@@ -263,6 +265,8 @@ export function CaptureEpStores() {
       sanctioningAuth: sanctionAuths[0]?.code_value ?? "",
     });
     setHolding(createEmptyHolding());
+    setAuthLetterFileObj(null);
+    setVoucherFileObj(null);
     setEquipRows([{ regdNo: "", serviceability: serviceOptions[0]?.code_value ?? "SR" }]);
     setIssuerUnits([]);
     setHoldingUnits([]);
@@ -349,6 +353,17 @@ export function CaptureEpStores() {
         }
       }
 
+      let uploadedAuthLetter = issuer.authLetterFile || null;
+      if (authLetterFileObj) {
+        const uploadRes = await uploadFileApi(authLetterFileObj);
+        uploadedAuthLetter = uploadRes.file_name;
+      }
+      let uploadedVoucher = holding.voucherFile || null;
+      if (voucherFileObj) {
+        const uploadRes = await uploadFileApi(voucherFileObj);
+        uploadedVoucher = uploadRes.file_name;
+      }
+
       const result = await api<{ ids: string[]; count: number }>("/ep/capture/", {
         method: "POST",
         body: JSON.stringify({
@@ -357,7 +372,7 @@ export function CaptureEpStores() {
           issue_sus_no: issuer.issueSusNo,
           auth_letter_no: issuer.authLetterNo,
           auth_date: issuer.date,
-          upload_auth_letter: issuer.authLetterFile || null,
+          upload_auth_letter: uploadedAuthLetter,
           unit_name: holding.unitName,
           sus_no: holding.susNo,
           iv_no: holding.ivNo,
@@ -366,7 +381,7 @@ export function CaptureEpStores() {
           sub_domain_id: holding.subDomainId,
           regn_no_avl: holding.regnNoAvl,
           qty: Number(holding.qty),
-          upload_voucher: holding.voucherFile || null,
+          upload_voucher: uploadedVoucher,
           remarks: holding.remarks || null,
           equipment: equipRows.map((r) => ({
             regd_no: r.regdNo || null,
@@ -492,7 +507,7 @@ export function CaptureEpStores() {
               placeholder="Enter Auth Letter No..."
               value={issuer.authLetterNo}
               disabled={busy}
-              onChange={(e) => updIssuer("authLetterNo", e.target.value)}
+              onChange={(e) => updIssuer("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="Date" required>
@@ -507,9 +522,11 @@ export function CaptureEpStores() {
               type="file"
               className="h-auto py-1"
               disabled={busy}
-              onChange={(e) =>
-                updIssuer("authLetterFile", e.target.files?.[0]?.name ?? "")
-              }
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setAuthLetterFileObj(f);
+                updIssuer("authLetterFile", f?.name ?? "");
+              }}
             />
           </FormRow>
         </FormGrid>
@@ -567,7 +584,7 @@ export function CaptureEpStores() {
               placeholder="Enter IV No..."
               value={holding.ivNo}
               disabled={busy}
-              onChange={(e) => updHolding("ivNo", e.target.value)}
+              onChange={(e) => updHolding("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             />
           </FormRow>
           <FormRow label="IV Date" required>
@@ -660,9 +677,11 @@ export function CaptureEpStores() {
               type="file"
               className="h-auto py-1"
               disabled={busy}
-              onChange={(e) =>
-                updHolding("voucherFile", e.target.files?.[0]?.name ?? "")
-              }
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setVoucherFileObj(f);
+                updHolding("voucherFile", f?.name ?? "");
+              }}
             />
           </FormRow>
         </FormGrid>
@@ -696,7 +715,7 @@ export function CaptureEpStores() {
                       disabled={busy || holding.regnNoAvl === "no"}
                       onChange={(e) => {
                         const next = [...equipRows];
-                        next[idx] = { ...next[idx], regdNo: e.target.value };
+                        next[idx] = { ...next[idx], regdNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") };
                         setEquipRows(next);
                       }}
                     />

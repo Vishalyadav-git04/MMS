@@ -609,7 +609,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                     placeholder="Enter Nomenclature"
                     value={addNom}
                     disabled={busy}
-                    onChange={(e) => setAddNom(e.target.value)}
+                    onChange={(e) => setAddNom(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                   />
                 </FormRow>
               </>
@@ -664,7 +664,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                   }}
                   onChange={(v) => {
                     setNomSuggestions([]);
-                    setModCensus(v);
+                    setModCensus(v.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
                     setModNom("");
                   }}
                   onPick={(idx) => {
@@ -694,7 +694,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                   }}
                   onChange={(v) => {
                     setCensusSuggestions([]);
-                    setModNom(v);
+                    setModNom(v.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
                     setModCensus("");
                   }}
                   onPick={(idx) => {
@@ -953,14 +953,14 @@ function FullEqptForm({
         <FormRow label="Nomenclature" required>
           <Input
             value={form.nomenclature}
-            onChange={(e) => upd("nomenclature", e.target.value)}
+            onChange={(e) => upd("nomenclature", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Nomenclature"
           />
         </FormRow>
         <FormRow label="Auth/Letter No" required>
           <Input
             value={form.authLetterNo}
-            onChange={(e) => upd("authLetterNo", e.target.value)}
+            onChange={(e) => upd("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Auth/Letter No"
           />
         </FormRow>
@@ -995,7 +995,7 @@ function FullEqptForm({
         <FormRow label="Cat/Part No" required>
           <Input
             value={form.catPartNo}
-            onChange={(e) => upd("catPartNo", e.target.value)}
+            onChange={(e) => upd("catPartNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Cat/Part No"
           />
         </FormRow>
@@ -1030,7 +1030,7 @@ function FullEqptForm({
         <FormRow label="Country of Origin">
           <Input
             value={form.countryOfOrigin}
-            onChange={(e) => upd("countryOfOrigin", e.target.value)}
+            onChange={(e) => upd("countryOfOrigin", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Search..."
           />
         </FormRow>
@@ -1051,7 +1051,7 @@ function FullEqptForm({
         <FormRow label="Year of Induction">
           <Input
             value={form.yearOfInduction}
-            onChange={(e) => upd("yearOfInduction", e.target.value)}
+            onChange={(e) => upd("yearOfInduction", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           />
         </FormRow>
         <FormRow label="Digest Category">
@@ -1064,42 +1064,42 @@ function FullEqptForm({
         <FormRow label="Cost (Rs.)">
           <Input
             value={form.cost}
-            onChange={(e) => upd("cost", e.target.value)}
+            onChange={(e) => upd("cost", e.target.value.replace(/[^0-9.]/g, ""))}
             placeholder="Enter Cost..."
           />
         </FormRow>
         <FormRow label="Manufacturing Agency">
           <Input
             value={form.manufacturingAgency}
-            onChange={(e) => upd("manufacturingAgency", e.target.value)}
+            onChange={(e) => upd("manufacturingAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Man. Agency..."
           />
         </FormRow>
         <FormRow label="AHSP Agency">
           <Input
             value={form.ahspAgency}
-            onChange={(e) => upd("ahspAgency", e.target.value)}
+            onChange={(e) => upd("ahspAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter AHSP Agency..."
           />
         </FormRow>
         <FormRow label="NATO Stock No (NSN)">
           <Input
             value={form.natoStockNo}
-            onChange={(e) => upd("natoStockNo", e.target.value)}
+            onChange={(e) => upd("natoStockNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter No..."
           />
         </FormRow>
         <FormRow label="Def Catalogue No (DCAN)">
           <Input
             value={form.defCatalogueNo}
-            onChange={(e) => upd("defCatalogueNo", e.target.value)}
+            onChange={(e) => upd("defCatalogueNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter No..."
           />
         </FormRow>
         <FormRow label="Material No">
           <Input
             value={form.materialNo}
-            onChange={(e) => upd("materialNo", e.target.value)}
+            onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Material No..."
             maxLength={15}
           />
@@ -1107,7 +1107,7 @@ function FullEqptForm({
         <FormRow label="Brief Description" required>
           <Input
             value={form.briefDescription}
-            onChange={(e) => upd("briefDescription", e.target.value)}
+            onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Brief Description..."
           />
         </FormRow>

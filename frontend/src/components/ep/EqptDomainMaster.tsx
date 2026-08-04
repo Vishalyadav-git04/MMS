@@ -31,7 +31,7 @@ export function EqptDomainMaster() {
   };
 
   const handleSave = async () => {
-    const cat = eqptCat.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
+    const cat = eqptCat.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
     if (!cat) {
       toast.error("EQPT CAT is required");
       return;
@@ -94,7 +94,7 @@ export function EqptDomainMaster() {
           <Input
             value={eqptCat}
             onChange={(e) =>
-              setEqptCat(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""))
+              setEqptCat(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
             }
             placeholder="Enter EQPT CAT"
             disabled={busy}

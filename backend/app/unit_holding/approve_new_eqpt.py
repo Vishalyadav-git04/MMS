@@ -115,7 +115,7 @@ def _status_label(code: str | None) -> str:
 def _holding_label_map(session: Session) -> dict[str, str]:
     rows = session.scalars(
         select(DomainValue).where(
-            func.upper(DomainValue.domain_name) == "TYPE_OF_HLDG"
+            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TYPEOFHOLDING"
         )
     ).all()
     return {

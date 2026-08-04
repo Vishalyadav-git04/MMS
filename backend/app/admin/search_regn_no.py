@@ -86,7 +86,10 @@ class LookupOut(BaseModel):
 def _option_list(session: Session, domain: str) -> list[OptionOut]:
     rows = session.scalars(
         select(DomainValue)
-        .where(func.upper(DomainValue.domain_name) == domain.upper())
+        .where(
+            func.replace(func.upper(DomainValue.domain_name), "_", "")
+            == domain.replace("_", "").upper()
+        )
         .order_by(
             func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
             DomainValue.label_name,
