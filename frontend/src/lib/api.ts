@@ -1,8 +1,8 @@
-/** Thin fetch helper for the MMS FastAPI (proxied via Vite `/api/v1`). */
+/** Thin fetch helper for the MMS FastAPI (configured via VITE_API_BASE_URL or proxied via Vite `/api`). */
 
 import { clearSession, getToken } from "@/lib/auth";
 
-const API_BASE = "/api/v1";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   status: number;

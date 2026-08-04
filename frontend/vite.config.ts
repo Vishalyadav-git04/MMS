@@ -17,9 +17,10 @@ export default defineConfig({
   // Existing UI is unchanged; screens can opt into /api/v1 later.
   vite: {
     server: {
+      port: 3000,
       proxy: {
-        "/api/v1": {
-          target: "http://localhost:8001",
+        "/api": {
+          target: "http://localhost:8000",
           changeOrigin: true,
           xfwd: true,
         },

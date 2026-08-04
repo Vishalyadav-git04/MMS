@@ -21,10 +21,10 @@ class MmsSettings(BaseSettings):
     environment: Environment = "dev"
     debug: bool = True
 
-    oracle_user: str = "SYSTEM"
+    oracle_user: str = "MMS"
     oracle_password: str = "oracle"
     oracle_dsn: str = "localhost:1521/FREEPDB1"
-    oracle_schema: str = "SYSTEM"
+    oracle_schema: str = "MMS"
 
     db_pool_min: int = 1
     db_pool_max: int = 10
@@ -32,16 +32,18 @@ class MmsSettings(BaseSettings):
     db_pool_timeout: int = 30
     db_echo: bool = False
 
-    api_prefix: str = "/api/v1"
+    upload_path: str = "D:/miso/"
+
+    api_prefix: str = "/api"
     cors_origins: list[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://131.3.54.120",
+        "https://131.3.54.120",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ]
 
     jwt_secret: str = Field(

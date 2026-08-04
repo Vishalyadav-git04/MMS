@@ -242,6 +242,58 @@ function Index() {
     }
   }, [admin, activeSub]);
 
+  // Initialize state from URL search params on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab") as ModuleId | null;
+    const subParam = params.get("sub") as WeaponSub | null;
+    const screenParam = params.get("screen");
+
+    if (tabParam) setActive(tabParam);
+    if (subParam) setActiveSub(subParam);
+    if (screenParam) {
+      if (subParam === "mms-admin") setActiveMms(screenParam as MmsTile);
+      if (subParam === "ep-stores") setActiveEp(screenParam as EpTile);
+      if (subParam === "generate-ro") setActiveRo(screenParam as RoTile);
+      if (subParam === "mlccs") setActiveMlccs(screenParam as MlccsTile);
+      if (subParam === "eqpt-transfer") setActiveTransfer(screenParam as TransferTile);
+      if (subParam === "unit-holding") setActiveHolding(screenParam as HoldingTile);
+      if (subParam === "reports") setActiveReport(screenParam as ReportTile);
+    }
+  }, []);
+
+  // Synchronize state changes to URL search params in address bar
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams();
+    if (active && active !== "dashboard") params.set("tab", active);
+    if (activeSub) params.set("sub", activeSub);
+    const activeTile =
+      activeMms ||
+      activeEp ||
+      activeRo ||
+      activeMlccs ||
+      activeTransfer ||
+      activeHolding ||
+      activeReport;
+    if (activeTile) params.set("screen", activeTile);
+
+    const query = params.toString();
+    const newUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  }, [
+    active,
+    activeSub,
+    activeMms,
+    activeEp,
+    activeRo,
+    activeMlccs,
+    activeTransfer,
+    activeHolding,
+    activeReport,
+  ]);
+
   // Visual-only splash after a fresh login transition (not on session restore refresh).
   useEffect(() => {
     if (!wasAuth.current && isAuthenticated) setShowSplash(true);

@@ -7,7 +7,7 @@ Feature folders mirror the existing frontend screens under src/components/
 
 from fastapi import APIRouter, Depends
 
-from app.api.routes import auth, health
+from app.api.routes import auth, health, upload
 from app.admin import capture_mlccs_details
 from app.admin import link_census_no_with_item_code
 from app.admin import mms_domain_master
@@ -38,6 +38,7 @@ api_router = APIRouter()
 # --- public ---------------------------------------------------------------
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
+api_router.include_router(upload.router)
 
 # --- authenticated (ADMIN or UNIT) ----------------------------------------
 protected = APIRouter(dependencies=[Depends(require_unit_or_admin)])
