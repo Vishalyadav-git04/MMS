@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FormPanel, FormRow } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,76 +27,67 @@ import {
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { api, ApiError } from "@/lib/api";
 
-const UNIT_OPTIONS = [
-  "1941005A - 13 PUNJAB",
-  "1942103B - 5 SIKH",
-  "1950012C - 2 RAJPUT",
-  "1960408D - 9 GARH RIF",
-];
+interface Option {
+  value: string;
+  label: string;
+}
 
-const PRF_GROUPS = ["PRF-INF-01", "PRF-ARMD-03", "PRF-ASC-04"];
+interface HoldingUnit {
+  sus_no: string;
+  unit_name: string;
+  display: string;
+}
 
-const CENSUS_OPTIONS = [
-  "CN-88421 — Carbine 5.56mm Folding Stock",
-  "CN-90215 — LMG 7.62mm Belt Fed",
-  "CN-77109 — Thermal Imager Hand Held",
-  "CN-65033 — VHF Radio Set Manpack 25W",
-];
+interface PrfGroup {
+  prf_group: string;
+  prf_codes: string[];
+}
 
-const HOLDING_TYPES = [
-  "Authorised Holding",
-  "Temporary Holding",
-  "Surplus Holding",
-  "Loan Holding",
-];
+interface CensusItem {
+  census_no: string;
+  nomenclature: string | null;
+}
 
-const SERVICEABILITY_OPTIONS = [
-  "Serviciable",
-  "Repairable",
-  "BER",
-  "Under Repair",
-];
+interface HoldingType {
+  value: string;
+  label: string;
+}
 
-type EqptResult = {
+interface EqptRow {
   id: string;
-  regnNo: string;
-  unit: string;
-  prfGroup: string;
-  censusNo: string;
-  typeOfHolding: string;
-  serviceability: string;
-};
+  source_table: string;
+  source_label: string;
+  eqpt_regn_no?: string | null;
+  sus_no?: string | null;
+  unit_name?: string | null;
+  prf_group?: string | null;
+  prf_code?: string | null;
+  census_no?: string | null;
+  type_of_hldg?: string | null;
+  type_of_hldg_label?: string | null;
+  service_status?: string | null;
+  service_status_label?: string | null;
+}
 
-const MOCK_EQPT: EqptResult[] = [
-  {
-    id: "1",
-    regnNo: "22P-081815",
-    unit: "1941005A - 13 PUNJAB",
-    prfGroup: "PRF-INF-01",
-    censusNo: "CN-88421 — Carbine 5.56mm Folding Stock",
-    typeOfHolding: "Authorised Holding",
-    serviceability: "Serviciable",
-  },
-  {
-    id: "2",
-    regnNo: "22P-091204",
-    unit: "1942103B - 5 SIKH",
-    prfGroup: "PRF-INF-01",
-    censusNo: "CN-90215 — LMG 7.62mm Belt Fed",
-    typeOfHolding: "Authorised Holding",
-    serviceability: "Repairable",
-  },
-  {
-    id: "5",
-    regnNo: "22P-070311",
-    unit: "1950012C - 2 RAJPUT",
-    prfGroup: "PRF-INF-01",
-    censusNo: "CN-77109 — Thermal Imager Hand Held",
-    typeOfHolding: "Temporary Holding",
-    serviceability: "Serviciable",
-  },
-];
+interface EqptDetail extends EqptRow {
+  barrel1_detl?: string | null;
+  barrel2_detl?: string | null;
+  barrel3_detl?: string | null;
+  barrel4_detl?: string | null;
+  spl_remarks?: string | null;
+  has_barrels: boolean;
+}
+
+const emptyForm = {
+  unitSearch: "",
+  susNo: "",
+  prfGroup: "",
+  censusNo: "",
+  typeOfHolding: "",
+  regdNo: "",
+};
 
 function SelectField({
   value,
@@ -107,7 +98,7 @@ function SelectField({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options: { value: string; label: string }[];
   placeholder?: string;
   disabled?: boolean;
 }) {
@@ -118,8 +109,8 @@ function SelectField({
       </SelectTrigger>
       <SelectContent>
         {options.map((o) => (
-          <SelectItem key={o} value={o}>
-            {o}
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
           </SelectItem>
         ))}
       </SelectContent>
@@ -127,34 +118,23 @@ function SelectField({
   );
 }
 
-const emptyForm = {
-  unitSearch: "",
-  unit: "",
-  prfGroup: "",
-  censusNo: "",
-  typeOfHolding: "",
-  regdNo: "",
-};
-
 function DialogActions({
   onClose,
   onUpdate,
-  updateLabel,
+  busy,
 }: {
   onClose: () => void;
   onUpdate?: () => void;
-  updateLabel?: string;
+  busy?: boolean;
 }) {
   return (
     <div className="flex flex-wrap justify-center gap-2 pt-1">
-      <Button variant="destructive" onClick={onClose}>
+      <Button variant="destructive" onClick={onClose} disabled={busy}>
         Close
       </Button>
-      {onUpdate && updateLabel && (
-        <Button
-          onClick={onUpdate}
-        >
-          {updateLabel}
+      {onUpdate && (
+        <Button onClick={onUpdate} disabled={busy}>
+          {busy ? "Updating…" : "Update Data"}
         </Button>
       )}
     </div>
@@ -163,45 +143,94 @@ function DialogActions({
 
 const wideRow = "sm:grid-cols-[140px_minmax(0,1fr)]";
 
-/** Non-artillery serviceability update */
 function ServiceabilityStateForm({
-  record,
+  detail,
+  serviceOpts,
   onClose,
+  onSaved,
 }: {
-  record: EqptResult;
+  detail: EqptDetail;
+  serviceOpts: Option[];
   onClose: () => void;
+  onSaved: () => void;
 }) {
-  const [regnNo, setRegnNo] = useState(record.regnNo);
-  const [serviceability, setServiceability] = useState(record.serviceability);
-  const [barrelI, setBarrelI] = useState("");
-  const [barrelII, setBarrelII] = useState("");
-  const [barrelIII, setBarrelIII] = useState("");
-  const [barrelIV, setBarrelIV] = useState("");
-  const [remarks, setRemarks] = useState("");
+  const [serviceability, setServiceability] = useState(detail.service_status || "");
+  const [barrelI, setBarrelI] = useState(detail.barrel1_detl || "");
+  const [barrelII, setBarrelII] = useState(detail.barrel2_detl || "");
+  const [barrelIII, setBarrelIII] = useState(detail.barrel3_detl || "");
+  const [barrelIV, setBarrelIV] = useState(detail.barrel4_detl || "");
+  const [remarks, setRemarks] = useState(detail.spl_remarks || "");
+  const [busy, setBusy] = useState(false);
+
+  const handleUpdate = async () => {
+    if (!serviceability) {
+      toast.error("Please select Serviceability");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/unit-holding/update-eqpt-data/update", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: detail.id,
+          source_table: detail.source_table,
+          service_status: serviceability,
+          barrel1_detl: barrelI || null,
+          barrel2_detl: barrelII || null,
+          barrel3_detl: barrelIII || null,
+          barrel4_detl: barrelIV || null,
+          spl_remarks: remarks || null,
+        }),
+      });
+      toast.success("Serviceability data updated");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-1.5">
-      <FormRow label="Eqpt Registration No." required className={wideRow}>
-        <Input value={regnNo} onChange={(e) => setRegnNo(e.target.value)} />
+      <FormRow label="Eqpt Registration No." className={wideRow}>
+        <Input value={detail.eqpt_regn_no || ""} readOnly />
       </FormRow>
       <FormRow label="Serviceability" required className={wideRow}>
         <SelectField
           value={serviceability}
           onChange={setServiceability}
-          options={SERVICEABILITY_OPTIONS}
+          options={serviceOpts}
         />
       </FormRow>
       <FormRow label="Barrel - I" className={wideRow}>
-        <Input value={barrelI} onChange={(e) => setBarrelI(e.target.value)} placeholder="null" />
+        <Input
+          value={barrelI}
+          onChange={(e) => setBarrelI(e.target.value)}
+          placeholder="null"
+        />
       </FormRow>
       <FormRow label="Barrel - II" className={wideRow}>
-        <Input value={barrelII} onChange={(e) => setBarrelII(e.target.value)} placeholder="null" />
+        <Input
+          value={barrelII}
+          onChange={(e) => setBarrelII(e.target.value)}
+          placeholder="null"
+        />
       </FormRow>
       <FormRow label="Barrel - III" className={wideRow}>
-        <Input value={barrelIII} onChange={(e) => setBarrelIII(e.target.value)} placeholder="null" />
+        <Input
+          value={barrelIII}
+          onChange={(e) => setBarrelIII(e.target.value)}
+          placeholder="null"
+        />
       </FormRow>
       <FormRow label="Barrel - IV" className={wideRow}>
-        <Input value={barrelIV} onChange={(e) => setBarrelIV(e.target.value)} placeholder="null" />
+        <Input
+          value={barrelIV}
+          onChange={(e) => setBarrelIV(e.target.value)}
+          placeholder="null"
+        />
       </FormRow>
       <FormRow label="Remarks" className={wideRow}>
         <Textarea
@@ -211,30 +240,23 @@ function ServiceabilityStateForm({
           className="min-h-[52px] text-xs"
         />
       </FormRow>
-      <DialogActions
-        onClose={onClose}
-        updateLabel="Update Data"
-        onUpdate={() => {
-          if (!regnNo || !serviceability) {
-            toast.error("Please fill all required fields");
-            return;
-          }
-          toast.success("Serviceability data updated");
-          onClose();
-        }}
-      />
+      <DialogActions onClose={onClose} onUpdate={handleUpdate} busy={busy} />
     </div>
   );
 }
 
 function ServiceabilityDialog({
-  record,
+  detail,
+  serviceOpts,
   open,
   onClose,
+  onSaved,
 }: {
-  record: EqptResult;
+  detail: EqptDetail;
+  serviceOpts: Option[];
   open: boolean;
   onClose: () => void;
+  onSaved: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -244,90 +266,238 @@ function ServiceabilityDialog({
             SERVICEABILITY STATE
           </DialogTitle>
         </DialogHeader>
-        <ServiceabilityStateForm record={record} onClose={onClose} />
+        <ServiceabilityStateForm
+          detail={detail}
+          serviceOpts={serviceOpts}
+          onClose={onClose}
+          onSaved={onSaved}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
+function rowKey(r: EqptRow) {
+  return `${r.source_table}:${r.id}`;
+}
+
 export function UpdateEqptData() {
   const [form, setForm] = useState(emptyForm);
-  const [filteredUnits, setFilteredUnits] = useState(UNIT_OPTIONS);
-  const [results, setResults] = useState<EqptResult[]>([]);
+  const [units, setUnits] = useState<HoldingUnit[]>([]);
+  const [prfGroups, setPrfGroups] = useState<PrfGroup[]>([]);
+  const [censusItems, setCensusItems] = useState<CensusItem[]>([]);
+  const [holdingTypes, setHoldingTypes] = useState<HoldingType[]>([]);
+  const [serviceOpts, setServiceOpts] = useState<Option[]>([]);
+  const [results, setResults] = useState<EqptRow[]>([]);
   const [showResults, setShowResults] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [updateRecord, setUpdateRecord] = useState<EqptResult | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [updateDetail, setUpdateDetail] = useState<EqptDetail | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const upd = <K extends keyof typeof emptyForm>(k: K, v: (typeof emptyForm)[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
   const selected = useMemo(
-    () => results.find((r) => r.id === selectedId) ?? null,
-    [results, selectedId],
+    () => results.find((r) => rowKey(r) === selectedKey) ?? null,
+    [results, selectedKey],
   );
+
+  const unitOptions = useMemo(
+    () => units.map((u) => ({ value: u.sus_no, label: u.display })),
+    [units],
+  );
+
+  const prfOptions = useMemo(
+    () => prfGroups.map((p) => ({ value: p.prf_group, label: p.prf_group })),
+    [prfGroups],
+  );
+
+  const censusOptions = useMemo(
+    () =>
+      censusItems.map((c) => ({
+        value: c.census_no,
+        label: c.nomenclature
+          ? `${c.census_no} — ${c.nomenclature}`
+          : c.census_no,
+      })),
+    [censusItems],
+  );
+
+  const holdingOptions = useMemo(
+    () => holdingTypes.map((h) => ({ value: h.value, label: h.label })),
+    [holdingTypes],
+  );
+
+  useEffect(() => {
+    void api<{ service_status: Option[] }>("/unit-holding/update-eqpt-data/options")
+      .then((res) => setServiceOpts(res.service_status ?? []))
+      .catch(() => toast.error("Failed to load serviceability options"));
+  }, []);
+
+  const loadUnits = (q = "") => {
+    void api<HoldingUnit[]>(
+      `/unit-holding/update-eqpt-data/units?q=${encodeURIComponent(q)}`,
+    )
+      .then(setUnits)
+      .catch(() => {
+        setUnits([]);
+        toast.error("Failed to load units");
+      });
+  };
+
+  useEffect(() => {
+    loadUnits();
+  }, []);
+
+  useEffect(() => {
+    if (!form.susNo) {
+      setPrfGroups([]);
+      return;
+    }
+    void api<PrfGroup[]>(
+      `/unit-holding/update-eqpt-data/prf-groups?sus_no=${encodeURIComponent(form.susNo)}`,
+    )
+      .then(setPrfGroups)
+      .catch(() => {
+        setPrfGroups([]);
+        toast.error("Failed to load PRF groups");
+      });
+  }, [form.susNo]);
+
+  useEffect(() => {
+    if (!form.susNo || !form.prfGroup) {
+      setCensusItems([]);
+      return;
+    }
+    void api<CensusItem[]>(
+      `/unit-holding/update-eqpt-data/census-items?sus_no=${encodeURIComponent(form.susNo)}&prf_group=${encodeURIComponent(form.prfGroup)}`,
+    )
+      .then(setCensusItems)
+      .catch(() => {
+        setCensusItems([]);
+        toast.error("Failed to load census items");
+      });
+  }, [form.susNo, form.prfGroup]);
+
+  useEffect(() => {
+    if (!form.susNo || !form.prfGroup || !form.censusNo) {
+      setHoldingTypes([]);
+      return;
+    }
+    void api<HoldingType[]>(
+      `/unit-holding/update-eqpt-data/holding-types?sus_no=${encodeURIComponent(form.susNo)}&prf_group=${encodeURIComponent(form.prfGroup)}&census_no=${encodeURIComponent(form.censusNo)}`,
+    )
+      .then(setHoldingTypes)
+      .catch(() => {
+        setHoldingTypes([]);
+        toast.error("Failed to load holding types");
+      });
+  }, [form.susNo, form.prfGroup, form.censusNo]);
 
   const handleClear = () => {
     setForm(emptyForm);
-    setFilteredUnits(UNIT_OPTIONS);
+    setPrfGroups([]);
+    setCensusItems([]);
+    setHoldingTypes([]);
     setResults([]);
     setShowResults(false);
-    setSelectedId(null);
-    setUpdateRecord(null);
+    setSelectedKey(null);
+    setUpdateDetail(null);
+    loadUnits();
   };
 
   const handleUnitSearch = () => {
-    const q = form.unitSearch.trim().toLowerCase();
-    const next = q
-      ? UNIT_OPTIONS.filter((u) => u.toLowerCase().includes(q))
-      : UNIT_OPTIONS;
-    setFilteredUnits(next);
-    if (!next.length) toast.message("No unit matched");
+    loadUnits(form.unitSearch.trim());
   };
 
-  const handleSearch = () => {
-    if (!form.unit || !form.prfGroup || !form.censusNo || !form.typeOfHolding) {
+  const handleUnitChange = (sus: string) => {
+    setForm((prev) => ({
+      ...prev,
+      susNo: sus,
+      prfGroup: "",
+      censusNo: "",
+      typeOfHolding: "",
+    }));
+    setResults([]);
+    setShowResults(false);
+    setSelectedKey(null);
+  };
+
+  const handlePrfChange = (prf: string) => {
+    setForm((prev) => ({
+      ...prev,
+      prfGroup: prf,
+      censusNo: "",
+      typeOfHolding: "",
+    }));
+    setResults([]);
+    setShowResults(false);
+    setSelectedKey(null);
+  };
+
+  const handleCensusChange = (census: string) => {
+    setForm((prev) => ({
+      ...prev,
+      censusNo: census,
+      typeOfHolding: "",
+    }));
+    setResults([]);
+    setShowResults(false);
+    setSelectedKey(null);
+  };
+
+  const handleSearch = async (opts?: { silent?: boolean }) => {
+    if (!form.susNo || !form.prfGroup || !form.censusNo || !form.typeOfHolding) {
       toast.error("Please fill all required fields");
       return;
     }
-
-    const matched = MOCK_EQPT.filter((r) => {
-      const unitOk = r.unit === form.unit;
-      const prfOk = r.prfGroup === form.prfGroup;
-      const censusOk = r.censusNo === form.censusNo;
-      const holdingOk = r.typeOfHolding === form.typeOfHolding;
-      const regdOk =
-        !form.regdNo.trim() ||
-        r.regnNo.toLowerCase().includes(form.regdNo.trim().toLowerCase());
-      return unitOk && prfOk && censusOk && holdingOk && regdOk;
-    });
-
-    const rows =
-      matched.length > 0
-        ? matched
-        : [
-            {
-              id: `demo-${Date.now()}`,
-              regnNo: form.regdNo.trim() || "22P-081815",
-              unit: form.unit,
-              prfGroup: form.prfGroup,
-              censusNo: form.censusNo,
-              typeOfHolding: form.typeOfHolding,
-              serviceability: "Serviciable",
-            },
-          ];
-
-    setResults(rows);
-    setShowResults(true);
-    setSelectedId(rows[0]?.id ?? null);
-    toast.success(`${rows.length} record(s) found`);
+    setBusy(true);
+    try {
+      const rows = await api<EqptRow[]>("/unit-holding/update-eqpt-data/search", {
+        method: "POST",
+        body: JSON.stringify({
+          sus_no: form.susNo,
+          prf_group: form.prfGroup,
+          census_no: form.censusNo,
+          type_of_hldg: form.typeOfHolding,
+          regd_no: form.regdNo.trim() || null,
+        }),
+      });
+      setResults(rows);
+      setShowResults(true);
+      setSelectedKey(rows[0] ? rowKey(rows[0]) : null);
+      if (!opts?.silent) {
+        toast.success(`${rows.length} record(s) found`);
+      }
+    } catch (e) {
+      setResults([]);
+      setShowResults(false);
+      toast.error(e instanceof ApiError ? e.message : "Search failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!selected) {
       toast.error("Please select a unit/equipment row");
       return;
     }
-    setUpdateRecord(selected);
+    setBusy(true);
+    try {
+      const detail = await api<EqptDetail>(
+        `/unit-holding/update-eqpt-data/detail?id=${encodeURIComponent(selected.id)}&source_table=${encodeURIComponent(selected.source_table)}`,
+      );
+      setUpdateDetail(detail);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Failed to load equipment detail");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshAfterSave = () => {
+    void handleSearch({ silent: true });
   };
 
   return (
@@ -337,24 +507,22 @@ export function UpdateEqptData() {
         fill={showResults}
         footer={
           <>
-            <Button variant="secondary" onClick={handleClear}>
+            <Button variant="secondary" onClick={handleClear} disabled={busy}>
               Clear
             </Button>
-            <Button
-              onClick={handleSearch}
-            >
-              Search
+            <Button onClick={() => void handleSearch()} disabled={busy}>
+              {busy ? "Searching…" : "Search"}
             </Button>
             {showResults && (
               <Button
                 className="bg-primary hover:bg-primary/90"
                 onClick={handleUpdate}
-                disabled={!selected}
+                disabled={!selected || busy}
               >
                 Update
               </Button>
             )}
-            <Button variant="destructive" onClick={handleClear}>
+            <Button variant="destructive" onClick={handleClear} disabled={busy}>
               Cancel
             </Button>
           </>
@@ -373,6 +541,12 @@ export function UpdateEqptData() {
                   placeholder="Search..."
                   value={form.unitSearch}
                   onChange={(e) => upd("unitSearch", e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleUnitSearch();
+                    }
+                  }}
                 />
                 <Button
                   type="button"
@@ -386,9 +560,9 @@ export function UpdateEqptData() {
               </div>
               <div className="min-w-0 flex-[1.6]">
                 <SelectField
-                  value={form.unit}
-                  onChange={(v) => upd("unit", v)}
-                  options={filteredUnits}
+                  value={form.susNo}
+                  onChange={handleUnitChange}
+                  options={unitOptions}
                   placeholder="--Select Unit--"
                 />
               </div>
@@ -398,18 +572,20 @@ export function UpdateEqptData() {
           <FormRow label="PRF Group" required>
             <SelectField
               value={form.prfGroup}
-              onChange={(v) => upd("prfGroup", v)}
-              options={PRF_GROUPS}
+              onChange={handlePrfChange}
+              options={prfOptions}
               placeholder="--Select--"
+              disabled={!form.susNo}
             />
           </FormRow>
 
           <FormRow label="Census No" required>
             <SelectField
               value={form.censusNo}
-              onChange={(v) => upd("censusNo", v)}
-              options={CENSUS_OPTIONS}
+              onChange={handleCensusChange}
+              options={censusOptions}
               placeholder="--Select--"
+              disabled={!form.prfGroup}
             />
           </FormRow>
 
@@ -419,8 +595,9 @@ export function UpdateEqptData() {
                 <SelectField
                   value={form.typeOfHolding}
                   onChange={(v) => upd("typeOfHolding", v)}
-                  options={HOLDING_TYPES}
+                  options={holdingOptions}
                   placeholder="--Select Type of Holding--"
+                  disabled={!form.censusNo}
                 />
               </div>
               <span className="shrink-0 text-[12px] font-medium text-foreground">
@@ -460,37 +637,56 @@ export function UpdateEqptData() {
                       <TableHead className="text-primary-foreground text-[12px]">
                         Serviceability
                       </TableHead>
-                      <TableHead className="text-primary-foreground text-[12px]">Type</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {results.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        className={cn(
-                          "cursor-pointer",
-                          selectedId === r.id && "bg-accent/50",
-                        )}
-                        onClick={() => setSelectedId(r.id)}
-                      >
-                        <TableCell className="text-xs">
-                          <input
-                            type="radio"
-                            name="eqpt-sel"
-                            checked={selectedId === r.id}
-                            onChange={() => setSelectedId(r.id)}
-                            className="accent-primary"
-                          />
+                    {results.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-xs text-muted-foreground">
+                          No records found
                         </TableCell>
-                        <TableCell className="text-xs font-medium">{r.regnNo}</TableCell>
-                        <TableCell className="text-xs">{r.unit}</TableCell>
-                        <TableCell className="text-xs">{r.prfGroup}</TableCell>
-                        <TableCell className="text-xs">{r.censusNo}</TableCell>
-                        <TableCell className="text-xs">{r.typeOfHolding}</TableCell>
-                        <TableCell className="text-xs">{r.serviceability}</TableCell>
-                        <TableCell className="text-xs">Other</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      results.map((r) => {
+                        const key = rowKey(r);
+                        const unitDisplay =
+                          r.sus_no && r.unit_name
+                            ? `${r.sus_no} - ${r.unit_name}`
+                            : r.sus_no || r.unit_name || "";
+                        return (
+                          <TableRow
+                            key={key}
+                            className={cn(
+                              "cursor-pointer",
+                              selectedKey === key && "bg-accent/50",
+                            )}
+                            onClick={() => setSelectedKey(key)}
+                          >
+                            <TableCell className="text-xs">
+                              <input
+                                type="radio"
+                                name="eqpt-sel"
+                                checked={selectedKey === key}
+                                onChange={() => setSelectedKey(key)}
+                                className="accent-primary"
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs font-medium">
+                              {r.eqpt_regn_no || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">{unitDisplay}</TableCell>
+                            <TableCell className="text-xs">{r.prf_group || "—"}</TableCell>
+                            <TableCell className="text-xs">{r.census_no || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {r.type_of_hldg_label || r.type_of_hldg || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {r.service_status_label || r.service_status || "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -503,11 +699,13 @@ export function UpdateEqptData() {
         </div>
       </FormPanel>
 
-      {updateRecord && (
+      {updateDetail && (
         <ServiceabilityDialog
-          record={updateRecord}
+          detail={updateDetail}
+          serviceOpts={serviceOpts}
           open
-          onClose={() => setUpdateRecord(null)}
+          onClose={() => setUpdateDetail(null)}
+          onSaved={refreshAfterSave}
         />
       )}
     </>

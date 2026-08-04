@@ -8,11 +8,11 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
-from app.models import EpDomainMaster, EpMstr, EpSubDomain
+from app.models import DomainValue, EpDomainMaster, EpMstr, EpSubDomain
 from app.auth.principal import Principal
 from app.utils.ids import next_int_id
 
@@ -20,6 +20,33 @@ router = APIRouter(
     prefix="/ep/gen-census",
     tags=["ep: gen census"],
 )
+
+
+class OptionOut(BaseModel):
+    value: str
+    label: str
+
+
+def _option_list(session: Session, *domains: str) -> list[OptionOut]:
+    for domain in domains:
+        rows = session.scalars(
+            select(DomainValue)
+            .where(func.upper(DomainValue.domain_name) == domain.upper())
+            .order_by(
+                func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
+                DomainValue.label_name,
+            )
+        ).all()
+        options = [
+            OptionOut(value=r.code_value or "", label=r.label_name or r.code_value or "")
+            for r in rows
+            if r.code_value
+        ]
+        if options:
+            return options
+    return []
+
+
 
 class GenerateCensusIn(BaseModel):
     sub_domain_id: str = Field(..., min_length=1, max_length=36)
@@ -83,7 +110,7 @@ def _next_census_no(
             EpMstr.sub_domain_id == sub_domain.id,
         )
     ).all()
-    max_sequence = -1
+    max_sequence = 0
     for raw in rows:
         if not raw:
             continue
@@ -131,6 +158,21 @@ def _parse_year(value: str | None) -> int | None:
         ) from exc
 
 
+@router.get("/options")
+def list_options(
+    session: Session = Depends(get_db_session),
+) -> dict[str, list[OptionOut]]:
+    return {
+        "accounting_unit": _option_list(session, "ACCOUNTINGUNITS"),
+        "item_status": _option_list(session, "ITEMSTATUS"),
+        "item_category": _option_list(session, "MMSITEMSCATEGORY", "TYPE_OF_EQPT"),
+        "class_of_equipment": _option_list(session, "MMSCLASSA"),
+        "nodal_directorate": _option_list(session, "SPONSERDTE"),
+        "digest_category": _option_list(session, "DIGESTCATEGORY"),
+        "equipment_category": _option_list(session, "DTEEQPTCATEGORY"),
+    }
+
+
 @router.post("/generate", response_model=GenerateCensusOut)
 def generate_census(
     body: GenerateCensusIn,
@@ -170,6 +212,21 @@ def save_census(
             detail=f"Census No '{census_no}' already exists",
         )
 
+    opstatus_approved = session.scalar(
+        select(DomainValue).where(
+            func.upper(DomainValue.domain_name).in_(["OPSTATUS", "OP_STATUS"]),
+            or_(
+                func.upper(func.trim(DomainValue.code_value)) == "APPROVED",
+                func.upper(func.trim(DomainValue.label_name)) == "APPROVED",
+            ),
+        )
+    )
+    if opstatus_approved is None or not opstatus_approved.code_value:
+        raise HTTPException(
+            status_code=400,
+            detail="OPSTATUS domain has no APPROVED value configured",
+        )
+
     next_id = next_int_id(session, EpMstr)
 
     now = datetime.now()
@@ -196,7 +253,7 @@ def save_census(
         ahsp_agency=(body.ahsp_agency or "").strip()[:255] or None,
         nato_stock_no=(body.nato_stock_no or "").strip()[:100] or None,
         defence_catalogue_no=(body.defence_catalogue_no or "").strip()[:100] or None,
-        status="ACTIVE",
+        status=opstatus_approved.code_value.strip()[:10],
         remarks=(body.remarks or "").strip()[:1000] or None,
         created_by=principal.username,
         created_date=now,
@@ -210,3 +267,4 @@ def save_census(
         domain_id=row.domain_id,
         status=row.status,
     )
+

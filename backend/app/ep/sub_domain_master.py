@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -78,7 +79,7 @@ def create_sub_domain(
     principal: Principal = Depends(get_principal),
 ) -> EpSubDomainOut:
     domain_id = body.equipment_domain_id.strip()
-    name = body.sub_domain_name.strip()
+    name = re.sub(r"[^A-Z0-9\s\-/]", "", body.sub_domain_name.strip().upper())
     if not domain_id or not name:
         raise HTTPException(
             status_code=400,
@@ -91,7 +92,7 @@ def create_sub_domain(
 
     clash = session.scalar(
         select(EpSubDomain).where(
-            func.upper(EpSubDomain.sub_domain_name) == name.upper()
+            func.upper(EpSubDomain.sub_domain_name) == name
         )
     )
     if clash is not None:

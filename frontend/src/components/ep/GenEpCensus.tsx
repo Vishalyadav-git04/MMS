@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,31 @@ interface SubDomainSuggestion {
   eqpt_cat?: string | null;
 }
 
+interface OptionItem {
+  value: string;
+  label: string;
+}
+
+interface CensusOptions {
+  accounting_unit: OptionItem[];
+  item_status: OptionItem[];
+  item_category: OptionItem[];
+  class_of_equipment: OptionItem[];
+  nodal_directorate: OptionItem[];
+  digest_category: OptionItem[];
+  equipment_category: OptionItem[];
+}
+
+const emptyOptions: CensusOptions = {
+  accounting_unit: [],
+  item_status: [],
+  item_category: [],
+  class_of_equipment: [],
+  nodal_directorate: [],
+  digest_category: [],
+  equipment_category: [],
+};
+
 interface FullForm {
   subDomainId: string;
   subDomainName: string;
@@ -38,7 +64,6 @@ interface FullForm {
   countryOfOrigin: string;
   nodalDte: string;
   eqptCategory: string;
-  inclInAih: string;
   yearOfInduction: string;
   digestCategory: string;
   cost: string;
@@ -56,15 +81,14 @@ const emptyForm: FullForm = {
   authLetterNo: "",
   date: "",
   catPartNo: "",
-  accountingUnit: "NOS",
+  accountingUnit: "",
   briefDescription: "",
-  itemStatus: "CUR",
+  itemStatus: "",
   itemCategory: "",
   classOfEqpt: "",
   countryOfOrigin: "",
   nodalDte: "",
   eqptCategory: "",
-  inclInAih: "",
   yearOfInduction: "2026",
   digestCategory: "",
   cost: "",
@@ -82,8 +106,37 @@ export function GenEpCensus() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showFull, setShowFull] = useState(false);
   const [form, setForm] = useState<FullForm>(emptyForm);
+  const [options, setOptions] = useState<CensusOptions>(emptyOptions);
   const [busy, setBusy] = useState(false);
   const blurTimer = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  useLayoutEffect(() => {
+    if (!showSuggestions || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [showSuggestions, suggestions]);
 
   useEffect(() => {
     if (selected && query === selected.sub_domain_name) {
@@ -127,21 +180,25 @@ export function GenEpCensus() {
     }
     setBusy(true);
     try {
-      const generated = await api<{
-        census_no: string;
-        sub_domain_id: string;
-        sub_domain_name: string;
-        domain_id: string;
-      }>("/ep/gen-census/generate", {
-        method: "POST",
-        body: JSON.stringify({ sub_domain_id: selected.id }),
-      });
+      const [generated, fetchedOptions] = await Promise.all([
+        api<{
+          census_no: string;
+          sub_domain_id: string;
+          sub_domain_name: string;
+          domain_id: string;
+        }>("/ep/gen-census/generate", {
+          method: "POST",
+          body: JSON.stringify({ sub_domain_id: selected.id }),
+        }),
+        api<CensusOptions>("/ep/gen-census/options"),
+      ]);
       setForm({
         ...emptyForm,
         subDomainId: generated.sub_domain_id,
         subDomainName: generated.sub_domain_name,
         censusNo: generated.census_no,
       });
+      setOptions(fetchedOptions);
       setShowFull(true);
       toast.success(`Census No ${generated.census_no} generated`);
     } catch (e) {
@@ -213,6 +270,7 @@ export function GenEpCensus() {
       <MlccsEpForm
         form={form}
         setForm={setForm}
+        options={options}
         busy={busy}
         onSave={() => void handleSave()}
         onClear={handleClear}
@@ -238,20 +296,25 @@ export function GenEpCensus() {
         </>
       }
     >
-      <div className="max-w-3xl mx-auto">
+      <div className="mx-auto max-w-3xl overflow-visible">
         <FormRow label="Sub Domain Name" required>
-          <div className="relative">
+          <div className="relative overflow-visible">
             <Input
+              ref={inputRef}
               placeholder="Search..."
               value={query}
               disabled={busy}
               autoComplete="off"
               onChange={(e) => {
-                setQuery(e.target.value);
+                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
+                setQuery(val);
                 setSelected(null);
                 setShowSuggestions(true);
               }}
-              onFocus={() => setShowSuggestions(true)}
+              onFocus={() => {
+                setShowSuggestions(true);
+                updateCoords();
+              }}
               onBlur={() => {
                 blurTimer.current = window.setTimeout(
                   () => setShowSuggestions(false),
@@ -259,28 +322,42 @@ export function GenEpCensus() {
                 );
               }}
             />
-            {showSuggestions && suggestions.length > 0 && (
-              <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md">
-                {suggestions.map((row) => (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                        pickSuggestion(row);
-                      }}
-                    >
-                      <span>{row.sub_domain_name}</span>
-                      {row.eqpt_cat ? (
-                        <span className="text-xs text-muted-foreground">{row.eqpt_cat}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {showSuggestions &&
+              suggestions.length > 0 &&
+              coords &&
+              createPortal(
+                <ul
+                  className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+                  style={{
+                    position: "fixed",
+                    top: coords.top,
+                    left: coords.left,
+                    width: coords.width,
+                  }}
+                >
+                  {suggestions.map((row) => (
+                    <li key={row.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                          pickSuggestion(row);
+                        }}
+                      >
+                        <span>{row.sub_domain_name}</span>
+                        {row.eqpt_cat ? (
+                          <span className="text-xs text-muted-foreground">
+                            {row.eqpt_cat}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>,
+                document.body,
+              )}
           </div>
         </FormRow>
       </div>
@@ -291,6 +368,7 @@ export function GenEpCensus() {
 function MlccsEpForm({
   form,
   setForm,
+  options,
   busy,
   onSave,
   onClear,
@@ -298,6 +376,7 @@ function MlccsEpForm({
 }: {
   form: FullForm;
   setForm: (f: FullForm) => void;
+  options: CensusOptions;
   busy: boolean;
   onSave: () => void;
   onClear: () => void;
@@ -362,7 +441,7 @@ function MlccsEpForm({
             <SelectField
               value={form.accountingUnit}
               onChange={(v) => upd("accountingUnit", v)}
-              options={["NOS", "KG", "LTR", "MTR"]}
+              options={options.accounting_unit}
               disabled={busy}
             />
           </FormRow>
@@ -370,7 +449,7 @@ function MlccsEpForm({
             <SelectField
               value={form.itemStatus}
               onChange={(v) => upd("itemStatus", v)}
-              options={["CUR", "OBS", "PHS"]}
+              options={options.item_status}
               disabled={busy}
             />
           </FormRow>
@@ -378,7 +457,7 @@ function MlccsEpForm({
             <SelectField
               value={form.itemCategory}
               onChange={(v) => upd("itemCategory", v)}
-              options={["Weapon", "Ammo", "Vehicle", "Comms"]}
+              options={options.item_category}
               disabled={busy}
             />
           </FormRow>
@@ -386,7 +465,7 @@ function MlccsEpForm({
             <SelectField
               value={form.classOfEqpt}
               onChange={(v) => upd("classOfEqpt", v)}
-              options={["Class I", "Class II", "Class III"]}
+              options={options.class_of_equipment}
               disabled={busy}
             />
           </FormRow>
@@ -402,7 +481,7 @@ function MlccsEpForm({
             <SelectField
               value={form.nodalDte}
               onChange={(v) => upd("nodalDte", v)}
-              options={["DGOS", "DGAS", "DGEME"]}
+              options={options.nodal_directorate}
               disabled={busy}
             />
           </FormRow>
@@ -410,15 +489,7 @@ function MlccsEpForm({
             <SelectField
               value={form.eqptCategory}
               onChange={(v) => upd("eqptCategory", v)}
-              options={["A", "B", "C"]}
-              disabled={busy}
-            />
-          </FormRow>
-          <FormRow label="Incl in AIH">
-            <SelectField
-              value={form.inclInAih}
-              onChange={(v) => upd("inclInAih", v)}
-              options={["Yes", "No"]}
+              options={options.equipment_category}
               disabled={busy}
             />
           </FormRow>
@@ -433,7 +504,7 @@ function MlccsEpForm({
             <SelectField
               value={form.digestCategory}
               onChange={(v) => upd("digestCategory", v)}
-              options={["Cat-I", "Cat-II"]}
+              options={options.digest_category}
               disabled={busy}
             />
           </FormRow>
@@ -504,13 +575,13 @@ function MlccsEpForm({
 function SelectField({
   value,
   onChange,
-  options,
+  options = [],
   placeholder = "--Select--",
   disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options?: OptionItem[];
   placeholder?: string;
   disabled?: boolean;
 }) {
@@ -521,11 +592,12 @@ function SelectField({
       </SelectTrigger>
       <SelectContent>
         {options.map((o) => (
-          <SelectItem key={o} value={o}>
-            {o}
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
   );
 }
+

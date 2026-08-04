@@ -39,18 +39,29 @@ interface NewEqptRow {
   sus_no?: string | null;
   material_no?: string | null;
   census_no?: string | null;
-  issued_qty: string;
+  type_of_hldg?: string | null;
+  type_of_hldg_label?: string | null;
   status: string;
   op_status?: string | null;
 }
 
-const emptyForm = {
-  susNo: "",
-  unitName: "",
-  from: "2026-07-01",
-  to: "2026-07-24",
-  status: "",
-};
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function emptyForm() {
+  return {
+    susNo: "",
+    unitName: "",
+    from: "2026-07-01",
+    to: todayIso(),
+    status: "",
+  };
+}
 
 function rowKey(r: NewEqptRow) {
   return `${r.source_table}:${r.id}`;
@@ -122,8 +133,10 @@ export function ApproveNewEqpt() {
   const [queryField, setQueryField] = useState<"name" | "sus" | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const upd = <K extends keyof typeof emptyForm>(k: K, v: (typeof emptyForm)[K]) =>
-    setForm((prev) => ({ ...prev, [k]: v }));
+  const upd = <K extends keyof ReturnType<typeof emptyForm>>(
+    k: K,
+    v: ReturnType<typeof emptyForm>[K],
+  ) => setForm((prev) => ({ ...prev, [k]: v }));
 
   useEffect(() => {
     if (!queryField) return;
@@ -153,14 +166,14 @@ export function ApproveNewEqpt() {
   };
 
   const handleClear = () => {
-    setForm(emptyForm);
+    setForm(emptyForm());
     setResults([]);
     setSelected(new Set());
     setOrbatHits([]);
     setQueryField(null);
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (opts?: { silent?: boolean }) => {
     if (pageHasInvalidDateInputs()) {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
       return;
@@ -183,7 +196,9 @@ export function ApproveNewEqpt() {
       });
       setResults(rows);
       setSelected(new Set());
-      toast.success(`${rows.length} record(s) found`);
+      if (!opts?.silent) {
+        toast.success(`${rows.length} record(s) found`);
+      }
     } catch (e) {
       setResults([]);
       toast.error(e instanceof ApiError ? e.message : "Search failed");
@@ -220,7 +235,7 @@ export function ApproveNewEqpt() {
         body: JSON.stringify({ items }),
       });
       toast.success(`${res.count} record(s) approved`);
-      await handleSearch();
+      await handleSearch({ silent: true });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Approve failed");
     } finally {
@@ -339,12 +354,11 @@ export function ApproveNewEqpt() {
                     ) : null}
                   </TableHead>
                   <TableHead className="text-primary-foreground">IV No</TableHead>
-                  <TableHead className="text-primary-foreground">IV Date</TableHead>
                   <TableHead className="text-primary-foreground">SUS No</TableHead>
                   <TableHead className="text-primary-foreground">Unit</TableHead>
                   <TableHead className="text-primary-foreground">Material No</TableHead>
                   <TableHead className="text-primary-foreground">Census No</TableHead>
-                  <TableHead className="text-primary-foreground">Qty</TableHead>
+                  <TableHead className="text-primary-foreground">Type of Holding</TableHead>
                   <TableHead className="text-primary-foreground">Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -367,12 +381,13 @@ export function ApproveNewEqpt() {
                         ) : null}
                       </TableCell>
                       <TableCell className="text-xs">{r.iv_no}</TableCell>
-                      <TableCell className="text-xs">{r.iv_date}</TableCell>
                       <TableCell className="text-xs">{r.sus_no}</TableCell>
                       <TableCell className="text-xs">{r.unit_name}</TableCell>
                       <TableCell className="text-xs">{r.material_no}</TableCell>
                       <TableCell className="text-xs">{r.census_no}</TableCell>
-                      <TableCell className="text-xs">{r.issued_qty}</TableCell>
+                      <TableCell className="text-xs">
+                        {r.type_of_hldg_label || r.type_of_hldg || "—"}
+                      </TableCell>
                       <TableCell className="text-xs">{r.status}</TableCell>
                     </TableRow>
                   );

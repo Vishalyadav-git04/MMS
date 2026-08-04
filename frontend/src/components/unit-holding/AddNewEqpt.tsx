@@ -367,6 +367,15 @@ export function AddNewEqpt() {
   const removeItem = (id: string) =>
     setItems((prev) => prev.filter((r) => r.id !== id));
 
+  const updateItem = (
+    id: string,
+    patch: Partial<Pick<ItemRow, "materialNo" | "eqptRegnNo">>,
+  ) => {
+    setItems((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    );
+  };
+
   const handleSubmit = async () => {
     if (!items.length) {
       toast.error("Add at least one item before submitting");
@@ -386,16 +395,12 @@ export function AddNewEqpt() {
 
     const holdingLabel =
       holdingOpts.find((o) => o.value === form.typeOfHolding)?.label ?? "";
-    const holdingUpper = holdingLabel.toUpperCase();
-    const othHoldings = new Set([
-      "SECTOR STORE",
-      "LOAN STORE",
-      "ACSFP STORE",
-    ]);
-    if (othHoldings.has(holdingUpper)) {
-      toast.error(
-        "SECTOR / LOAN / ACSFP STORE save mapping is not configured yet.",
-      );
+    if (!holdingLabel) {
+      toast.error("Select a valid Type of Holding");
+      return;
+    }
+    if (items.some((i) => !i.materialNo.trim() || !i.eqptRegnNo.trim())) {
+      toast.error("Material No and Regn No are required for all list items");
       return;
     }
 
@@ -415,18 +420,18 @@ export function AddNewEqpt() {
             depres_dur_year: form.depreciationRate.trim() || null,
             upload_iv: form.uploadIv.trim() || null,
             items: items.map((i) => ({
-              eqpt_regn_no: i.eqptRegnNo,
+              eqpt_regn_no: i.eqptRegnNo.trim(),
               regn_seq_no: i.regnSeqNo,
               census_seq_no: i.censusSeqNo,
               census_no: i.censusNo,
-              material_no: i.materialNo,
+              material_no: i.materialNo.trim(),
               prf_code: i.prfCode,
               prf_group: i.prfGroup,
             })),
           }),
         },
       );
-      toast.success(`${res.count} item(s) saved to ${res.target_table}`);
+      toast.success("Item added successfully");
       setItems([]);
       handleClear();
     } catch (err) {
@@ -680,6 +685,7 @@ export function AddNewEqpt() {
             items={items}
             busy={busy}
             onRemove={removeItem}
+            onChange={updateItem}
             onSubmit={() => void handleSubmit()}
           />
         )}
@@ -703,11 +709,16 @@ function ItemsList({
   items,
   busy,
   onRemove,
+  onChange,
   onSubmit,
 }: {
   items: ItemRow[];
   busy: boolean;
   onRemove: (id: string) => void;
+  onChange: (
+    id: string,
+    patch: Partial<Pick<ItemRow, "materialNo" | "eqptRegnNo">>,
+  ) => void;
   onSubmit: () => void;
 }) {
   return (
@@ -758,11 +769,27 @@ function ItemsList({
                 <td className="min-w-[160px] px-2 py-0 align-middle">
                   {row.censusNo}
                 </td>
-                <td className="whitespace-nowrap px-2 py-0 align-middle">
-                  {row.materialNo}
+                <td className="min-w-[110px] px-1 py-0.5 align-middle">
+                  <Input
+                    value={row.materialNo}
+                    disabled={busy}
+                    className="h-7 min-w-[90px] text-[13px]"
+                    aria-label={`Material No row ${idx + 1}`}
+                    onChange={(e) =>
+                      onChange(row.id, { materialNo: e.target.value })
+                    }
+                  />
                 </td>
-                <td className="whitespace-nowrap px-2 py-0 align-middle">
-                  {row.eqptRegnNo}
+                <td className="min-w-[170px] px-1 py-0.5 align-middle">
+                  <Input
+                    value={row.eqptRegnNo}
+                    disabled={busy}
+                    className="h-7 min-w-[150px] font-mono text-[13px]"
+                    aria-label={`Regn No row ${idx + 1}`}
+                    onChange={(e) =>
+                      onChange(row.id, { eqptRegnNo: e.target.value })
+                    }
+                  />
                 </td>
                 <td className="whitespace-nowrap px-2 py-0 align-middle">
                   {row.regnSeqNo}

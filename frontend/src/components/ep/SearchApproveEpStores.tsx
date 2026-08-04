@@ -105,13 +105,46 @@ function SuggestInput({
   );
 }
 
+function getDefaultDates() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = now.getMonth();
+  const dd = now.getDate();
+
+  const fromDate = new Date(yyyy, mm - 1, dd);
+  if (fromDate.getMonth() === mm) {
+    fromDate.setDate(0);
+  }
+
+  const formatIso = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  return {
+    from: formatIso(fromDate),
+    to: formatIso(now),
+  };
+}
+
+function isPendingRow(r: EpTxnRow): boolean {
+  const s = (r.op_status || "").trim().toUpperCase();
+  const l = (r.op_status_label || "").trim().toLowerCase();
+  return s === "P" || s === "0" || s === "PENDING" || l === "pending";
+}
+
 export function SearchApproveEpStores() {
-  const [form, setForm] = useState({
-    susNo: "",
-    unitName: "",
-    from: "2026-07-01",
-    to: "2026-07-24",
-    status: "",
+  const [form, setForm] = useState(() => {
+    const dates = getDefaultDates();
+    return {
+      susNo: "",
+      unitName: "",
+      from: dates.from,
+      to: dates.to,
+      status: "",
+    };
   });
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<EpTxnRow[]>([]);
@@ -140,11 +173,12 @@ export function SearchApproveEpStores() {
   }, [form.unitName, form.susNo, queryField]);
 
   const handleClear = () => {
+    const dates = getDefaultDates();
     setForm({
       susNo: "",
       unitName: "",
-      from: "2026-07-01",
-      to: "2026-07-24",
+      from: dates.from,
+      to: dates.to,
       status: "",
     });
     setResults([]);
@@ -157,8 +191,12 @@ export function SearchApproveEpStores() {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
       return;
     }
-    if (!form.susNo.trim() || !form.unitName.trim() || !form.status) {
-      toast.error("SUS No, Unit's Name and Status are required");
+    if (!form.status) {
+      toast.error("Status is required");
+      return;
+    }
+    if (!form.susNo.trim() && !form.unitName.trim()) {
+      toast.error("Please enter or select SUS No or Unit's Name");
       return;
     }
     setBusy(true);
@@ -166,8 +204,8 @@ export function SearchApproveEpStores() {
       const rows = await api<EpTxnRow[]>("/ep/search-approve/search", {
         method: "POST",
         body: JSON.stringify({
-          sus_no: form.susNo.trim(),
-          unit_name: form.unitName.trim(),
+          sus_no: form.susNo.trim() || null,
+          unit_name: form.unitName.trim() || null,
           status: form.status,
           date_from: form.from || null,
           date_to: form.to || null,
@@ -193,7 +231,7 @@ export function SearchApproveEpStores() {
     });
   };
 
-  const pendingSelectable = results.filter((r) => r.op_status === "P");
+  const pendingSelectable = results.filter(isPendingRow);
 
   const toggleAllPending = (checked: boolean) => {
     if (!checked) {
@@ -205,7 +243,7 @@ export function SearchApproveEpStores() {
 
   const handleApprove = async () => {
     const ids = [...selected].filter((id) =>
-      results.some((r) => r.id === id && r.op_status === "P"),
+      results.some((r) => r.id === id && isPendingRow(r)),
     );
     if (!ids.length) {
       toast.error("Select pending record(s) to approve");
@@ -237,7 +275,7 @@ export function SearchApproveEpStores() {
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
-          {results.some((r) => r.op_status === "P") && (
+          {results.some(isPendingRow) && (
             <Button
               disabled={busy || selected.size === 0}
               onClick={() => void handleApprove()}
@@ -324,6 +362,7 @@ export function SearchApproveEpStores() {
                   <SelectItem value="Pending">Pending</SelectItem>
                   <SelectItem value="Approved">Approved</SelectItem>
                   <SelectItem value="Rejected">Rejected</SelectItem>
+                  <SelectItem value="All">All</SelectItem>
                 </SelectContent>
               </Select>
             </FormRow>
@@ -361,7 +400,7 @@ export function SearchApproveEpStores() {
                 {results.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
-                      {r.op_status === "P" ? (
+                      {isPendingRow(r) ? (
                         <input
                           type="checkbox"
                           checked={selected.has(r.id)}

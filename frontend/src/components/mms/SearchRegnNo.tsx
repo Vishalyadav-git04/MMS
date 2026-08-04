@@ -1,7 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -10,11 +17,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Pencil } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
+interface Option {
+  value: string;
+  label: string;
+}
+
 interface RegnRecord {
   id: string;
+  source_table: string;
+  source_label: string;
   eqpt_regn_no?: string | null;
   census_no?: string | null;
   prf_code?: string | null;
@@ -22,8 +44,19 @@ interface RegnRecord {
   type_of_hldg?: string | null;
   type_of_eqpt?: string | null;
   service_status?: string | null;
+  service_status_label?: string | null;
   op_status?: string | null;
   remarks?: string | null;
+}
+
+interface LookupOut {
+  eqpt_regn_no?: string | null;
+  census_no?: string | null;
+  prf_code?: string | null;
+}
+
+function rowKey(r: RegnRecord) {
+  return `${r.source_table}:${r.id}`;
 }
 
 export function SearchRegnNo() {
@@ -31,21 +64,60 @@ export function SearchRegnNo() {
   const [censusNo, setCensusNo] = useState("");
   const [prfCode, setPrfCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
   const [results, setResults] = useState<RegnRecord[]>([]);
+  const [serviceOpts, setServiceOpts] = useState<Option[]>([]);
+  const [editRow, setEditRow] = useState<RegnRecord | null>(null);
+  const [editRegnNo, setEditRegnNo] = useState("");
+  const [editServiceStatus, setEditServiceStatus] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const lastLookupRef = useRef("");
+
+  useEffect(() => {
+    void api<{ service_status: Option[] }>("/admin/search-regn-no/options")
+      .then((res) => setServiceOpts(res.service_status ?? []))
+      .catch(() => toast.error("Failed to load serviceability options"));
+  }, []);
+
+  const lookupByRegn = async (value: string) => {
+    const key = value.trim();
+    if (!key || key.toUpperCase() === lastLookupRef.current) return;
+    lastLookupRef.current = key.toUpperCase();
+    setLookingUp(true);
+    try {
+      const rec = await api<LookupOut>(
+        `/admin/search-regn-no/lookup?regn_no=${encodeURIComponent(key)}`,
+      );
+      setCensusNo(rec.census_no || "");
+      setPrfCode(rec.prf_code || "");
+    } catch {
+      setCensusNo("");
+      setPrfCode("");
+      lastLookupRef.current = "";
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   const handleSearch = async () => {
-    if (!regnNo) return toast.error("Regn No is required");
+    if (!regnNo.trim()) return toast.error("Regn No is required");
     setBusy(true);
     try {
       const rows = await api<RegnRecord[]>("/admin/search-regn-no/search", {
         method: "POST",
         body: JSON.stringify({
-          regn_no: regnNo,
-          census_no: censusNo || null,
-          prf_code: prfCode || null,
+          regn_no: regnNo.trim(),
+          census_no: censusNo.trim() || null,
+          prf_code: prfCode.trim() || null,
         }),
       });
       setResults(rows);
+      const first = rows[0];
+      if (first) {
+        setCensusNo(first.census_no || "");
+        setPrfCode(first.prf_code || "");
+        lastLookupRef.current = (first.eqpt_regn_no || regnNo).trim().toUpperCase();
+      }
       toast.success(`${rows.length} record(s) found`);
     } catch (e) {
       setResults([]);
@@ -55,88 +127,231 @@ export function SearchRegnNo() {
     }
   };
 
-  return (
-    <FormPanel
-      title="Regn No : Search"
-      footer={
-        <>
-          <Button
-            disabled={busy}
-            className="bg-primary hover:bg-primary/90"
-            onClick={() => void handleSearch()}
-          >
-            Search
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setRegnNo("");
-              setCensusNo("");
-              setPrfCode("");
-              setResults([]);
-            }}
-          >
-            Clear
-          </Button>
-        </>
-      }
-    >
-      <div className="mx-auto max-w-4xl space-y-4 pt-2">
-        <FormRow label="Regn No" required>
-          <Input
-            placeholder="e.g. REGN-2000"
-            value={regnNo}
-            onChange={(e) => setRegnNo(e.target.value)}
-          />
-        </FormRow>
-        <FormGrid>
-          <FormRow label="Census No">
-            <Input
-              placeholder="Census No"
-              value={censusNo}
-              onChange={(e) => setCensusNo(e.target.value)}
-            />
-          </FormRow>
-          <FormRow label="PRF Code">
-            <Input
-              placeholder="PRF Code"
-              value={prfCode}
-              onChange={(e) => setPrfCode(e.target.value)}
-            />
-          </FormRow>
-        </FormGrid>
+  const openEdit = (row: RegnRecord) => {
+    setEditRow(row);
+    setEditRegnNo(row.eqpt_regn_no || "");
+    setEditServiceStatus(row.service_status || "");
+  };
 
-        {results.length > 0 && (
-          <div className="overflow-auto rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Regn No</TableHead>
-                  <TableHead>Census</TableHead>
-                  <TableHead>PRF</TableHead>
-                  <TableHead>SUS</TableHead>
-                  <TableHead>Holding</TableHead>
-                  <TableHead>Eqpt</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {results.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{r.eqpt_regn_no}</TableCell>
-                    <TableCell>{r.census_no}</TableCell>
-                    <TableCell>{r.prf_code}</TableCell>
-                    <TableCell>{r.sus_no}</TableCell>
-                    <TableCell>{r.type_of_hldg}</TableCell>
-                    <TableCell>{r.type_of_eqpt}</TableCell>
-                    <TableCell>{r.service_status ?? r.op_status}</TableCell>
+  const handleUpdate = async () => {
+    if (!editRow) return;
+    if (!editRegnNo.trim()) {
+      toast.error("Regn No is required");
+      return;
+    }
+    if (!editServiceStatus) {
+      toast.error("Please select Serviceability");
+      return;
+    }
+    setUpdating(true);
+    try {
+      await api("/admin/search-regn-no/update", {
+        method: "PUT",
+        body: JSON.stringify({
+          id: editRow.id,
+          source_table: editRow.source_table,
+          eqpt_regn_no: editRegnNo.trim(),
+          service_status: editServiceStatus,
+        }),
+      });
+      toast.success("Registration details updated");
+      setEditRow(null);
+      const searchKey = editRegnNo.trim();
+      setRegnNo(searchKey);
+      lastLookupRef.current = "";
+      setBusy(true);
+      try {
+        const rows = await api<RegnRecord[]>("/admin/search-regn-no/search", {
+          method: "POST",
+          body: JSON.stringify({
+            regn_no: searchKey,
+            census_no: null,
+            prf_code: null,
+          }),
+        });
+        setResults(rows);
+        const first = rows[0];
+        if (first) {
+          setCensusNo(first.census_no || "");
+          setPrfCode(first.prf_code || "");
+          lastLookupRef.current = searchKey.toUpperCase();
+        }
+      } catch {
+        setResults([]);
+      } finally {
+        setBusy(false);
+      }
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Update failed");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  return (
+    <>
+      <FormPanel
+        title="Regn No : Search"
+        footer={
+          <>
+            <Button
+              disabled={busy || lookingUp}
+              className="bg-primary hover:bg-primary/90"
+              onClick={() => void handleSearch()}
+            >
+              Search
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setRegnNo("");
+                setCensusNo("");
+                setPrfCode("");
+                setResults([]);
+                lastLookupRef.current = "";
+              }}
+            >
+              Clear
+            </Button>
+          </>
+        }
+      >
+        <div className="mx-auto max-w-5xl space-y-4 pt-2">
+          <FormRow label="Regn No" required>
+            <Input
+              placeholder="e.g. REGN-2000"
+              value={regnNo}
+              onChange={(e) => {
+                setRegnNo(e.target.value);
+                lastLookupRef.current = "";
+              }}
+              onBlur={() => void lookupByRegn(regnNo)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void lookupByRegn(regnNo).then(() => void handleSearch());
+                }
+              }}
+            />
+          </FormRow>
+          <FormGrid>
+            <FormRow label="Census No">
+              <Input
+                placeholder="Census No"
+                value={censusNo}
+                disabled
+                tabIndex={-1}
+              />
+            </FormRow>
+            <FormRow label="PRF Code">
+              <Input
+                placeholder="PRF Code"
+                value={prfCode}
+                disabled
+                tabIndex={-1}
+              />
+            </FormRow>
+          </FormGrid>
+
+          {results.length > 0 && (
+            <div className="overflow-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Regn No</TableHead>
+                    <TableHead>Census</TableHead>
+                    <TableHead>PRF</TableHead>
+                    <TableHead>SUS</TableHead>
+                    <TableHead>Holding</TableHead>
+                    <TableHead>Serviceability</TableHead>
+                    <TableHead className="w-[90px]">Action</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {results.map((r) => (
+                    <TableRow key={rowKey(r)}>
+                      <TableCell>{r.eqpt_regn_no}</TableCell>
+                      <TableCell>{r.census_no}</TableCell>
+                      <TableCell>{r.prf_code}</TableCell>
+                      <TableCell>{r.sus_no}</TableCell>
+                      <TableCell>{r.type_of_hldg}</TableCell>
+                      <TableCell>
+                        {r.service_status_label ?? r.service_status ?? r.op_status}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1 px-2 text-xs"
+                          onClick={() => openEdit(r)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Update
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </FormPanel>
+
+      <Dialog
+        open={!!editRow}
+        onOpenChange={(open) => {
+          if (!open) setEditRow(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update Regn No / Serviceability</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <FormRow label="Census No">
+              <Input value={editRow?.census_no || ""} readOnly />
+            </FormRow>
+            <FormRow label="Regn No" required>
+              <Input
+                value={editRegnNo}
+                onChange={(e) => setEditRegnNo(e.target.value)}
+                maxLength={25}
+                placeholder="Registration No"
+              />
+            </FormRow>
+            <FormRow label="Serviceability" required>
+              <Select
+                value={editServiceStatus || undefined}
+                onValueChange={setEditServiceStatus}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="--Select--" />
+                </SelectTrigger>
+                <SelectContent>
+                  {serviceOpts.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormRow>
           </div>
-        )}
-      </div>
-    </FormPanel>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              disabled={updating}
+              onClick={() => setEditRow(null)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={updating} onClick={() => void handleUpdate()}>
+              {updating ? "Updating…" : "Update"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

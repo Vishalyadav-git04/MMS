@@ -31,7 +31,7 @@ export function EqptDomainMaster() {
   };
 
   const handleSave = async () => {
-    const cat = eqptCat.trim();
+    const cat = eqptCat.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
     if (!cat) {
       toast.error("EQPT CAT is required");
       return;
@@ -57,7 +57,7 @@ export function EqptDomainMaster() {
     try {
       // Empty filter → list all domains from MMS_EP_DOMAIN_MASTER
       const q = eqptCat.trim()
-        ? `?eqpt_cat=${encodeURIComponent(eqptCat.trim())}`
+        ? `?eqpt_cat=${encodeURIComponent(eqptCat.trim().toUpperCase())}`
         : "";
       const rows = await api<EpDomainRow[]>(
         q ? `/ep/domain-master/search${q}` : "/ep/domain-master/",
@@ -93,7 +93,9 @@ export function EqptDomainMaster() {
         <FormRow label="EQPT CAT" required>
           <Input
             value={eqptCat}
-            onChange={(e) => setEqptCat(e.target.value)}
+            onChange={(e) =>
+              setEqptCat(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""))
+            }
             placeholder="Enter EQPT CAT"
             disabled={busy}
           />
@@ -107,7 +109,6 @@ export function EqptDomainMaster() {
                   <TableHead className="text-primary-foreground">ID</TableHead>
                   <TableHead className="text-primary-foreground">Domain ID</TableHead>
                   <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
-                  <TableHead className="text-primary-foreground">Created By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -116,7 +117,6 @@ export function EqptDomainMaster() {
                     <TableCell className="text-xs">{r.id}</TableCell>
                     <TableCell className="text-xs">{r.domain_id}</TableCell>
                     <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
-                    <TableCell className="text-xs">{r.created_by}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

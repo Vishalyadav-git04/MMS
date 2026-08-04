@@ -18,18 +18,28 @@ router = APIRouter(
     tags=["ep: search approve"],
 )
 
-_STATUS_MAP = {
-    "approved": "A",
-    "pending": "P",
-    "rejected": "R",
+_STATUS_CODES = {
+    "approved": ["A", "1", "APPROVED"],
+    "pending": ["P", "0", "PENDING"],
+    "rejected": ["R", "2", "REJECTED"],
 }
 
-_STATUS_LABEL = {"A": "Approved", "P": "Pending", "R": "Rejected"}
+_STATUS_LABEL = {
+    "A": "Approved",
+    "1": "Approved",
+    "APPROVED": "Approved",
+    "P": "Pending",
+    "0": "Pending",
+    "PENDING": "Pending",
+    "R": "Rejected",
+    "2": "Rejected",
+    "REJECTED": "Rejected",
+}
 
 
 class SearchEpIn(BaseModel):
-    sus_no: str = Field(..., min_length=1, max_length=255)
-    unit_name: str = Field(..., min_length=1, max_length=255)
+    sus_no: str | None = None
+    unit_name: str | None = None
     status: str = Field(..., min_length=1)  # Approved | Pending | Rejected | All
     date_from: date | None = None
     date_to: date | None = None
@@ -64,7 +74,7 @@ class ApproveEpOut(BaseModel):
 
 
 def _to_out(row: EpTransaction, unit_name: str | None) -> EpTxnOut:
-    status = (row.op_status or "").upper()
+    status = (row.op_status or "").strip().upper()
     auth = row.auth_date
     iv = row.iv_date
     return EpTxnOut(
@@ -93,7 +103,7 @@ def search_transactions(
     session: Session = Depends(get_db_session),
 ) -> list[EpTxnOut]:
     status_key = body.status.strip().lower()
-    if status_key not in _STATUS_MAP and status_key != "all":
+    if status_key not in _STATUS_CODES and status_key != "all":
         raise HTTPException(
             status_code=400,
             detail="Status must be Approved, Pending, Rejected, or All",
@@ -108,25 +118,28 @@ def search_transactions(
         .order_by(EpTransaction.id)
     )
 
-    sus = body.sus_no.strip().upper()
-    unit = body.unit_name.strip().upper()
-    stmt = stmt.where(
-        or_(
-            func.upper(EpTransaction.to_sus_no) == sus,
-            func.upper(EpHoldingUnit.sus_no) == sus,
+    if body.sus_no and body.sus_no.strip():
+        sus = body.sus_no.strip().upper()
+        stmt = stmt.where(
+            or_(
+                func.upper(EpTransaction.to_sus_no) == sus,
+                func.upper(EpHoldingUnit.sus_no) == sus,
+            )
         )
-    )
-    stmt = stmt.where(
-        or_(
-            func.upper(EpHoldingUnit.unit_name).like(f"%{unit}%"),
-            # allow exact-ish match when unit name typed from suggestions
-            func.upper(EpHoldingUnit.unit_name) == unit,
+
+    if body.unit_name and body.unit_name.strip():
+        unit = body.unit_name.strip().upper()
+        stmt = stmt.where(
+            or_(
+                func.upper(EpHoldingUnit.unit_name).like(f"%{unit}%"),
+                # allow exact-ish match when unit name typed from suggestions
+                func.upper(EpHoldingUnit.unit_name) == unit,
+            )
         )
-    )
 
     if status_key != "all":
         stmt = stmt.where(
-            func.upper(EpTransaction.op_status) == _STATUS_MAP[status_key]
+            func.upper(func.trim(EpTransaction.op_status)).in_(_STATUS_CODES[status_key])
         )
 
     if body.date_from is not None or body.date_to is not None:
@@ -163,17 +176,19 @@ def approve_transactions(
         row = session.get(EpTransaction, txn_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Record '{txn_id}' not found")
-        if (row.op_status or "").upper() == "A":
+        curr_status = (row.op_status or "").strip().upper()
+        if curr_status in ("A", "1"):
             continue
-        if (row.op_status or "").upper() not in ("P", "R", ""):
+        if curr_status not in ("P", "0", "R", "2", ""):
             raise HTTPException(
                 status_code=400,
                 detail=f"Record '{txn_id}' cannot be approved (status={row.op_status})",
             )
-        row.op_status = "A"
+        row.op_status = "1" if curr_status == "0" else "A"
         row.approved_by = principal.username
         row.approved_date = now
         approved.append(row.id)
 
     session.flush()
     return ApproveEpOut(approved_ids=approved, count=len(approved))
+

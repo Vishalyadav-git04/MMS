@@ -17,6 +17,7 @@ from app.dashboard import counts as dashboard_counts
 from app.deps import require_unit_or_admin
 from app.ep import capture_ep_stores as ep_capture
 from app.ep import domain_master as ep_domain_master
+from app.ep import ep_iut_transfer as ep_iut
 from app.ep import gen_ep_census as ep_gen_census
 from app.ep import search_approve_ep_stores as ep_search_approve
 from app.ep import sub_domain_master as ep_sub_domain_master
@@ -51,6 +52,7 @@ protected.include_router(ep_sub_domain_master.router)
 protected.include_router(ep_gen_census.router)
 protected.include_router(ep_capture.router)
 protected.include_router(ep_search_approve.router)
+protected.include_router(ep_iut.router)
 protected.include_router(view_mlccs.router)
 protected.include_router(drr_dir_upload.router)
 protected.include_router(generate_ro.router)

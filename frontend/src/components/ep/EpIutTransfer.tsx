@@ -17,57 +17,50 @@ import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const UNIT_OPTIONS = [
-  "UN-1001 - 1 PARA SF",
-  "UN-1002 - 4 JAK RIF",
-  "UN-1003 - 16 DOGRA",
-  "UN-1004 - 7 GRENADIERS",
-  "UN-1005 - 21 MARATHA LI",
-];
+interface UnitOption {
+  sus_no: string;
+  unit_name: string;
+  display: string;
+}
 
-/** Sample regns until EP IUT list API is wired */
-const MOCK_REGN_POOL = [
-  "EP-REGN-24001",
-  "EP-REGN-24002",
-  "EP-REGN-24007",
-  "EP-REGN-24115",
-  "EP-REGN-24128",
-  "EP-REGN-24201",
-  "EP-REGN-24244",
-  "EP-REGN-24309",
-];
-
-interface DomainRow {
+interface DomainOption {
   id: string;
-  domain_id: number;
   eqpt_cat: string;
 }
 
-interface SubDomainRow {
+interface SubDomainOption {
   id: string;
-  equipment_domain_id: string;
-  sub_domain_id: number;
   sub_domain_name: string;
-  eqpt_cat?: string | null;
 }
 
 function UnitLookup({
   label,
   search,
   onSearchChange,
-  unit,
-  onUnitChange,
+  value,
+  onValueChange,
   options,
   onSearch,
 }: {
   label: string;
   search: string;
   onSearchChange: (v: string) => void;
-  unit: string;
-  onUnitChange: (v: string) => void;
-  options: string[];
+  value: string;
+  onValueChange: (v: string) => void;
+  options: UnitOption[];
   onSearch: () => void;
 }) {
+  const filteredOptions = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    if (!q) return options;
+    return options.filter(
+      (o) =>
+        o.sus_no.toUpperCase().includes(q) ||
+        o.unit_name.toUpperCase().includes(q) ||
+        o.display.toUpperCase().includes(q),
+    );
+  }, [options, search]);
+
   return (
     <FormRow label={label} required>
       <div className="flex gap-1">
@@ -76,6 +69,12 @@ function UnitLookup({
             placeholder="Search..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onSearch();
+              }
+            }}
           />
           <Button
             type="button"
@@ -88,14 +87,14 @@ function UnitLookup({
           </Button>
         </div>
         <div className="min-w-0 flex-[1.4]">
-          <Select value={unit} onValueChange={onUnitChange}>
+          <Select value={value} onValueChange={onValueChange}>
             <SelectTrigger>
               <SelectValue placeholder="--Select Unit--" />
             </SelectTrigger>
-            <SelectContent>
-              {options.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o}
+            <SelectContent className="max-h-72">
+              {filteredOptions.map((o) => (
+                <SelectItem key={o.sus_no} value={o.sus_no}>
+                  {o.display}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -142,16 +141,21 @@ function RegnListBox({
 
 export function EpIutTransfer() {
   const [parentSearch, setParentSearch] = useState("");
-  const [parentUnit, setParentUnit] = useState("");
+  const [parentSusNo, setParentSusNo] = useState("");
+  const [parentUnits, setParentUnits] = useState<UnitOption[]>([]);
+
   const [domainId, setDomainId] = useState("");
   const [subDomainId, setSubDomainId] = useState("");
-  const [rvNo, setRvNo] = useState("");
-  const [rvDate, setRvDate] = useState("2026-07-24");
-  const [receivingSearch, setReceivingSearch] = useState("");
-  const [receivingUnit, setReceivingUnit] = useState("");
+  const [domains, setDomains] = useState<DomainOption[]>([]);
+  const [subDomains, setSubDomains] = useState<SubDomainOption[]>([]);
 
-  const [domains, setDomains] = useState<DomainRow[]>([]);
-  const [subDomains, setSubDomains] = useState<SubDomainRow[]>([]);
+  const [rvNo, setRvNo] = useState("");
+  const [rvDate, setRvDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rvFile, setRvFile] = useState<File | null>(null);
+
+  const [receivingSearch, setReceivingSearch] = useState("");
+  const [receivingSusNo, setReceivingSusNo] = useState("");
+  const [receivingUnits, setReceivingUnits] = useState<UnitOption[]>([]);
 
   const [listLoaded, setListLoaded] = useState(false);
   const [availableRegns, setAvailableRegns] = useState<string[]>([]);
@@ -159,42 +163,60 @@ export function EpIutTransfer() {
   const [checkedAvailable, setCheckedAvailable] = useState<Set<string>>(new Set());
   const [checkedTransfer, setCheckedTransfer] = useState<Set<string>>(new Set());
   const [regnSearch, setRegnSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
+  // 1. Fetch Parent Units on Mount
   useEffect(() => {
-    api<DomainRow[]>("/ep/domain-master/")
-      .then((rows) =>
-        setDomains(
-          [...rows].sort((a, b) =>
-            a.eqpt_cat.localeCompare(b.eqpt_cat, undefined, { sensitivity: "base" }),
-          ),
-        ),
-      )
-      .catch(() => toast.error("Failed to load EQPT Domain list"));
+    api<UnitOption[]>("/ep/iut/parent-units")
+      .then((data) => setParentUnits(data))
+      .catch(() => toast.error("Failed to load Parent Units"));
   }, []);
 
+  // 2. Fetch Receiving Units on Mount
+  useEffect(() => {
+    api<UnitOption[]>("/ep/iut/receiving-units")
+      .then((data) => setReceivingUnits(data))
+      .catch(() => toast.error("Failed to load Receiving Units"));
+  }, []);
+
+  // 3. Fetch Domains when Parent Unit changes
+  useEffect(() => {
+    setDomainId("");
+    setSubDomainId("");
+    setDomains([]);
+    setSubDomains([]);
+    resetRegnSelection();
+
+    if (!parentSusNo) return;
+
+    api<DomainOption[]>(`/ep/iut/domains?parent_sus_no=${encodeURIComponent(parentSusNo)}`)
+      .then((data) => setDomains(data))
+      .catch(() => toast.error("Failed to load EQPT Domains for Parent Unit"));
+  }, [parentSusNo]);
+
+  // 4. Fetch SubDomains when Domain changes under Parent Unit
   useEffect(() => {
     setSubDomainId("");
-    if (!domainId) {
-      setSubDomains([]);
-      return;
-    }
-    api<SubDomainRow[]>(
-      `/ep/sub-domain-master/search?equipment_domain_id=${encodeURIComponent(domainId)}`,
+    setSubDomains([]);
+    resetRegnSelection();
+
+    if (!parentSusNo || !domainId) return;
+
+    api<SubDomainOption[]>(
+      `/ep/iut/sub-domains?parent_sus_no=${encodeURIComponent(parentSusNo)}&domain_id=${encodeURIComponent(domainId)}`,
     )
-      .then((rows) =>
-        setSubDomains(
-          [...rows].sort((a, b) =>
-            a.sub_domain_name.localeCompare(b.sub_domain_name, undefined, {
-              sensitivity: "base",
-            }),
-          ),
-        ),
-      )
-      .catch(() => {
-        setSubDomains([]);
-        toast.error("Failed to load EQPT Sub Domain list");
-      });
-  }, [domainId]);
+      .then((data) => setSubDomains(data))
+      .catch(() => toast.error("Failed to load EQPT Sub Domains"));
+  }, [parentSusNo, domainId]);
+
+  const handleSearchReceivingUnits = () => {
+    api<UnitOption[]>(`/ep/iut/receiving-units?search=${encodeURIComponent(receivingSearch)}`)
+      .then((data) => {
+        setReceivingUnits(data);
+        toast.success(`Found ${data.length} receiving unit(s)`);
+      })
+      .catch(() => toast.error("Failed to search receiving units"));
+  };
 
   const filteredAvailable = useMemo(() => {
     const q = regnSearch.trim().toLowerCase();
@@ -218,24 +240,42 @@ export function EpIutTransfer() {
     if (pageHasInvalidDateInputs()) {
       return toast.error("Please enter a valid date (dd/mm/yyyy)");
     }
-    if (!parentUnit || !domainId || !subDomainId || !rvNo || !rvDate || !receivingUnit) {
-      return toast.error("Please fill all required fields");
+    if (!parentSusNo) {
+      return toast.error("Please select Parent Unit");
+    }
+    if (!domainId) {
+      return toast.error("Please select EQPT Domain");
+    }
+    if (!subDomainId) {
+      return toast.error("Please select EQPT Sub Domain");
+    }
+    if (!rvNo.trim()) {
+      return toast.error("Please enter RV No");
+    }
+    if (!rvDate) {
+      return toast.error("Please select RV Date");
+    }
+    if (!receivingSusNo) {
+      return toast.error("Please select Receiving Unit");
     }
 
-    const seed = (parentUnit.length + subDomainId.length) % MOCK_REGN_POOL.length;
-    const count = 3 + (seed % 4);
-    const fetched = Array.from(
-      { length: count },
-      (_, i) => MOCK_REGN_POOL[(seed + i) % MOCK_REGN_POOL.length],
-    );
-
-    setAvailableRegns(fetched);
-    setTransferRegns([]);
-    setCheckedAvailable(new Set());
-    setCheckedTransfer(new Set());
-    setRegnSearch("");
-    setListLoaded(true);
-    toast.success(`${fetched.length} registration number(s) found`);
+    api<string[]>(
+      `/ep/iut/regn-list?parent_sus_no=${encodeURIComponent(parentSusNo)}&domain_id=${encodeURIComponent(domainId)}&sub_domain_id=${encodeURIComponent(subDomainId)}`,
+    )
+      .then((data) => {
+        setAvailableRegns(data);
+        setTransferRegns([]);
+        setCheckedAvailable(new Set());
+        setCheckedTransfer(new Set());
+        setRegnSearch("");
+        setListLoaded(true);
+        if (data.length === 0) {
+          toast.info("No registration numbers found under selected Parent Unit & Domain");
+        } else {
+          toast.success(`${data.length} registration number(s) found`);
+        }
+      })
+      .catch(() => toast.error("Failed to fetch registration list"));
   };
 
   const toggleAvailable = (regn: string, next: boolean) => {
@@ -289,14 +329,42 @@ export function EpIutTransfer() {
     setCheckedTransfer(new Set());
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!transferRegns.length) {
       toast.error("Move at least one Regn No to the transfer list");
       return;
     }
-    toast.message(
-      `Submit ${transferRegns.length} Regn No(s) — functionality coming soon`,
-    );
+    if (!receivingSusNo) {
+      toast.error("Please select Receiving Unit");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const res = await api<{ count: number; transferred_regns: string[] }>("/ep/iut/transfer", {
+        method: "POST",
+        body: JSON.stringify({
+          parent_sus_no: parentSusNo,
+          receiving_sus_no: receivingSusNo,
+          domain_id: domainId,
+          sub_domain_id: subDomainId,
+          rv_no: rvNo,
+          rv_date: rvDate,
+          upload_rv: rvFile ? rvFile.name : null,
+          regn_numbers: transferRegns,
+        }),
+      });
+
+      toast.success(
+        `Inter Unit Transfer completed successfully for ${res.count} registration number(s)`,
+      );
+      resetRegnSelection();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to execute Inter Unit Transfer";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -313,11 +381,8 @@ export function EpIutTransfer() {
               <Button variant="secondary" onClick={resetRegnSelection}>
                 Clear List
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={transferRegns.length === 0}
-              >
-                Submit
+              <Button onClick={handleSubmit} disabled={transferRegns.length === 0 || submitting}>
+                {submitting ? "Submitting..." : "Submit"}
               </Button>
             </>
           )}
@@ -330,10 +395,10 @@ export function EpIutTransfer() {
           label="Parent Unit"
           search={parentSearch}
           onSearchChange={setParentSearch}
-          unit={parentUnit}
-          onUnitChange={setParentUnit}
-          options={UNIT_OPTIONS}
-          onSearch={() => toast.success("Searching Parent Unit...")}
+          value={parentSusNo}
+          onValueChange={setParentSusNo}
+          options={parentUnits}
+          onSearch={() => toast.info("Filter Parent Units using search box")}
         />
         <FormGrid cols={2}>
           <FormRow label="EQPT Domain" required>
@@ -343,6 +408,7 @@ export function EpIutTransfer() {
                 setDomainId(v);
                 resetRegnSelection();
               }}
+              disabled={!parentSusNo}
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select EQPT Domain--" />
@@ -388,7 +454,11 @@ export function EpIutTransfer() {
             <DateInput value={rvDate} onChange={setRvDate} />
           </FormRow>
           <FormRow label="Upload RV" required className="sm:col-span-2">
-            <Input type="file" className="h-auto py-0.5" />
+            <Input
+              type="file"
+              className="h-auto py-0.5"
+              onChange={(e) => setRvFile(e.target.files?.[0] || null)}
+            />
           </FormRow>
         </FormGrid>
 
@@ -397,10 +467,10 @@ export function EpIutTransfer() {
           label="Receiving Unit"
           search={receivingSearch}
           onSearchChange={setReceivingSearch}
-          unit={receivingUnit}
-          onUnitChange={setReceivingUnit}
-          options={UNIT_OPTIONS}
-          onSearch={() => toast.success("Searching Receiving Unit...")}
+          value={receivingSusNo}
+          onValueChange={setReceivingSusNo}
+          options={receivingUnits}
+          onSearch={handleSearchReceivingUnits}
         />
 
         {listLoaded && (

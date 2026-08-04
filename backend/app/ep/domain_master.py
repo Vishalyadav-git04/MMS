@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -70,13 +71,13 @@ def create_domain(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> EpDomainOut:
-    cat = body.eqpt_cat.strip()
+    cat = re.sub(r"[^A-Z0-9\s\-/]", "", body.eqpt_cat.strip().upper())
     if not cat:
         raise HTTPException(status_code=400, detail="EQPT CAT is required")
 
     clash = session.scalar(
         select(EpDomainMaster).where(
-            func.upper(EpDomainMaster.eqpt_cat) == cat.upper()
+            func.upper(EpDomainMaster.eqpt_cat) == cat
         )
     )
     if clash is not None:

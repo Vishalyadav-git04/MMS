@@ -1,7 +1,7 @@
 """Add New Eqpt — Weapon → Unit Holding.
 
-Lookups + generate registration rows + persist UNIT HOLDING to MMS_UNIT_MSTR_DETL.
-Other holding-type save mappings are added later.
+Lookups + generate registration rows; persist by Type of Holding to
+MMS_UNIT_MSTR_DETL / MMS_DEPOT_MASTER / MMS_OTH_MASTER.
 """
 
 from __future__ import annotations
@@ -441,15 +441,7 @@ def submit_items(
     principal: Principal = Depends(require_unit_or_admin),
 ) -> SubmitOut:
     bucket = _holding_bucket(session, body.type_of_hldg)
-    if bucket == "oth":
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Save mapping for SECTOR / LOAN / ACSFP STORE "
-                "(MMS_OTH_MASTER) is not configured yet."
-            ),
-        )
-    if bucket not in ("unit", "depot"):
+    if bucket not in ("unit", "depot", "oth"):
         raise HTTPException(status_code=400, detail="Unsupported Type of Holding")
 
     if _domain_label(session, "TYPE_OF_HLDG", body.type_of_hldg) is None:
@@ -464,14 +456,26 @@ def submit_items(
     if to_unit is None:
         raise HTTPException(status_code=400, detail="To Unit not found in ORBAT")
 
-    model: type[Any] = UnitMasterDetail if bucket == "unit" else DepotMaster
-    target_table = "MMS_UNIT_MSTR_DETL" if bucket == "unit" else "MMS_DEPOT_MASTER"
-
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     now = datetime.utcnow()
     actor = (principal.username or "system")[:25]
     depres = _parse_depres(body.depres_dur_year)
     upload_name = (body.upload_iv or "").strip()[:100] or None
+
+    if bucket == "oth":
+        return _submit_oth_master(
+            session,
+            body=body,
+            issuer=issuer,
+            to_unit=to_unit,
+            today=today,
+            now=now,
+            actor=actor,
+            upload_name=upload_name,
+        )
+
+    model: type[Any] = UnitMasterDetail if bucket == "unit" else DepotMaster
+    target_table = "MMS_UNIT_MSTR_DETL" if bucket == "unit" else "MMS_DEPOT_MASTER"
 
     ids: list[str] = []
     last_id: int | None = None
@@ -531,3 +535,80 @@ def submit_items(
         ids.append(row_id)
 
     return SubmitOut(ids=ids, count=len(ids), target_table=target_table)
+
+
+def _submit_oth_master(
+    session: Session,
+    *,
+    body: SubmitIn,
+    issuer: OrbatUnitDetl,
+    to_unit: OrbatUnitDetl,
+    today: datetime,
+    now: datetime,
+    actor: str,
+    upload_name: str | None,
+) -> SubmitOut:
+    ids: list[str] = []
+    last_id: int | None = None
+    for item in body.items:
+        existing = session.scalar(
+            select(OthMaster.id).where(
+                func.upper(OthMaster.eqpt_regn_no)
+                == item.eqpt_regn_no.strip().upper()
+            )
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Registration No '{item.eqpt_regn_no}' already exists",
+            )
+
+        next_id = next_int_id(session, OthMaster, start_after=last_id)
+        last_id = next_id
+        row_id = str(next_id)
+        session.add(
+            OthMaster(
+                id=row_id,
+                stores_type=None,
+                sanction_auth=None,
+                govt_sanction_no=None,
+                auth_letter_no=None,
+                auth_date=None,
+                issued_from=issuer.sus_no[:10],
+                iv_sus_no=to_unit.sus_no[:9],
+                iv_no=body.iv_no.strip()[:50],
+                iv_date=datetime.combine(body.iv_date, datetime.min.time()),
+                loan_expiry_date=None,
+                prf_code=item.prf_code.strip().upper()[:8],
+                census_no=item.census_no.strip().upper()[:9],
+                type_of_hldg=body.type_of_hldg.strip().upper()[:3],
+                type_of_eqpt=body.type_of_eqpt.strip().upper()[:2],
+                qty=None,
+                eqpt_regn_no=item.eqpt_regn_no.strip().upper()[:25],
+                regn_seq_no=item.regn_seq_no.strip().upper()[:20],
+                from_sus_no=issuer.sus_no[:8],
+                from_form_code=(issuer.form_code or "")[:10] or None,
+                from_tr_date=today,
+                to_sus_no=to_unit.sus_no[:8],
+                to_form_code=(to_unit.form_code or "")[:10] or None,
+                to_tr_date=today,
+                service_status=_SERVICE_STATUS_DEFAULT,
+                spl_remarks=None,
+                remarks=None,
+                created_by=actor,
+                created_date=now,
+                upload_by=actor if upload_name else None,
+                upload_date=now if upload_name else None,
+                approved_by=None,
+                approved_date=None,
+                op_status=_OP_STATUS_PENDING,
+                tfr_status=_TFR_STATUS_PENDING,
+                upload_voucher=(upload_name[:50] if upload_name else None),
+                sector_expiry_date=None,
+                upload_auth_letter=None,
+                upload_picture=None,
+            )
+        )
+        ids.append(row_id)
+
+    return SubmitOut(ids=ids, count=len(ids), target_table="MMS_OTH_MASTER")

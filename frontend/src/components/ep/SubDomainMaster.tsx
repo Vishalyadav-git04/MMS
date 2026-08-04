@@ -65,7 +65,7 @@ export function SubDomainMaster() {
   };
 
   const handleSave = async () => {
-    const name = subDomain.trim();
+    const name = subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
     if (!eqptCatId || !name) {
       toast.error("EQPT CAT and Sub Domain Name are required");
       return;
@@ -94,7 +94,11 @@ export function SubDomainMaster() {
     try {
       const params = new URLSearchParams();
       if (eqptCatId) params.set("equipment_domain_id", eqptCatId);
-      if (subDomain.trim()) params.set("sub_domain_name", subDomain.trim());
+      if (subDomain.trim())
+        params.set(
+          "sub_domain_name",
+          subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""),
+        );
       const q = params.toString() ? `?${params.toString()}` : "";
       const rows = await api<EpSubDomainRow[]>(`/ep/sub-domain-master/search${q}`);
       setResults(rows);
@@ -150,7 +154,9 @@ export function SubDomainMaster() {
         <FormRow label="Sub Domain Name" required>
           <Input
             value={subDomain}
-            onChange={(e) => setSubDomain(e.target.value)}
+            onChange={(e) =>
+              setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, ""))
+            }
             placeholder="Enter Sub Domain"
             disabled={busy}
           />
@@ -165,7 +171,6 @@ export function SubDomainMaster() {
                   <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
                   <TableHead className="text-primary-foreground">Sub Domain ID</TableHead>
                   <TableHead className="text-primary-foreground">Sub Domain Name</TableHead>
-                  <TableHead className="text-primary-foreground">Created By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -175,7 +180,6 @@ export function SubDomainMaster() {
                     <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
                     <TableCell className="text-xs">{r.sub_domain_id}</TableCell>
                     <TableCell className="text-xs">{r.sub_domain_name}</TableCell>
-                    <TableCell className="text-xs">{r.created_by}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

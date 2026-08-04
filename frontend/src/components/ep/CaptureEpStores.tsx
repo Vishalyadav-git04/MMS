@@ -23,6 +23,11 @@ import { api, ApiError } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
+interface DomainOption {
+  code_value: string;
+  label_name: string;
+}
+
 interface EquipRow {
   regdNo: string;
   serviceability: string;
@@ -52,27 +57,35 @@ interface HoldingUnit {
   sus_no: string;
 }
 
-const emptyIssuer = {
+const getTodayIso = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const createEmptyIssuer = () => ({
   sanctioningAuth: "",
   issuingAuthority: "",
   issueSusNo: "",
   authLetterNo: "",
-  date: "2026-07-24",
+  date: getTodayIso(),
   authLetterFile: "",
-};
+});
 
-const emptyHolding = {
+const createEmptyHolding = () => ({
   unitName: "",
   susNo: "",
   ivNo: "",
-  ivDate: "2026-07-24",
+  ivDate: getTodayIso(),
   domainId: "",
   subDomainId: "",
   regnNoAvl: "yes",
   qty: "",
   voucherFile: "",
   remarks: "",
-};
+});
 
 function SuggestInput({
   value,
@@ -135,14 +148,15 @@ function SuggestInput({
 }
 
 export function CaptureEpStores() {
-  const [issuer, setIssuer] = useState(emptyIssuer);
-  const [holding, setHolding] = useState(emptyHolding);
+  const [issuer, setIssuer] = useState(createEmptyIssuer);
+  const [holding, setHolding] = useState(createEmptyHolding);
   const [equipRows, setEquipRows] = useState<EquipRow[]>([
-    { regdNo: "", serviceability: "Serviceable" },
+    { regdNo: "", serviceability: "SR" },
   ]);
   const [busy, setBusy] = useState(false);
 
-  const [sanctionAuths, setSanctionAuths] = useState<string[]>([]);
+  const [sanctionAuths, setSanctionAuths] = useState<DomainOption[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<DomainOption[]>([]);
   const [domains, setDomains] = useState<DomainRow[]>([]);
   const [subDomains, setSubDomains] = useState<SubDomainRow[]>([]);
 
@@ -152,14 +166,30 @@ export function CaptureEpStores() {
   const [holdingQueryField, setHoldingQueryField] = useState<"name" | "sus" | null>(null);
 
   useEffect(() => {
-    api<string[]>("/ep/capture/sanctioning-auths")
+    api<DomainOption[]>("/ep/capture/sanctioning-auths")
       .then((rows) => {
         setSanctionAuths(rows);
         if (rows.length && !issuer.sanctioningAuth) {
-          setIssuer((prev) => ({ ...prev, sanctioningAuth: rows[0] }));
+          setIssuer((prev) => ({ ...prev, sanctioningAuth: rows[0].code_value }));
         }
       })
       .catch(() => undefined);
+
+    api<DomainOption[]>("/ep/capture/serviceability-options")
+      .then((rows) => {
+        setServiceOptions(rows);
+        if (rows.length) {
+          const defaultCode = rows[0].code_value;
+          setEquipRows((prev) =>
+            prev.map((r) => ({
+              ...r,
+              serviceability: r.serviceability === "Serviceable" ? defaultCode : r.serviceability,
+            })),
+          );
+        }
+      })
+      .catch(() => undefined);
+
     api<DomainRow[]>("/ep/domain-master/")
       .then(setDomains)
       .catch(() => toast.error("Failed to load domains"));
@@ -187,7 +217,10 @@ export function CaptureEpStores() {
       return;
     }
     const handle = window.setTimeout(() => {
-      const params = new URLSearchParams({ q });
+      const params = new URLSearchParams({
+        q,
+        by: issuerQueryField,
+      });
       if (issuer.sanctioningAuth) params.set("sanctioning_auth", issuer.sanctioningAuth);
       void api<IssuerUnit[]>(`/ep/capture/issuer-units?${params}`)
         .then(setIssuerUnits)
@@ -204,27 +237,33 @@ export function CaptureEpStores() {
       return;
     }
     const handle = window.setTimeout(() => {
-      void api<HoldingUnit[]>(
-        `/ep/capture/holding-units?q=${encodeURIComponent(q)}`,
-      )
+      const params = new URLSearchParams({
+        q,
+        by: holdingQueryField,
+      });
+      void api<HoldingUnit[]>(`/ep/capture/holding-units?${params}`)
         .then(setHoldingUnits)
         .catch(() => setHoldingUnits([]));
     }, 250);
     return () => window.clearTimeout(handle);
   }, [holding.unitName, holding.susNo, holdingQueryField]);
 
-  const updIssuer = <K extends keyof typeof emptyIssuer>(k: K, v: (typeof emptyIssuer)[K]) =>
-    setIssuer({ ...issuer, [k]: v });
-  const updHolding = <K extends keyof typeof emptyHolding>(k: K, v: (typeof emptyHolding)[K]) =>
-    setHolding({ ...holding, [k]: v });
+  const updIssuer = <K extends keyof ReturnType<typeof createEmptyIssuer>>(
+    k: K,
+    v: ReturnType<typeof createEmptyIssuer>[K],
+  ) => setIssuer({ ...issuer, [k]: v });
+  const updHolding = <K extends keyof ReturnType<typeof createEmptyHolding>>(
+    k: K,
+    v: ReturnType<typeof createEmptyHolding>[K],
+  ) => setHolding({ ...holding, [k]: v });
 
   const handleClear = () => {
     setIssuer({
-      ...emptyIssuer,
-      sanctioningAuth: sanctionAuths[0] ?? "",
+      ...createEmptyIssuer(),
+      sanctioningAuth: sanctionAuths[0]?.code_value ?? "",
     });
-    setHolding(emptyHolding);
-    setEquipRows([{ regdNo: "", serviceability: "Serviceable" }]);
+    setHolding(createEmptyHolding());
+    setEquipRows([{ regdNo: "", serviceability: serviceOptions[0]?.code_value ?? "SR" }]);
     setIssuerUnits([]);
     setHoldingUnits([]);
     setSubDomains([]);
@@ -234,9 +273,10 @@ export function CaptureEpStores() {
     const cleaned = qty.replace(/\D/g, "").slice(0, 4);
     updHolding("qty", cleaned);
     const n = Math.max(1, Math.min(Number(cleaned) || 1, 20));
+    const defaultSvc = serviceOptions[0]?.code_value ?? "SR";
     setEquipRows((prev) => {
       const next = [...prev];
-      while (next.length < n) next.push({ regdNo: "", serviceability: "Serviceable" });
+      while (next.length < n) next.push({ regdNo: "", serviceability: defaultSvc });
       return next.slice(0, n);
     });
   };
@@ -263,8 +303,52 @@ export function CaptureEpStores() {
       toast.error("Please fill all required fields");
       return;
     }
+
+    const today = getTodayIso();
+    if (issuer.date > today) {
+      toast.error("Auth Letter Date cannot be a future date");
+      return;
+    }
+    if (holding.ivDate > today) {
+      toast.error("IV Date cannot be a future date");
+      return;
+    }
+
+    if (holding.regnNoAvl === "yes") {
+      const emptyIdx = equipRows.findIndex((r) => !r.regdNo || !r.regdNo.trim());
+      if (emptyIdx !== -1) {
+        toast.error(`Registration Number is required for equipment row ${emptyIdx + 1}`);
+        return;
+      }
+
+      const seenRegn = new Set<string>();
+      for (let i = 0; i < equipRows.length; i++) {
+        const cleanReg = equipRows[i].regdNo.trim().toUpperCase();
+        if (seenRegn.has(cleanReg)) {
+          toast.error(
+            `Duplicate registration number '${equipRows[i].regdNo.trim()}' entered in row ${i + 1}`,
+          );
+          return;
+        }
+        seenRegn.add(cleanReg);
+      }
+    }
+
     setBusy(true);
     try {
+      const ivCheck = await api<{ exists: boolean }>(
+        `/ep/capture/check-iv?iv_no=${encodeURIComponent(holding.ivNo.trim())}`,
+      );
+      if (ivCheck.exists) {
+        const confirmed = window.confirm(
+          `IV No '${holding.ivNo.trim()}' already exists in previous transactions. Are you sure you want to proceed?`,
+        );
+        if (!confirmed) {
+          setBusy(false);
+          return;
+        }
+      }
+
       const result = await api<{ ids: string[]; count: number }>("/ep/capture/", {
         method: "POST",
         body: JSON.stringify({
@@ -340,8 +424,8 @@ export function CaptureEpStores() {
               </SelectTrigger>
               <SelectContent>
                 {sanctionAuths.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {a}
+                  <SelectItem key={a.code_value} value={a.code_value}>
+                    {a.label_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -631,9 +715,11 @@ export function CaptureEpStores() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Serviceable">Serviceable</SelectItem>
-                        <SelectItem value="Repairable">Repairable</SelectItem>
-                        <SelectItem value="BER">BER</SelectItem>
+                        {serviceOptions.map((opt) => (
+                          <SelectItem key={opt.code_value} value={opt.code_value}>
+                            {opt.label_name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </TableCell>
@@ -646,3 +732,4 @@ export function CaptureEpStores() {
     </FormPanel>
   );
 }
+

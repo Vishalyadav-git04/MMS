@@ -2,7 +2,8 @@
 
 Search pending/approved/rejected holdings across:
   MMS_UNIT_MSTR_DETL, MMS_DEPOT_MASTER, MMS_OTH_MASTER
-filtered by SUS No, Unit Name, OP_STATUS, and IV date range.
+by current holding unit TO_SUS_NO (same value as SUS_NO on unit/depot),
+resolved via MMS_ORBAT_UNIT_DETL, filtered by OP_STATUS and IV date range.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
 from app.models import (
     DepotMaster,
+    DomainValue,
     MlccsEquipmentMaster,
     OrbatUnitDetl,
     OthMaster,
@@ -80,7 +82,8 @@ class NewEqptOut(BaseModel):
     sus_no: str | None = None
     material_no: str | None = None
     census_no: str | None = None
-    issued_qty: str
+    type_of_hldg: str | None = None
+    type_of_hldg_label: str | None = None
     status: str
     op_status: str | None = None
 
@@ -107,6 +110,19 @@ def _status_label(code: str | None) -> str:
     if not code:
         return ""
     return _STATUS_LABEL.get(code.strip().upper(), code)
+
+
+def _holding_label_map(session: Session) -> dict[str, str]:
+    rows = session.scalars(
+        select(DomainValue).where(
+            func.upper(DomainValue.domain_name) == "TYPE_OF_HLDG"
+        )
+    ).all()
+    return {
+        (r.code_value or "").strip().upper(): (r.label_name or r.code_value or "").strip()
+        for r in rows
+        if r.code_value
+    }
 
 
 @router.get("/status")
@@ -230,10 +246,11 @@ def search_new_eqpt(
 
     results: list[tuple[str, Any, str | None]] = []
     # (source, row, unit_name)
+    # Holding unit is TO_SUS_NO on all three tables (same value as SUS_NO on unit/depot).
 
     # --- Unit master ---
     unit_stmt = select(UnitMasterDetail).where(
-        func.upper(UnitMasterDetail.sus_no) == sus,
+        func.upper(UnitMasterDetail.to_sus_no) == sus,
         func.upper(func.coalesce(UnitMasterDetail.op_status, "")).in_(status_codes),
         UnitMasterDetail.iv_date >= date_from,
     )
@@ -244,7 +261,7 @@ def search_new_eqpt(
 
     # --- Depot master ---
     depot_stmt = select(DepotMaster).where(
-        func.upper(DepotMaster.sus_no) == sus,
+        func.upper(DepotMaster.to_sus_no) == sus,
         func.upper(func.coalesce(DepotMaster.op_status, "")).in_(status_codes),
         DepotMaster.iv_date >= date_from,
     )
@@ -253,7 +270,7 @@ def search_new_eqpt(
     for row in session.scalars(depot_stmt.order_by(DepotMaster.iv_date.desc())).all():
         results.append((_SOURCE_DEPOT, row, unit.unit_name))
 
-    # --- Oth master (holding unit is TO_SUS_NO) ---
+    # --- Oth master ---
     oth_stmt = select(OthMaster).where(
         func.upper(OthMaster.to_sus_no) == sus,
         func.upper(func.coalesce(OthMaster.op_status, "")).in_(status_codes),
@@ -270,15 +287,14 @@ def search_new_eqpt(
         if getattr(row, "census_no", None)
     }
     materials = _material_for_census(session, census_nos)
+    hldg_labels = _holding_label_map(session)
 
     out: list[NewEqptOut] = []
     for source, row, unit_name in results:
         census = (row.census_no or "").strip()
         op = (row.op_status or "").strip().upper() or None
-        if source == _SOURCE_OTH:
-            qty = str(row.qty if row.qty is not None else 1)
-        else:
-            qty = "1"
+        hldg = (row.type_of_hldg or "").strip() or None
+        holding_sus = (row.to_sus_no or sus).strip()
         out.append(
             NewEqptOut(
                 id=str(row.id),
@@ -286,10 +302,13 @@ def search_new_eqpt(
                 iv_no=row.iv_no,
                 iv_date=_fmt_date(row.iv_date),
                 unit_name=unit_name,
-                sus_no=sus if source != _SOURCE_OTH else (row.to_sus_no or sus),
+                sus_no=holding_sus,
                 material_no=materials.get(census.upper()) if census else None,
                 census_no=census or None,
-                issued_qty=qty,
+                type_of_hldg=hldg,
+                type_of_hldg_label=(
+                    hldg_labels.get(hldg.upper(), hldg) if hldg else None
+                ),
                 status=_status_label(op),
                 op_status=op,
             )
