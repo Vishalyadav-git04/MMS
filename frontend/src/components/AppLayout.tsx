@@ -266,18 +266,17 @@ export function AppLayout({
         </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-row overflow-hidden">
         <PageBackdrop />
+        <SectionNav
+          sections={sections}
+          active={active}
+          activeSub={activeSub}
+          onSelect={onSelect}
+          formOpen={formOpen}
+          screenLabel={screenLabel}
+        />
         <div className="mms-content relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SectionNav
-            sections={sections}
-            active={active}
-            activeSub={activeSub}
-            onSelect={onSelect}
-            formOpen={formOpen}
-            screenLabel={screenLabel}
-          />
-
           <div
             className={
               formOpen

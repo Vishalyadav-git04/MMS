@@ -79,17 +79,67 @@ export function isoToDmyDash(iso: string): string {
 }
 
 /**
- * True when display text is non-empty but not a valid complete dd/mm/yyyy.
- * Used to block search/save while the box shows an invalid entry.
+ * Returns true if a given date (Date, ISO yyyy-mm-dd, or dd/mm/yyyy string) is after today.
  */
-export function isInvalidDateText(text: string): boolean {
+export function isFutureDate(value: string | Date): boolean {
+  if (!value) return false;
+  let dt: Date | null = null;
+  if (value instanceof Date) {
+    dt = value;
+  } else {
+    const iso = toIsoDate(value);
+    if (!iso) return false;
+    const parts = iso.split("-").map(Number);
+    dt = new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  if (Number.isNaN(dt.getTime())) return false;
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  return dt.getTime() > todayEnd.getTime();
+}
+
+/**
+ * Returns true if a given year-month string (yyyy-mm or mm/yyyy) is after current year-month.
+ */
+export function isFutureMonth(yearMonthStr: string): boolean {
+  const v = yearMonthStr.trim();
+  if (!v) return false;
+  let year = 0;
+  let month = 0;
+  if (/^\d{4}-\d{2}$/.test(v)) {
+    const [y, m] = v.split("-").map(Number);
+    year = y;
+    month = m;
+  } else if (/^\d{2}\/\d{4}$/.test(v)) {
+    const [m, y] = v.split("/").map(Number);
+    year = y;
+    month = m;
+  } else {
+    return false;
+  }
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  return year > curYear || (year === curYear && month > curMonth);
+}
+
+/**
+ * True when display text is non-empty but not a valid complete dd/mm/yyyy,
+ * or if it represents a future date when allowFuture is false.
+ * Used to block search/save while the box shows an invalid or disallowed entry.
+ */
+export function isInvalidDateText(text: string, allowFuture: boolean = false): boolean {
   const t = text.trim();
   if (!t) return false;
   if (t.length < 10) return true;
-  return dmyToIso(t) === null;
+  const iso = dmyToIso(t);
+  if (iso === null) return true;
+  if (!allowFuture && isFutureDate(iso)) return true;
+  return false;
 }
 
 /** Returns true if any open date field currently shows an invalid entry. */
 export function pageHasInvalidDateInputs(root: ParentNode = document): boolean {
   return root.querySelectorAll('[data-date-invalid="true"]').length > 0;
 }
+

@@ -1729,19 +1729,626 @@ export function DepotToDepotTransfer() {
 }
 
 export function UnitToDepotDeposit() {
+  const [parentSearch, setParentSearch] = useState("");
+  const [parentSusNo, setParentSusNo] = useState("");
+  const [parentUnits, setParentUnits] = useState<ParentUnitOption[]>([]);
+
+  const [parentHolding, setParentHolding] = useState("");
+  const [holdingOptions, setHoldingOptions] = useState<OptionItem[]>([]);
+
+  const [parentEqpt, setParentEqpt] = useState("");
+  const [eqptOptions, setEqptOptions] = useState<OptionItem[]>([]);
+
+  const [prfCode, setPrfCode] = useState("");
+  const [prfOptions, setPrfOptions] = useState<PrfGroupOption[]>([]);
+
+  const [censusNo, setCensusNo] = useState("");
+  const [nomenclatureOptions, setNomenclatureOptions] = useState<CensusOption[]>([]);
+
+  const [rvNo, setRvNo] = useState("");
+  const [rvDate, setRvDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [uploadingRv, setUploadingRv] = useState(false);
+  const [uploadedRvPath, setUploadedRvPath] = useState("");
+  const [fileName, setFileName] = useState("");
+
+  const [receivingSearch, setReceivingSearch] = useState("");
+  const [receivingSusNo, setReceivingSusNo] = useState("");
+  const [receivingUnits, setReceivingUnits] = useState<ReceivingUnitOption[]>([]);
+
+  const [receivingHolding, setReceivingHolding] = useState("");
+  const [receivingHoldingOptions, setReceivingHoldingOptions] = useState<OptionItem[]>([]);
+
+  const [receivingEqpt, setReceivingEqpt] = useState("");
+  const [receivingEqptOptions, setReceivingEqptOptions] = useState<OptionItem[]>([]);
+
+  const [listLoaded, setListLoaded] = useState(false);
+  const [loadingRegn, setLoadingRegn] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [availableRegns, setAvailableRegns] = useState<string[]>([]);
+  const [transferRegns, setTransferRegns] = useState<string[]>([]);
+  const [checkedAvailable, setCheckedAvailable] = useState<Set<string>>(new Set());
+  const [checkedTransfer, setCheckedTransfer] = useState<Set<string>>(new Set());
+  const [regnSearch, setRegnSearch] = useState("");
+
+  const resetRegnSelection = () => {
+    setListLoaded(false);
+    setAvailableRegns([]);
+    setTransferRegns([]);
+    setCheckedAvailable(new Set());
+    setCheckedTransfer(new Set());
+    setRegnSearch("");
+  };
+
+  // Initial reference options load
+  useEffect(() => {
+    let unmounted = false;
+    async function initData() {
+      try {
+        const [parents, receivings, recHoldings, recEqpts] = await Promise.all([
+          api<ParentUnitOption[]>("/transfer/unit-to-depot/parent-units"),
+          api<ReceivingUnitOption[]>("/transfer/unit-to-depot/receiving-units"),
+          api<OptionItem[]>("/transfer/unit-to-depot/receiving-holding-types"),
+          api<OptionItem[]>("/transfer/unit-to-depot/receiving-eqpt-types"),
+        ]);
+        if (!unmounted) {
+          setParentUnits(parents || []);
+          setReceivingUnits(receivings || []);
+          setReceivingHoldingOptions(recHoldings || []);
+          setReceivingEqptOptions(recEqpts || []);
+        }
+      } catch {
+        if (!unmounted) {
+          toast.error("Failed to load unit deposit reference options");
+        }
+      }
+    }
+    initData();
+    return () => {
+      unmounted = true;
+    };
+  }, []);
+
+  // When parentSusNo changes -> load holding types
+  useEffect(() => {
+    setParentHolding("");
+    setHoldingOptions([]);
+    setParentEqpt("");
+    setEqptOptions([]);
+    setPrfCode("");
+    setPrfOptions([]);
+    setCensusNo("");
+    setNomenclatureOptions([]);
+    resetRegnSelection();
+
+    if (!parentSusNo) return;
+    api<OptionItem[]>(
+      `/transfer/unit-to-depot/holding-types?parent_sus_no=${encodeURIComponent(parentSusNo)}`
+    )
+      .then(setHoldingOptions)
+      .catch(() => toast.error("Failed to load holding types for parent unit"));
+  }, [parentSusNo]);
+
+  // When parentHolding changes -> load eqpt types
+  useEffect(() => {
+    setParentEqpt("");
+    setEqptOptions([]);
+    setPrfCode("");
+    setPrfOptions([]);
+    setCensusNo("");
+    setNomenclatureOptions([]);
+    resetRegnSelection();
+
+    if (!parentSusNo || !parentHolding) return;
+    api<OptionItem[]>(
+      `/transfer/unit-to-depot/eqpt-types?parent_sus_no=${encodeURIComponent(parentSusNo)}&holding_type=${encodeURIComponent(parentHolding)}`
+    )
+      .then(setEqptOptions)
+      .catch(() => toast.error("Failed to load equipment types"));
+  }, [parentSusNo, parentHolding]);
+
+  // When parentEqpt changes -> load prf groups
+  useEffect(() => {
+    setPrfCode("");
+    setPrfOptions([]);
+    setCensusNo("");
+    setNomenclatureOptions([]);
+    resetRegnSelection();
+
+    if (!parentSusNo || !parentHolding || !parentEqpt) return;
+    api<PrfGroupOption[]>(
+      `/transfer/unit-to-depot/prf-groups?parent_sus_no=${encodeURIComponent(parentSusNo)}&holding_type=${encodeURIComponent(parentHolding)}&eqpt_type=${encodeURIComponent(parentEqpt)}`
+    )
+      .then(setPrfOptions)
+      .catch(() => toast.error("Failed to load PRF groups"));
+  }, [parentSusNo, parentHolding, parentEqpt]);
+
+  // When prfCode changes -> load nomenclatures
+  useEffect(() => {
+    setCensusNo("");
+    setNomenclatureOptions([]);
+    resetRegnSelection();
+
+    if (!parentSusNo || !parentHolding || !parentEqpt || !prfCode) return;
+    api<CensusOption[]>(
+      `/transfer/unit-to-depot/nomenclatures?parent_sus_no=${encodeURIComponent(parentSusNo)}&holding_type=${encodeURIComponent(parentHolding)}&eqpt_type=${encodeURIComponent(parentEqpt)}&prf_code=${encodeURIComponent(prfCode)}`
+    )
+      .then(setNomenclatureOptions)
+      .catch(() => toast.error("Failed to load nomenclatures"));
+  }, [parentSusNo, parentHolding, parentEqpt, prfCode]);
+
+  const handleReceivingSearch = async () => {
+    try {
+      const res = await api<ReceivingUnitOption[]>(
+        `/transfer/unit-to-depot/receiving-units?search=${encodeURIComponent(receivingSearch)}`
+      );
+      setReceivingUnits(res || []);
+    } catch {
+      toast.error("Failed to search receiving depots");
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingRv(true);
+    try {
+      const res = await uploadFileApi(file);
+      setUploadedRvPath(res.relative_path || res.absolute_path);
+      setFileName(file.name);
+      toast.success("RV document uploaded successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload RV file");
+    } finally {
+      setUploadingRv(false);
+    }
+  };
+
+  const filteredAvailable = useMemo(() => {
+    const q = regnSearch.trim().toLowerCase();
+    if (!q) return availableRegns;
+    return availableRegns.filter((r) => r.toLowerCase().includes(q));
+  }, [availableRegns, regnSearch]);
+
+  const allFilteredSelected =
+    filteredAvailable.length > 0 && filteredAvailable.every((r) => checkedAvailable.has(r));
+
+  const handleGetRegn = async () => {
+    if (pageHasInvalidDateInputs()) {
+      return toast.error("Please enter a valid date (dd/mm/yyyy)");
+    }
+    if (
+      !parentSusNo ||
+      !parentHolding ||
+      !parentEqpt ||
+      !prfCode ||
+      !censusNo ||
+      !receivingSusNo ||
+      !receivingHolding ||
+      !receivingEqpt ||
+      !rvNo ||
+      !rvDate
+    ) {
+      return toast.error("Please fill all required fields");
+    }
+
+    setLoadingRegn(true);
+    try {
+      const url = `/transfer/unit-to-depot/regn-list?parent_sus_no=${encodeURIComponent(parentSusNo)}&holding_type=${encodeURIComponent(parentHolding)}&eqpt_type=${encodeURIComponent(parentEqpt)}&prf_code=${encodeURIComponent(prfCode)}&census_no=${encodeURIComponent(censusNo)}`;
+      const regns = await api<string[]>(url);
+      setAvailableRegns(regns || []);
+      setTransferRegns([]);
+      setCheckedAvailable(new Set());
+      setCheckedTransfer(new Set());
+      setRegnSearch("");
+      setListLoaded(true);
+      toast.success(`${(regns || []).length} registration number(s) found`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to fetch registration list");
+    } finally {
+      setLoadingRegn(false);
+    }
+  };
+
+  const toggleAvailable = (regn: string, next: boolean) => {
+    setCheckedAvailable((prev) => {
+      const n = new Set(prev);
+      if (next) n.add(regn);
+      else n.delete(regn);
+      return n;
+    });
+  };
+
+  const toggleTransfer = (regn: string, next: boolean) => {
+    setCheckedTransfer((prev) => {
+      const n = new Set(prev);
+      if (next) n.add(regn);
+      else n.delete(regn);
+      return n;
+    });
+  };
+
+  const handleSelectAll = (next: boolean) => {
+    setCheckedAvailable((prev) => {
+      const n = new Set(prev);
+      for (const r of filteredAvailable) {
+        if (next) n.add(r);
+        else n.delete(r);
+      }
+      return n;
+    });
+  };
+
+  const moveToTransfer = () => {
+    const moving = availableRegns.filter((r) => checkedAvailable.has(r));
+    if (!moving.length) {
+      toast.error("Select registration number(s) to transfer");
+      return;
+    }
+    setAvailableRegns((prev) => prev.filter((r) => !checkedAvailable.has(r)));
+    setTransferRegns((prev) => [...prev, ...moving.filter((r) => !prev.includes(r))]);
+    setCheckedAvailable(new Set());
+  };
+
+  const moveBackToAvailable = () => {
+    const moving = transferRegns.filter((r) => checkedTransfer.has(r));
+    if (!moving.length) {
+      toast.error("Select registration number(s) to move back");
+      return;
+    }
+    setTransferRegns((prev) => prev.filter((r) => !checkedTransfer.has(r)));
+    setAvailableRegns((prev) => [...prev, ...moving.filter((r) => !prev.includes(r))]);
+    setCheckedTransfer(new Set());
+  };
+
+  const handleSubmit = async () => {
+    if (!transferRegns.length) {
+      toast.error("Move at least one Regn No to the transfer list");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        parent_sus_no: parentSusNo,
+        type_of_hldg: parentHolding,
+        type_of_eqpt: parentEqpt,
+        prf_code: prfCode,
+        census_no: censusNo,
+        receiving_sus_no: receivingSusNo,
+        receiving_type_of_hldg: receivingHolding,
+        receiving_type_of_eqpt: receivingEqpt,
+        rv_no: rvNo,
+        rv_date: rvDate,
+        upload_rv: uploadedRvPath || null,
+        regn_numbers: transferRegns,
+      };
+
+      const res = await api<{ count: number; transferred_regns: string[] }>(
+        "/transfer/unit-to-depot/transfer",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      toast.success(
+        `EQPT Deposit completed successfully for ${res.count} registration number(s)`
+      );
+      resetRegnSelection();
+      const parents = await api<ParentUnitOption[]>("/transfer/unit-to-depot/parent-units");
+      setParentUnits(parents || []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to execute Unit to Depot Deposit");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filteredParentUnits = useMemo(() => {
+    const q = parentSearch.trim().toUpperCase();
+    if (!q) return parentUnits;
+    return parentUnits.filter(
+      (o) =>
+        o.sus_no.toUpperCase().includes(q) ||
+        o.unit_name.toUpperCase().includes(q) ||
+        o.display.toUpperCase().includes(q)
+    );
+  }, [parentUnits, parentSearch]);
+
+  const filteredReceivingUnits = useMemo(() => {
+    const q = receivingSearch.trim().toUpperCase();
+    if (!q) return receivingUnits;
+    return receivingUnits.filter(
+      (o) =>
+        o.sus_no.toUpperCase().includes(q) ||
+        o.unit_name.toUpperCase().includes(q) ||
+        o.display.toUpperCase().includes(q)
+    );
+  }, [receivingUnits, receivingSearch]);
+
   return (
-    <TransferForm
+    <FormPanel
       title="DEPOSIT TO DEPOT : UNIT TO DEPOT"
-      parentLabel="Parent Unit"
-      receivingLabel="Receiving Depot"
-      parentOptions={UNIT_OPTIONS}
-      receivingOptions={DEPOT_OPTIONS}
-      showRvFields
-      holdingOptions={HOLDING_TYPES}
-      eqptOptions={EQPT_TYPES}
-      prfOptions={PRF_GROUPS}
-      nomenclatureOptions={NOMENCLATURES}
-      initialRvDate="2026-07-24"
-    />
+      fill
+      footer={
+        <>
+          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
+            {loadingRegn ? "Loading..." : "Get Regn List"}
+          </Button>
+          {listLoaded && (
+            <>
+              <Button variant="secondary" onClick={resetRegnSelection} disabled={submitting}>
+                Clear List
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={transferRegns.length === 0 || submitting}
+              >
+                {submitting ? "Submitting..." : "Submit"}
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <FormSection title="Parent unit details" />
+        <FormRow label="Parent Unit" required>
+          <div className="flex gap-1">
+            <div className="flex min-w-0 flex-1 gap-1">
+              <Input
+                placeholder="Search..."
+                value={parentSearch}
+                onChange={(e) => setParentSearch(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-7 w-7 shrink-0"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="min-w-0 flex-[1.4]">
+              <Select value={parentSusNo} onValueChange={setParentSusNo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="--Select Unit--" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {filteredParentUnits.map((o) => (
+                    <SelectItem key={o.sus_no} value={o.sus_no}>
+                      {o.display}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </FormRow>
+
+        <FormGrid cols={2}>
+          <FormRow label="Type of Holding" required>
+            <Select value={parentHolding} onValueChange={setParentHolding}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select Type of Holding--" />
+              </SelectTrigger>
+              <SelectContent>
+                {holdingOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+
+          <FormRow label="Type of Eqpt" required>
+            <Select value={parentEqpt} onValueChange={setParentEqpt}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select--" />
+              </SelectTrigger>
+              <SelectContent>
+                {eqptOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+
+          <FormRow label="PRF Group" required>
+            <Select value={prfCode} onValueChange={setPrfCode}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select PRF Group--" />
+              </SelectTrigger>
+              <SelectContent>
+                {prfOptions.map((o) => (
+                  <SelectItem key={o.prf_code} value={o.prf_code}>
+                    {o.prf_group}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+
+          <FormRow label="Nomenclature" required>
+            <Select value={censusNo} onValueChange={setCensusNo}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select Census--" />
+              </SelectTrigger>
+              <SelectContent>
+                {nomenclatureOptions.map((o) => (
+                  <SelectItem key={o.census_no} value={o.census_no}>
+                    {o.nomenclature}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+
+          <FormRow label="RV No" required>
+            <Input
+              placeholder="Enter RV No..."
+              value={rvNo}
+              onChange={(e) => setRvNo(e.target.value)}
+            />
+          </FormRow>
+
+          <FormRow label="RV Date" required>
+            <DateInput value={rvDate} onChange={setRvDate} />
+          </FormRow>
+
+          <FormRow label="Upload RV" required className="sm:col-span-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="file"
+                className="h-auto py-0.5"
+                onChange={handleFileUpload}
+                disabled={uploadingRv}
+              />
+              {fileName && (
+                <span className="text-xs text-muted-foreground truncate">{fileName}</span>
+              )}
+            </div>
+          </FormRow>
+        </FormGrid>
+
+        <FormSection title="Receiving unit details" />
+        <FormRow label="Receiving Depot" required>
+          <div className="flex gap-1">
+            <div className="flex min-w-0 flex-1 gap-1">
+              <Input
+                placeholder="Search..."
+                value={receivingSearch}
+                onChange={(e) => setReceivingSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleReceivingSearch();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-7 w-7 shrink-0"
+                onClick={handleReceivingSearch}
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="min-w-0 flex-[1.4]">
+              <Select value={receivingSusNo} onValueChange={setReceivingSusNo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="--Select Unit--" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {filteredReceivingUnits.map((o) => (
+                    <SelectItem key={o.sus_no} value={o.sus_no}>
+                      {o.display}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </FormRow>
+
+        <FormGrid cols={2}>
+          <FormRow label="Type of Holding" required>
+            <Select value={receivingHolding} onValueChange={setReceivingHolding}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select--" />
+              </SelectTrigger>
+              <SelectContent>
+                {receivingHoldingOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+
+          <FormRow label="Type of Eqpt" required>
+            <Select value={receivingEqpt} onValueChange={setReceivingEqpt}>
+              <SelectTrigger>
+                <SelectValue placeholder="--Select--" />
+              </SelectTrigger>
+              <SelectContent>
+                {receivingEqptOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+        </FormGrid>
+
+        {listLoaded && (
+          <>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs font-semibold uppercase text-sky-800">
+                EQPT Registration List
+              </span>
+              <Input
+                placeholder="Search Regn No..."
+                className="h-7 w-48 text-xs"
+                value={regnSearch}
+                onChange={(e) => setRegnSearch(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2 pt-1">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 rounded bg-muted/60 px-2 py-1 text-xs">
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    onCheckedChange={(c) => handleSelectAll(!!c)}
+                  />
+                  <span>Select All ({filteredAvailable.length})</span>
+                </div>
+                <RegnListBox
+                  items={filteredAvailable}
+                  checked={checkedAvailable}
+                  onToggle={toggleAvailable}
+                  emptyLabel="No Regn available"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={moveToTransfer}
+                  title="Move selected to transfer list"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={moveBackToAvailable}
+                  title="Move selected back"
+                >
+                  <ArrowRight className="h-4 w-4 rotate-180" />
+                </Button>
+              </div>
+              <RegnListBox
+                items={transferRegns}
+                checked={checkedTransfer}
+                onToggle={toggleTransfer}
+                emptyLabel="No Regn selected"
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </FormPanel>
   );
 }

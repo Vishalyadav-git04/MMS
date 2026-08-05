@@ -7,6 +7,8 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import {
   dmyToIso,
   isoToDmy,
+  isFutureDate,
+  isFutureMonth,
   isInvalidDateText,
   maskDmyInput,
   toDmyDisplay,
@@ -19,6 +21,7 @@ type DateInputProps = {
   /** Emits ISO `yyyy-mm-dd` (or `""` when cleared / incomplete / invalid). */
   onChange: (isoDate: string) => void;
   disabled?: boolean;
+  allowFuture?: boolean;
   className?: string;
   id?: string;
   name?: string;
@@ -30,6 +33,7 @@ type MonthInputProps = {
   /** Emits `yyyy-mm` (or `""` when cleared). */
   onChange: (yearMonth: string) => void;
   disabled?: boolean;
+  allowFuture?: boolean;
   className?: string;
   id?: string;
   name?: string;
@@ -131,6 +135,7 @@ export function DateInput({
   value,
   onChange,
   disabled = false,
+  allowFuture = false,
   className,
   id,
   name,
@@ -148,7 +153,7 @@ export function DateInput({
   const validSelected =
     selected && !Number.isNaN(selected.getTime()) ? selected : undefined;
 
-  const invalid = isInvalidDateText(text);
+  const invalid = isInvalidDateText(text, allowFuture);
 
   const commitText = (raw: string) => {
     const masked = maskDmyInput(raw);
@@ -161,9 +166,15 @@ export function DateInput({
 
     if (masked.length === 10) {
       const next = dmyToIso(masked);
-      onChange(next ?? "");
-      if (next) setText(isoToDmy(next));
-      return;
+      if (next) {
+        if (!allowFuture && isFutureDate(next)) {
+          if (value) onChange("");
+          return;
+        }
+        onChange(next);
+        setText(isoToDmy(next));
+        return;
+      }
     }
 
     if (value) onChange("");
@@ -211,11 +222,11 @@ export function DateInput({
               }
               if (text.length === 10) {
                 const next = dmyToIso(text);
-                if (next) {
+                if (next && (allowFuture || !isFutureDate(next))) {
                   onChange(next);
                   setText(isoToDmy(next));
+                  return;
                 }
-                return;
               }
               setText(toDmyDisplay(value));
             }}
@@ -243,6 +254,15 @@ export function DateInput({
           defaultMonth={validSelected}
           startMonth={new Date(1990, 0)}
           endMonth={new Date(new Date().getFullYear() + 10, 11)}
+          disabled={
+            allowFuture
+              ? undefined
+              : (date) => {
+                  const todayEnd = new Date();
+                  todayEnd.setHours(23, 59, 59, 999);
+                  return date.getTime() > todayEnd.getTime();
+                }
+          }
           onSelect={(day) => {
             if (!day) return;
             const next = format(day, "yyyy-MM-dd");
@@ -265,6 +285,7 @@ export function MonthInput({
   value,
   onChange,
   disabled = false,
+  allowFuture = false,
   className,
   id,
   name,
@@ -284,11 +305,18 @@ export function MonthInput({
     if (open) setPickerYear(viewYear);
   }, [open, viewYear]);
 
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
   const invalid = (() => {
     const t = text.trim();
     if (!t) return false;
     if (t.length < 7) return true;
-    return parseYearMonth(t) === null;
+    const parsed = parseYearMonth(t);
+    if (!parsed) return true;
+    if (!allowFuture && isFutureMonth(t)) return true;
+    return false;
   })();
 
   const commitText = (raw: string) => {
@@ -300,9 +328,16 @@ export function MonthInput({
     }
     if (masked.length === 7) {
       const parsed = parseYearMonth(masked);
-      onChange(parsed ? toYearMonth(parsed.year, parsed.month) : "");
-      if (parsed) setText(yearMonthToDisplay(toYearMonth(parsed.year, parsed.month)));
-      return;
+      if (parsed) {
+        const ym = toYearMonth(parsed.year, parsed.month);
+        if (!allowFuture && isFutureMonth(ym)) {
+          if (value) onChange("");
+          return;
+        }
+        onChange(ym);
+        setText(yearMonthToDisplay(ym));
+        return;
+      }
     }
     if (value) onChange("");
   };
@@ -350,10 +385,12 @@ export function MonthInput({
                 const parsed = parseYearMonth(text);
                 if (parsed) {
                   const next = toYearMonth(parsed.year, parsed.month);
-                  onChange(next);
-                  setText(yearMonthToDisplay(next));
+                  if (allowFuture || !isFutureMonth(next)) {
+                    onChange(next);
+                    setText(yearMonthToDisplay(next));
+                    return;
+                  }
                 }
-                return;
               }
               setText(yearMonthToDisplay(value));
             }}
@@ -393,16 +430,23 @@ export function MonthInput({
             const month = idx + 1;
             const active =
               selected?.year === pickerYear && selected?.month === month;
+            const isMonthFuture =
+              !allowFuture &&
+              (pickerYear > currentYear ||
+                (pickerYear === currentYear && month > currentMonth));
             return (
               <button
                 key={label}
                 type="button"
                 data-date-calendar=""
+                disabled={isMonthFuture}
                 className={cn(
                   "h-8 rounded-md text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                   active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                  isMonthFuture && "text-muted-foreground opacity-80 pointer-events-none cursor-not-allowed select-none",
                 )}
                 onClick={() => {
+                  if (isMonthFuture) return;
                   const next = toYearMonth(pickerYear, month);
                   onChange(next);
                   setText(yearMonthToDisplay(next));

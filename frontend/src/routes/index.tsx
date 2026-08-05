@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { AppLayout, type ModuleId, type WeaponSub } from "@/components/AppLayout";
 import { LoginScreen } from "@/components/LoginScreen";
@@ -213,76 +213,68 @@ type TransferTile = (typeof TRANSFER_TILES)[number]["id"];
 type HoldingTile = (typeof HOLDING_TILES)[number]["id"];
 type ReportTile = (typeof REPORT_TILES)[number]["id"];
 
-function Index() {
-  const { isAuthenticated, user, logout } = useAuth();
-  const admin = isAdmin(user);
+function parseLocation(pathname: string, search?: string) {
+  const parts = pathname.split("/").filter(Boolean);
+  let active: ModuleId = "dashboard";
+  let activeSub: WeaponSub | null = null;
+  let activeMms: MmsTile | null = null;
+  let activeEp: EpTile | null = null;
+  let activeRo: RoTile | null = null;
+  let activeMlccs: MlccsTile | null = null;
+  let activeTransfer: TransferTile | null = null;
+  let activeHolding: HoldingTile | null = null;
+  let activeReport: ReportTile | null = null;
 
-  const [active, setActive] = useState<ModuleId>("dashboard");
-  const [activeSub, setActiveSub] = useState<WeaponSub | null>(null);
-  const [activeMms, setActiveMms] = useState<MmsTile | null>(null);
-  const [activeEp, setActiveEp] = useState<EpTile | null>(null);
-  const [activeRo, setActiveRo] = useState<RoTile | null>(null);
-  const [activeMlccs, setActiveMlccs] = useState<MlccsTile | null>(null);
-  const [activeTransfer, setActiveTransfer] = useState<TransferTile | null>(null);
-  const [activeHolding, setActiveHolding] = useState<HoldingTile | null>(null);
-  const [activeReport, setActiveReport] = useState<ReportTile | null>(null);
-  const [showSplash, setShowSplash] = useState(false);
-  const wasAuth = useRef(isAuthenticated);
-
-  useEffect(() => {
-    const onUnauthorized = () => logout();
-    window.addEventListener("mms:unauthorized", onUnauthorized);
-    return () => window.removeEventListener("mms:unauthorized", onUnauthorized);
-  }, [logout]);
-
-  useEffect(() => {
-    if (!admin && activeSub === "mms-admin") {
-      setActiveSub("mlccs");
-      setActiveMms(null);
+  if (parts.length > 0) {
+    const first = parts[0] as ModuleId;
+    if (first === "weapon" || first === "it-asset" || first === "dashboard") {
+      active = first;
     }
-  }, [admin, activeSub]);
-
-  // Initialize state from URL search params on mount
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
+  } else if (search) {
+    const params = new URLSearchParams(search);
     const tabParam = params.get("tab") as ModuleId | null;
     const subParam = params.get("sub") as WeaponSub | null;
     const screenParam = params.get("screen");
-
-    if (tabParam) setActive(tabParam);
-    if (subParam) setActiveSub(subParam);
+    if (tabParam) active = tabParam;
+    if (subParam) activeSub = subParam;
     if (screenParam) {
-      if (subParam === "mms-admin") setActiveMms(screenParam as MmsTile);
-      if (subParam === "ep-stores") setActiveEp(screenParam as EpTile);
-      if (subParam === "generate-ro") setActiveRo(screenParam as RoTile);
-      if (subParam === "mlccs") setActiveMlccs(screenParam as MlccsTile);
-      if (subParam === "eqpt-transfer") setActiveTransfer(screenParam as TransferTile);
-      if (subParam === "unit-holding") setActiveHolding(screenParam as HoldingTile);
-      if (subParam === "reports") setActiveReport(screenParam as ReportTile);
+      if (subParam === "mms-admin") activeMms = screenParam as MmsTile;
+      if (subParam === "ep-stores") activeEp = screenParam as EpTile;
+      if (subParam === "generate-ro") activeRo = screenParam as RoTile;
+      if (subParam === "mlccs") activeMlccs = screenParam as MlccsTile;
+      if (subParam === "eqpt-transfer") activeTransfer = screenParam as TransferTile;
+      if (subParam === "unit-holding") activeHolding = screenParam as HoldingTile;
+      if (subParam === "reports") activeReport = screenParam as ReportTile;
     }
-  }, []);
+    return {
+      active,
+      activeSub,
+      activeMms,
+      activeEp,
+      activeRo,
+      activeMlccs,
+      activeTransfer,
+      activeHolding,
+      activeReport,
+    };
+  }
 
-  // Synchronize state changes to URL search params in address bar
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams();
-    if (active && active !== "dashboard") params.set("tab", active);
-    if (activeSub) params.set("sub", activeSub);
-    const activeTile =
-      activeMms ||
-      activeEp ||
-      activeRo ||
-      activeMlccs ||
-      activeTransfer ||
-      activeHolding ||
-      activeReport;
-    if (activeTile) params.set("screen", activeTile);
+  if (active === "weapon") {
+    activeSub = (parts[1] as WeaponSub) || "mlccs";
+  }
 
-    const query = params.toString();
-    const newUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
-    window.history.replaceState(null, "", newUrl);
-  }, [
+  if (active === "weapon" && activeSub && parts.length > 2) {
+    const screen = parts[2];
+    if (activeSub === "mms-admin") activeMms = screen as MmsTile;
+    if (activeSub === "ep-stores") activeEp = screen as EpTile;
+    if (activeSub === "generate-ro") activeRo = screen as RoTile;
+    if (activeSub === "mlccs") activeMlccs = screen as MlccsTile;
+    if (activeSub === "eqpt-transfer") activeTransfer = screen as TransferTile;
+    if (activeSub === "unit-holding") activeHolding = screen as HoldingTile;
+    if (activeSub === "reports") activeReport = screen as ReportTile;
+  }
+
+  return {
     active,
     activeSub,
     activeMms,
@@ -292,7 +284,37 @@ function Index() {
     activeTransfer,
     activeHolding,
     activeReport,
-  ]);
+  };
+}
+
+export function Index() {
+  const { isAuthenticated, user, logout } = useAuth();
+  const admin = isAdmin(user);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const {
+    active,
+    activeSub: parsedSub,
+    activeMms,
+    activeEp,
+    activeRo,
+    activeMlccs,
+    activeTransfer,
+    activeHolding,
+    activeReport,
+  } = parseLocation(location.pathname, location.search);
+
+  const activeSub = !admin && parsedSub === "mms-admin" ? "mlccs" : parsedSub;
+
+  const [showSplash, setShowSplash] = useState(false);
+  const wasAuth = useRef(isAuthenticated);
+
+  useEffect(() => {
+    const onUnauthorized = () => logout();
+    window.addEventListener("mms:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("mms:unauthorized", onUnauthorized);
+  }, [logout]);
 
   // Visual-only splash after a fresh login transition (not on session restore refresh).
   useEffect(() => {
@@ -302,19 +324,14 @@ function Index() {
   }, [isAuthenticated]);
 
   const handleSelect = (m: ModuleId, sub?: WeaponSub) => {
-    setActive(m);
-    setActiveMms(null);
-    setActiveEp(null);
-    setActiveRo(null);
-    setActiveMlccs(null);
-    setActiveTransfer(null);
-    setActiveHolding(null);
-    setActiveReport(null);
-    if (m === "weapon") {
+    if (m === "dashboard") {
+      void navigate({ to: "/" });
+    } else if (m === "it-asset") {
+      void navigate({ to: "/it-asset" });
+    } else if (m === "weapon") {
       const next = sub ?? "mlccs";
-      setActiveSub(next === "mms-admin" && !admin ? "mlccs" : next);
-    } else {
-      setActiveSub(null);
+      const targetSub = next === "mms-admin" && !admin ? "mlccs" : next;
+      void navigate({ to: `/weapon/${targetSub}` });
     }
   };
 
@@ -453,7 +470,7 @@ function Index() {
             <SubModuleTiles
               tiles={MMS_TILES}
               active=""
-              onSelect={(id) => setActiveMms(id as MmsTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/mms-admin/${id}` })}
             />
           </div>
         )}
@@ -461,7 +478,7 @@ function Index() {
           <FormScreen
             section="MMS Admin"
             title={activeTile?.label ?? ""}
-            onBack={() => setActiveMms(null)}
+            onBack={() => void navigate({ to: "/weapon/mms-admin" })}
           >
             {activeMms === "capture-mlccs" && <CaptureMlccs />}
             {activeMms === "link-eqpt-ue" && <LinkEqptUe />}
@@ -479,7 +496,7 @@ function Index() {
             <SubModuleTiles
               tiles={EP_TILES}
               active=""
-              onSelect={(id) => setActiveEp(id as EpTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/ep-stores/${id}` })}
             />
           </div>
         )}
@@ -487,7 +504,7 @@ function Index() {
           <FormScreen
             section="EP Stores"
             title={activeEpTile?.label ?? ""}
-            onBack={() => setActiveEp(null)}
+            onBack={() => void navigate({ to: "/weapon/ep-stores" })}
           >
             {activeEp === "domain-master" && <EqptDomainMaster />}
             {activeEp === "sub-domain-master" && <SubDomainMaster />}
@@ -506,7 +523,7 @@ function Index() {
             <SubModuleTiles
               tiles={RO_TILES}
               active=""
-              onSelect={(id) => setActiveRo(id as RoTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/generate-ro/${id}` })}
             />
           </div>
         )}
@@ -514,7 +531,7 @@ function Index() {
           <FormScreen
             section="Generate RO"
             title={activeRoTile?.label ?? ""}
-            onBack={() => setActiveRo(null)}
+            onBack={() => void navigate({ to: "/weapon/generate-ro" })}
           >
             {activeRo === "drr-dir-upload" && <DrrDirUpload />}
             {activeRo === "generate-ro" && <GenerateRo />}
@@ -530,7 +547,7 @@ function Index() {
             <SubModuleTiles
               tiles={MLCCS_TILES}
               active=""
-              onSelect={(id) => setActiveMlccs(id as MlccsTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/mlccs/${id}` })}
             />
           </div>
         )}
@@ -538,7 +555,7 @@ function Index() {
           <FormScreen
             section="MLCCS"
             title={activeMlccsTile?.label ?? ""}
-            onBack={() => setActiveMlccs(null)}
+            onBack={() => void navigate({ to: "/weapon/mlccs" })}
           >
             {activeMlccs === "view-mlccs" && <ViewMlccs />}
           </FormScreen>
@@ -552,7 +569,7 @@ function Index() {
             <SubModuleTiles
               tiles={TRANSFER_TILES}
               active=""
-              onSelect={(id) => setActiveTransfer(id as TransferTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/eqpt-transfer/${id}` })}
             />
           </div>
         )}
@@ -560,7 +577,7 @@ function Index() {
           <FormScreen
             section="EQPT Transfer/Deposit"
             title={activeTransferTile?.label ?? ""}
-            onBack={() => setActiveTransfer(null)}
+            onBack={() => void navigate({ to: "/weapon/eqpt-transfer" })}
           >
             {activeTransfer === "inter-unit" && <InterUnitTransfer />}
             {activeTransfer === "depot-to-depot" && <DepotToDepotTransfer />}
@@ -576,7 +593,7 @@ function Index() {
             <SubModuleTiles
               tiles={HOLDING_TILES}
               active=""
-              onSelect={(id) => setActiveHolding(id as HoldingTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/unit-holding/${id}` })}
             />
           </div>
         )}
@@ -584,7 +601,7 @@ function Index() {
           <FormScreen
             section="Unit Holding"
             title={activeHoldingTile?.label ?? ""}
-            onBack={() => setActiveHolding(null)}
+            onBack={() => void navigate({ to: "/weapon/unit-holding" })}
           >
             {activeHolding === "add-new-eqpt" && <AddNewEqpt />}
             {activeHolding === "approve-new-eqpt" && <ApproveNewEqpt />}
@@ -601,7 +618,7 @@ function Index() {
             <SubModuleTiles
               tiles={REPORT_TILES}
               active=""
-              onSelect={(id) => setActiveReport(id as ReportTile)}
+              onSelect={(id) => void navigate({ to: `/weapon/reports/${id}` })}
             />
           </div>
         )}
@@ -609,7 +626,7 @@ function Index() {
           <FormScreen
             section="Reports"
             title={activeReportTile?.label ?? ""}
-            onBack={() => setActiveReport(null)}
+            onBack={() => void navigate({ to: "/weapon/reports" })}
           >
             {activeReport === "all-india-holding" && <AllIndiaHolding />}
             {activeReport === "unit-wise-holding-data" && <UnitWiseHoldingData />}
@@ -646,13 +663,6 @@ function SectionHeading({ title, subtitle }: { title: string; subtitle?: string 
       eyebrow="Overview"
       title={title}
       subtitle={subtitle}
-      action={
-        <div
-          className="h-1 w-16 rounded-full"
-          style={{ backgroundColor: "#a85711" }}
-          aria-hidden
-        />
-      }
     />
   );
 }
