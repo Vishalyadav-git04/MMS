@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid, FormSection, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -204,44 +204,44 @@ function ActionButtons({
   primaryLabel,
   onPrimary,
   onClear,
-  onCancel,
   busy,
+  disabledPrimary,
 }: {
   primaryLabel: string;
   onPrimary: () => void;
   onClear: () => void;
-  onCancel: () => void;
   busy?: boolean;
+  disabledPrimary?: boolean;
 }) {
   return (
     <>
       <Button
         size="sm"
-        disabled={busy}
+        disabled={busy || disabledPrimary}
         onClick={onPrimary}
+        className="bg-primary hover:bg-primary/90 font-semibold"
       >
         {primaryLabel}
       </Button>
-      <Button size="sm" variant="secondary" disabled={busy} onClick={onClear}>
+      <Button size="sm" variant="secondary" disabled={busy} onClick={onClear} className="font-semibold">
         Clear
-      </Button>
-      <Button size="sm" variant="destructive" disabled={busy} onClick={onCancel}>
-        Cancel
       </Button>
     </>
   );
 }
 
 type CaptureMlccsProps = {
+  /** When set (e.g. from View MLCCS), open in add or modify mode directly. */
+  initialMode?: Mode;
   /** When set (e.g. from View MLCCS), open Modify tab and auto-load the record. */
   initialModify?: { censusNo: string; nomenclature: string } | null;
   /** Optional back handler when launched from another screen. */
   onBack?: () => void;
 };
 
-export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) {
+export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlccsProps = {}) {
   const seeded = Boolean(initialModify?.censusNo);
-  const [mode, setMode] = useState<Mode>(seeded ? "modify" : "add");
+  const [mode, setMode] = useState<Mode>(initialMode ?? (seeded ? "modify" : "add"));
   const [busy, setBusy] = useState(false);
   const [options, setOptions] = useState<OptionsMap>({});
 
@@ -257,32 +257,34 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
   const [nomSuggestions, setNomSuggestions] = useState<CensusSuggestion[]>([]);
   const suppressCensusSuggestRef = useRef(false);
   const suppressNomSuggestRef = useRef(false);
-  const [showModFull, setShowModFull] = useState(false);
-  const [modForm, setModForm] = useState<FullForm>(emptyForm);
+  const [showModFull, setShowModFull] = useState(seeded);
+  const [modForm, setModForm] = useState<FullForm>(() => ({
+    ...emptyForm,
+    censusNo: initialModify?.censusNo ?? "",
+    nomenclature: initialModify?.nomenclature ?? "",
+  }));
+  const [initialModForm, setInitialModForm] = useState<FullForm | null>(null);
+
+  const isModFormDirty = useMemo(() => {
+    if (!initialModForm) return false;
+    return JSON.stringify(modForm) !== JSON.stringify(initialModForm);
+  }, [modForm, initialModForm]);
 
   useEffect(() => {
     api<OptionsMap>("/admin/capture-mlccs-details/options")
       .then((opts) => {
         setOptions(opts);
-        // Replace any label defaults (NOS/CUR) with CODE_VALUE once options load
         const fix = (f: FullForm): FullForm => ({
           ...f,
-          accountingUnit: resolveOptionCode(
-            opts.accounting_unit,
-            f.accountingUnit,
-            "NOS",
-          ),
-          itemStatus: resolveOptionCode(opts.item_status, f.itemStatus, "CUR"),
+          accountingUnit: f.accountingUnit || (opts.accounting_unit?.[0]?.value ?? "NOS"),
+          itemStatus: f.itemStatus || (opts.item_status?.[0]?.value ?? "CUR"),
         });
         setAddForm((f) => fix(f));
         setModForm((f) => fix(f));
       })
-      .catch(() => {
-        /* keep hardcoded fallbacks in SelectField */
-      });
+      .catch(() => {});
   }, []);
 
-  // COS Section typeahead from MMS_PRF_GRP_MSTR (options first, then API)
   useEffect(() => {
     if (mode !== "add" || showAddFull) return;
     const q = addCos.trim().toUpperCase();
@@ -311,7 +313,6 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
     return () => window.clearTimeout(handle);
   }, [addCos, mode, showAddFull, options]);
 
-  // Census No typeahead (Modify Census) — autofills nomenclature on exact match / pick
   useEffect(() => {
     if (mode !== "modify" || showModFull) return;
     if (suppressCensusSuggestRef.current) {
@@ -344,7 +345,6 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
     return () => window.clearTimeout(handle);
   }, [modCensus, mode, showModFull]);
 
-  // Nomenclature typeahead (Modify Census) — autofills census no on unique exact match / pick
   useEffect(() => {
     if (mode !== "modify" || showModFull) return;
     if (suppressNomSuggestRef.current) {
@@ -399,7 +399,9 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
           }),
         });
         if (cancelled) return;
-        setModForm(recordToForm(rec));
+        const loaded = recordToForm(rec);
+        setModForm(loaded);
+        setInitialModForm(loaded);
         setShowModFull(true);
         toast.success("Record loaded from database");
       } catch (e) {
@@ -428,7 +430,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
   };
 
   const pickNomSuggestion = (row: CensusSuggestion) => {
-    suppressCensusSuggestRef.current = true;
+    suppressNomSuggestRef.current = true;
     setModCensus(row.census_no);
     setModNom(row.nomenclature ?? "");
     setCensusSuggestions([]);
@@ -478,7 +480,9 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
           nomenclature: modNom.trim() || null,
         }),
       });
-      setModForm(recordToForm(rec));
+      const loaded = recordToForm(rec);
+      setModForm(loaded);
+      setInitialModForm(loaded);
       setModNom(rec.nomenclature ?? "");
       setShowModFull(true);
       setCensusSuggestions([]);
@@ -554,8 +558,11 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
         method: "POST",
         body: JSON.stringify(formToBody(form)),
       });
+      if (isUpdate) {
+        setInitialModForm(form);
+      }
       toast.success(isUpdate ? "Record updated successfully" : "Equipment saved successfully");
-      if (isUpdate && onBack) onBack();
+      if (onBack) onBack();
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -571,46 +578,100 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
         busy={busy}
         onPrimary={() => void handleSave(addForm, false)}
         onClear={() => {
-          setShowAddFull(false);
-          setAddCos("");
-          setAddNom("");
-          setCosSuggestions([]);
-          setAddForm(emptyForm);
+          setAddForm({
+            ...emptyForm,
+            cosSection: addForm.cosSection,
+            censusNo: addForm.censusNo,
+          });
+          toast.info("Form fields cleared");
         }}
-        onCancel={() => setShowAddFull(false)}
       />
+    );
+  } else if (mode === "add" && !showAddFull) {
+    footer = (
+      <>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => void handleGenerate()}
+          className="bg-primary hover:bg-primary/90 font-semibold"
+        >
+          Generate Census No
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => {
+            setAddCos("");
+            setAddNom("");
+            setCosSuggestions([]);
+          }}
+          className="font-semibold"
+        >
+          Clear
+        </Button>
+      </>
     );
   } else if (mode === "modify" && showModFull) {
     footer = (
       <ActionButtons
         primaryLabel="Update"
         busy={busy}
+        disabledPrimary={!isModFormDirty}
         onPrimary={() => void handleSave(modForm, true)}
         onClear={() => {
-          setShowModFull(false);
-          setModCensus("");
-          setModNom("");
-          setCensusSuggestions([]);
-          setNomSuggestions([]);
-          setModForm(emptyForm);
-          onBack?.();
-        }}
-        onCancel={() => {
-          setShowModFull(false);
-          onBack?.();
+          if (initialModForm) {
+            setModForm(initialModForm);
+            toast.info("Reset fields to initial loaded values");
+          } else {
+            setModForm({
+              ...emptyForm,
+              cosSection: modForm.cosSection,
+              censusNo: modForm.censusNo,
+              nomenclature: modForm.nomenclature,
+            });
+            toast.info("Form fields cleared");
+          }
         }}
       />
+    );
+  } else if (mode === "modify" && !showModFull) {
+    footer = (
+      <>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => void handleModify()}
+          className="bg-primary hover:bg-primary/90 font-semibold"
+        >
+          Modify
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => {
+            setModCensus("");
+            setModNom("");
+            setCensusSuggestions([]);
+            setNomSuggestions([]);
+          }}
+          className="font-semibold"
+        >
+          Clear
+        </Button>
+      </>
     );
   }
 
   return (
     <FormPanel
       title="Master List of Controlled and Census Stores (MLCCS)"
-      fill={Boolean(
-        (mode === "add" && showAddFull) || (mode === "modify" && showModFull),
-      )}
+      onBack={onBack}
+      fill={false}
       tabs={
-        seeded ? undefined : (
+        seeded || initialMode ? undefined : (
           <SwitchTabs<Mode>
             tabs={[
               { id: "add", label: "Add New Eqpt" },
@@ -634,7 +695,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
         ) : (
           <MiniLookup
             fields={
-              <>
+              <FormGrid cols={2}>
                 <FormRow label="COS Section" required>
                   <SuggestInput
                     placeholder="e.g. A-01"
@@ -646,13 +707,9 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                       pickCosSuggestion(sanitizeCosSection(cosSuggestions[idx]!))
                     }
                   />
-                  {addCos.length > 0 && !isValidCosSection(addCos) ? (
+                  {addCos.length > 0 && !isValidCosSection(addCos) && (
                     <p className="mt-1 text-xs text-destructive">
                       Format: A-01 to Z-99 (letter, hyphen, 01–99)
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Format: A-01 to Z-99
                     </p>
                   )}
                 </FormRow>
@@ -664,28 +721,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                     onChange={(e) => setAddNom(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
                   />
                 </FormRow>
-              </>
-            }
-            actions={
-              <>
-                <Button disabled={busy} onClick={() => void handleGenerate()} className="bg-primary hover:bg-primary/90">
-                  Generate Census No
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setAddCos("");
-                    setAddNom("");
-                    setCosSuggestions([]);
-                  }}
-                >
-                  Clear
-                </Button>
-                <Button variant="destructive" disabled={busy} onClick={() => toast("Cancelled")}>
-                  Cancel
-                </Button>
-              </>
+              </FormGrid>
             }
           />
         )
@@ -694,7 +730,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
       ) : (
         <MiniLookup
           fields={
-            <>
+            <FormGrid cols={2}>
               <FormRow label="Census No" required>
                 <SuggestInput
                   placeholder="Search..."
@@ -755,29 +791,7 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
                   }}
                 />
               </FormRow>
-            </>
-          }
-          actions={
-            <>
-              <Button disabled={busy} onClick={() => void handleModify()} className="bg-primary hover:bg-primary/90">
-                Modify
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  setModCensus("");
-                  setModNom("");
-                  setCensusSuggestions([]);
-                  setNomSuggestions([]);
-                }}
-              >
-                Clear
-              </Button>
-              <Button variant="destructive" disabled={busy} onClick={() => toast("Cancelled")}>
-                Cancel
-              </Button>
-            </>
+            </FormGrid>
           }
         />
       )}
@@ -785,11 +799,10 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
   );
 }
 
-function MiniLookup({ fields, actions }: { fields: ReactNode; actions: ReactNode }) {
+function MiniLookup({ fields }: { fields: ReactNode }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-4 overflow-visible pt-2">
+    <div className="w-full space-y-4 overflow-visible pt-2 px-1">
       {fields}
-      <div className="flex flex-wrap justify-center gap-2 pt-2">{actions}</div>
     </div>
   );
 }
@@ -994,8 +1007,9 @@ function FullEqptForm({
   }, [form.cosSection, form.prfGroup]);
 
   return (
-    <div className="space-y-1.5">
-      <FormGrid cols={4}>
+    <div className="space-y-2 pb-1">
+      <FormGrid cols={3}>
+        <FormSection title="1. Basic & Authorisation Particulars" />
         <FormRow label="COS Section" required>
           <Input value={form.cosSection} disabled={isLocked("cosSection")} />
         </FormRow>
@@ -1051,6 +1065,8 @@ function FullEqptForm({
             placeholder="Enter Cat/Part No"
           />
         </FormRow>
+
+        <FormSection title="2. Classification & Domain References" />
         <FormRow label="Accounting Unit" required>
           <SelectField
             value={form.accountingUnit}
@@ -1100,17 +1116,19 @@ function FullEqptForm({
             options={optionValues(options, "eqpt_category", [])}
           />
         </FormRow>
-        <FormRow label="Year of Induction">
-          <Input
-            value={form.yearOfInduction}
-            onChange={(e) => upd("yearOfInduction", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-          />
-        </FormRow>
         <FormRow label="Digest Category">
           <SelectField
             value={form.digestCategory}
             onChange={(v) => upd("digestCategory", v)}
             options={optionValues(options, "digest_category", [])}
+          />
+        </FormRow>
+
+        <FormSection title="3. Financial, Technical & Agency Details" />
+        <FormRow label="Year of Induction">
+          <Input
+            value={form.yearOfInduction}
+            onChange={(e) => upd("yearOfInduction", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
           />
         </FormRow>
         <FormRow label="Cost (Rs.)">
@@ -1156,14 +1174,14 @@ function FullEqptForm({
             maxLength={15}
           />
         </FormRow>
-        <FormRow label="Brief Description" required>
+        <FormRow label="Brief Description" required className="mms-span-full">
           <Input
             value={form.briefDescription}
             onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
             placeholder="Enter Description"
           />
         </FormRow>
-        <FormRow label="Remarks">
+        <FormRow label="Remarks" className="mms-span-full">
           <Input
             value={form.remarks}
             onChange={(e) => upd("remarks", e.target.value)}

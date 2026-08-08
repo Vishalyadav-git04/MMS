@@ -75,7 +75,7 @@ export function SectionNav({
         {open ? (
           <div className="flex items-center gap-2 min-w-0 px-1">
             <Layers className="h-4 w-4 text-[#14568c] shrink-0" />
-            <span className="text-xs font-bold uppercase tracking-wider text-[#14568c] truncate">
+            <span className="text-[13.5px] font-bold uppercase tracking-wider text-[#14568c] truncate">
               Navigation
             </span>
           </div>
@@ -105,7 +105,7 @@ export function SectionNav({
         {/* Main Sections */}
         <div className="flex flex-col gap-1">
           {open && (
-            <span className="px-2 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-[#616d79]">
+            <span className="px-2 pt-1 pb-1 text-[12px] font-bold uppercase tracking-wider text-[#616d79]">
               Modules
             </span>
           )}
@@ -123,7 +123,7 @@ export function SectionNav({
                   aria-checked={on}
                   title={!open ? s.label : undefined}
                   className={cn(
-                    "mms-sidebar-item flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200 text-left cursor-pointer",
+                    "mms-sidebar-item flex items-center gap-3 rounded-xl px-3 py-2 text-[14.5px] font-semibold transition-all duration-200 text-left cursor-pointer",
                     on
                       ? "bg-gradient-to-r from-[#14568c] to-[#1d74b8] text-white shadow-md shadow-[#14568c]/20"
                       : "text-[#54606c] hover:bg-[#eff5fb] hover:text-[#14568c]",
@@ -140,7 +140,7 @@ export function SectionNav({
                   <Icon className={cn("h-4 w-4 shrink-0", on ? "text-white" : "text-[#14568c]")} />
                   {open && <span className="truncate flex-1">{s.label}</span>}
                   {open && s.children && s.children.length > 0 && (
-                    <span className={cn("text-[10px] font-normal opacity-70", on ? "text-white" : "text-[#616d79]")}>
+                    <span className={cn("text-[11.5px] font-normal opacity-70", on ? "text-white" : "text-[#616d79]")}>
                       ({s.children.length})
                     </span>
                   )}
@@ -156,7 +156,7 @@ export function SectionNav({
             {open ? (
               <>
                 <div className="flex items-center justify-between px-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#616d79]">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-[#616d79]">
                     {sectionLabel} Screens
                   </span>
                 </div>
@@ -170,7 +170,7 @@ export function SectionNav({
                     onChange={(e) => setMenuQuery(e.target.value)}
                     placeholder="Search screens…"
                     aria-label="Search screens"
-                    className="w-full"
+                    className="w-full text-[13.5px] placeholder:text-[13.5px]"
                   />
                 </div>
 
@@ -191,10 +191,10 @@ export function SectionNav({
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.02, duration: 0.2 }}
                         className={cn(
-                          "mms-sidebar-subitem flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-all duration-150 text-left cursor-pointer",
+                          "mms-sidebar-subitem flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13.5px] transition-all duration-150 text-left cursor-pointer",
                           on
                             ? "bg-[#14568c]/10 text-[#14568c] font-bold border-l-3 border-[#14568c]"
-                            : "text-[#54606c] hover:bg-[#eff5fb] hover:text-[#14568c] font-medium"
+                            : "text-[#54606c] hover:bg-[#eff5fb] hover:text-[#14568c] font-semibold"
                         )}
                         onClick={() => {
                           onSelect(active, c.id);

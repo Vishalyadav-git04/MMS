@@ -1,4 +1,4 @@
-@import "tailwindcss" source(none);
+@import "tailwindcss";
 @source "../src";
 @import "tw-animate-css";
 /* Register A — imported once via the global stylesheet (consumed under .mms-root). */
@@ -182,4 +182,39 @@
     font-size: 14px;
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Recharts & SVG Focus outline fix to prevent black box around charts */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-layer,
+.recharts-sector,
+.recharts-rectangle,
+.recharts-pie,
+.recharts-bar,
+.recharts-curve,
+.recharts-line,
+svg.recharts-surface {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+svg:focus,
+svg *:focus,
+div:focus {
+  outline: none !important;
+}
+
+/* Sync pie chart labels with 450ms sweep animation by delaying fade-in */
+.delay-pie-labels .recharts-text.recharts-pie-label-text,
+.delay-pie-labels .recharts-pie-label-line {
+  animation: pieLabelFadeIn 0.7s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes pieLabelFadeIn {
+  0% { opacity: 0; }
+  45% { opacity: 0; }
+  100% { opacity: 1; }
 }

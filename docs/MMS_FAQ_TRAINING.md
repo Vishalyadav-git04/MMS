@@ -138,8 +138,8 @@ Use this screen to **search, view, export, and print** census records.
 | **Export** | CSV download |
 | **Print** | Print with watermark for controlled viewing |
 
-**Q. Can I edit records from View MLCCS?**  
-**A.** No. View MLCCS is read-only. To add or modify census records, use **Capture MLCCS Details** under MMS Admin.
+**Q. Can I edit or add records from View MLCCS?**  
+**A.** Admin users can click **Add New Eqpt** to create new census items or select a record and click **Modify Census Details** to update existing items directly from View MLCCS. Unit users have read-only access (search, filter, export, print).
 
 ---
 
@@ -147,18 +147,18 @@ Use this screen to **search, view, export, and print** census records.
 
 **Path:** `Weapon → MMS Admin`
 
-This section contains five tools for centralised data management:
+This section contains tools for centralised data management (Link Eqpt with UE, Unit Obsn Status, MMS Domain Master, Search Regn No). Note that census creation and modification capabilities (formerly *Capture MLCCS Details*) are now directly accessible within **View MLCCS** for Admin users.
 
-### 5.1 Capture MLCCS Details
+### 5.1 Add & Modify Census Equipment (Admin Only)
 
-**Purpose:** Add new equipment to the census master or modify existing census records.
+**Path:** `Weapon → MLCCS → View MLCCS`
 
-**Two tabs:**
+**Capabilities:**
 
-| Tab | What you do |
-|-----|-------------|
-| **Add New Eqpt** | Select COS Section → Select Nomenclature → Generate Census No → Fill master fields (Cat/Part No, A/U, AHSP, NSN, DCAN, Incl in AIH, etc.) → Save |
-| **Modify Census** | Look up by Census No or Nomenclature → Update fields → Save |
+| Action | What you do |
+|--------|-------------|
+| **Add New Eqpt** | Click **Add New Eqpt** → Select COS Section → Select Nomenclature → Generate Census No → Fill master fields (Cat/Part No, A/U, AHSP, NSN, DCAN, etc.) → Save |
+| **Modify Census** | Select a row in View MLCCS → Click **Modify Census Details** → Update fields → Update |
 
 **Key fields explained:**
 - **COS Section** — Class of Store section

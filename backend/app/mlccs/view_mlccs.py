@@ -70,9 +70,13 @@ def mlccs_options(session: Session = Depends(get_db_session)) -> dict[str, list[
     return {"class_of_eqpt": class_of_eqpt}
 
 
-def _build_where_clause(body: MlccsSearchRequest) -> tuple[str, dict]:
+def _build_where_clause(
+    body: MlccsSearchRequest,
+    opstatus_map: dict[str, str] | None = None,
+) -> tuple[str, dict[str, Any], str, dict[str, Any]]:
     sql_where = " WHERE 1=1"
-    params: dict = {}
+    params: dict[str, Any] = {}
+    order_params: dict[str, Any] = {}
 
     if body.class_of_eqpt and body.class_of_eqpt.strip():
         sql_where += " AND UPPER(class_category) = :ceqpt"
@@ -94,20 +98,69 @@ def _build_where_clause(body: MlccsSearchRequest) -> tuple[str, dict]:
 
     result_q = (body.result_q or "").strip()
     if result_q:
-        rq = f"%{result_q.upper()}%"
-        sql_where += """ AND (
-            UPPER(material_no) LIKE :rq OR
-            UPPER(census_no) LIKE :rq OR
-            UPPER(nomen) LIKE :rq OR
-            UPPER(class_category) LIKE :rq OR
-            UPPER(cat_part_no) LIKE :rq OR
-            UPPER(au) LIKE :rq OR
-            UPPER(op_status) LIKE :rq OR
-            UPPER(item_status) LIKE :rq
-        )"""
-        params["rq"] = rq
+        terms = [t for t in result_q.split() if t]
+        for idx, term in enumerate(terms):
+            t_upper = term.upper()
+            param_name = f"rq_{idx}"
+            params[param_name] = f"%{t_upper}%"
 
-    return sql_where, params
+            status_codes = []
+            if opstatus_map:
+                for code, label in opstatus_map.items():
+                    if t_upper in label.upper() or t_upper in code.upper():
+                        status_codes.append(code.upper())
+
+            status_clause = ""
+            if status_codes:
+                st_param_names = []
+                for st_i, st_code in enumerate(status_codes):
+                    st_pname = f"rq_{idx}_st_{st_i}"
+                    params[st_pname] = st_code
+                    st_param_names.append(f":{st_pname}")
+                st_in_list = ", ".join(st_param_names)
+                status_clause = f" OR UPPER(op_status) IN ({st_in_list}) OR UPPER(item_status) IN ({st_in_list})"
+
+            sql_where += f""" AND (
+                UPPER(material_no) LIKE :{param_name} OR
+                UPPER(census_no) LIKE :{param_name} OR
+                UPPER(nomen) LIKE :{param_name} OR
+                UPPER(class_category) LIKE :{param_name} OR
+                UPPER(cat_part_no) LIKE :{param_name} OR
+                UPPER(au) LIKE :{param_name} OR
+                UPPER(op_status) LIKE :{param_name} OR
+                UPPER(item_status) LIKE :{param_name}
+                {status_clause}
+            )"""
+
+    # Relevance ordering: exact match -> prefix match -> default census_no
+    if result_q:
+        full_rq = result_q.upper()
+        order_params["full_rq_exact"] = full_rq
+        order_params["full_rq_pfx"] = f"{full_rq}%"
+        order_sql = """ORDER BY
+            CASE
+                WHEN UPPER(material_no) = :full_rq_exact OR UPPER(census_no) = :full_rq_exact OR UPPER(nomen) = :full_rq_exact OR UPPER(cat_part_no) = :full_rq_exact OR UPPER(class_category) = :full_rq_exact THEN 1
+                WHEN UPPER(material_no) LIKE :full_rq_pfx OR UPPER(census_no) LIKE :full_rq_pfx OR UPPER(nomen) LIKE :full_rq_pfx OR UPPER(cat_part_no) LIKE :full_rq_pfx OR UPPER(class_category) LIKE :full_rq_pfx THEN 2
+                ELSE 3
+            END ASC,
+            census_no ASC NULLS LAST,
+            nomen ASC NULLS LAST"""
+    elif text_val:
+        full_txt = text_val.upper()
+        order_params["full_txt_exact"] = full_txt
+        order_params["full_txt_pfx"] = f"{full_txt}%"
+        order_sql = """ORDER BY
+            CASE
+                WHEN UPPER(material_no) = :full_txt_exact OR UPPER(census_no) = :full_txt_exact OR UPPER(nomen) = :full_txt_exact OR UPPER(cat_part_no) = :full_txt_exact OR UPPER(class_category) = :full_txt_exact THEN 1
+                WHEN UPPER(material_no) LIKE :full_txt_pfx OR UPPER(census_no) LIKE :full_txt_pfx OR UPPER(nomen) LIKE :full_txt_pfx OR UPPER(cat_part_no) LIKE :full_txt_pfx OR UPPER(class_category) LIKE :full_txt_pfx THEN 2
+                ELSE 3
+            END ASC,
+            census_no ASC NULLS LAST,
+            nomen ASC NULLS LAST"""
+    else:
+        order_sql = "ORDER BY census_no ASC NULLS LAST, nomen ASC NULLS LAST"
+
+    return sql_where, params, order_sql, order_params
 
 
 def _get_opstatus_map(session: Session) -> dict[str, str]:
@@ -136,10 +189,11 @@ def search_mlccs(
     body: MlccsSearchRequest,
     session: Session = Depends(get_db_session),
 ) -> MlccsSearchResponse:
-    where_sql, params = _build_where_clause(body)
+    opstatus_map = _get_opstatus_map(session)
+    where_sql, where_params, order_sql, order_params = _build_where_clause(body, opstatus_map)
 
     count_sql = f"SELECT COUNT(id) AS cnt FROM MMS_MLCCS_EQUIPMENT_MASTER{where_sql}"
-    total_row = fetch_one(session, count_sql, params)
+    total_row = fetch_one(session, count_sql, where_params)
     total = int((total_row.get("cnt") if total_row else 0) or 0)
 
     offset = (body.page - 1) * body.page_size
@@ -147,12 +201,11 @@ def search_mlccs(
         SELECT id, material_no, census_no, nomen, class_category, cat_part_no, au, op_status, item_status
         FROM MMS_MLCCS_EQUIPMENT_MASTER
         {where_sql}
-        ORDER BY census_no ASC NULLS LAST, nomen ASC NULLS LAST
+        {order_sql}
         OFFSET :offset_val ROWS FETCH NEXT :limit_val ROWS ONLY
     """
-    page_params = {**params, "offset_val": offset, "limit_val": body.page_size}
+    page_params = {**where_params, **order_params, "offset_val": offset, "limit_val": body.page_size}
     rows = fetch_all(session, query_sql, page_params)
-    opstatus_map = _get_opstatus_map(session)
 
     items = []
     for r in rows:

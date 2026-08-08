@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.deps import get_db_session, get_principal
+from app.deps import get_db_session, get_principal, require_admin
 from app.auth.principal import Principal
 from app.db.native_utils import execute_sql, fetch_all, fetch_one
 from app.utils.ids import get_by_id, next_int_id
@@ -372,6 +372,7 @@ def _next_census_no(session: Session, cos_section: str) -> str:
 def generate_census(
     body: GenerateCensusRequest,
     session: Session = Depends(get_db_session),
+    _admin: Principal = Depends(require_admin),
 ) -> MlccsRecord:
     cos_section = _validate_cos_section(body.cos_section)
     existing = fetch_one(
@@ -438,7 +439,7 @@ def lookup_census(
 def save_mlccs(
     body: MlccsRecord,
     session: Session = Depends(get_db_session),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(require_admin),
 ) -> MlccsRecord:
     if not body.cos_section or not body.cos_section.strip():
         raise HTTPException(status_code=400, detail="COS Section is required")

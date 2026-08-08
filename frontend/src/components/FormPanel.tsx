@@ -1,6 +1,11 @@
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
+
+export const FormScreenContext = React.createContext<{ onBack?: () => void }>({
+  onBack: undefined,
+});
 
 export function FormPanel({
   title,
@@ -13,6 +18,7 @@ export function FormPanel({
   fill = false,
   /** Keep body from scrolling so children can manage their own scroll regions. */
   lockBodyScroll = false,
+  onBack: directOnBack,
 }: {
   title: string;
   /** Optional caption under the panel title (design-system panel note). */
@@ -24,7 +30,11 @@ export function FormPanel({
   tabs?: ReactNode;
   fill?: boolean;
   lockBodyScroll?: boolean;
+  onBack?: () => void;
 }) {
+  const screenCtx = React.useContext(FormScreenContext);
+  const handleBack = directOnBack || screenCtx.onBack;
+
   return (
     <div
       className={cn(
@@ -56,7 +66,27 @@ export function FormPanel({
       >
         {children}
       </div>
-      {footer && <div className="mms-panel__foot shrink-0">{footer}</div>}
+      {(footer || handleBack) && (
+        <div className="mms-panel__foot shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)]">
+          {handleBack ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9.5 px-4 font-semibold"
+              onClick={handleBack}
+            >
+              ← Back
+            </Button>
+          ) : (
+            <span />
+          )}
+          {footer && (
+            <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
+              {footer}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -167,26 +197,20 @@ export function FormScreen({
   children: ReactNode;
 }) {
   return (
-    <div className="mms-rise flex h-full min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
-      <PageHeader
-        eyebrow={section}
-        title={title}
-        compact
-        className="shrink-0"
-        action={
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex h-8 shrink-0 items-center rounded-[8px] border border-[var(--line,#cddcec)] bg-[var(--surface,#fff)] px-3 text-[13px] font-semibold text-[var(--accent,#14568c)] shadow-[var(--shadow-sm)] hover:bg-[var(--surface-alt,#eff5fb)]"
-          >
-            ← Back
-          </button>
-        }
-      />
-      {/* Constrained slot: FormPanel body scrolls; footer stays pinned */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {children}
+    <FormScreenContext.Provider value={{ onBack }}>
+      <div className="mms-rise flex h-full min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+        <PageHeader
+          eyebrow={section}
+          title={title}
+          compact
+          className="shrink-0"
+          action={null}
+        />
+        {/* Constrained slot: FormPanel body scrolls; footer stays pinned */}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </div>
-    </div>
+    </FormScreenContext.Provider>
   );
 }

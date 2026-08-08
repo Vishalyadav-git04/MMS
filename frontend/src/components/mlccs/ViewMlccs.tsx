@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormPanel } from "@/components/FormPanel";
 import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { isAdmin } from "@/lib/auth";
 import { buildPrintWatermarkParts, resolveClientIp } from "@/lib/session-watermark";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -18,7 +20,7 @@ import { cn } from "@/lib/utils";
 type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No";
 
 interface MlccsRow {
-  id: number | string;
+  id: string;
   materialNo: string;
   censusNo: string;
   nomenclature: string;
@@ -48,7 +50,7 @@ interface MlccsSearchResponse {
 
 const ALL_CLASS = "__all__";
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10;
 const EXPORT_PAGE_SIZE = 5000;
 
 function mapRow(r: MlccsListItem): MlccsRow {
@@ -209,7 +211,9 @@ async function printResults(rows: MlccsRow[]) {
   }, 250);
 }
 
-export function ViewMlccs() {
+export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
+  const { user } = useAuth();
+  const admin = isAdmin(user);
   const [searchText, setSearchText] = useState("");
   const [searchIn, setSearchIn] = useState<SearchField>("Nomenclature");
   const [classOfEqpt, setClassOfEqpt] = useState(ALL_CLASS);
@@ -222,6 +226,7 @@ export function ViewMlccs() {
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [addingNew, setAddingNew] = useState(false);
   const [modifyTarget, setModifyTarget] = useState<{
     censusNo: string;
     nomenclature: string;
@@ -315,10 +320,26 @@ export function ViewMlccs() {
     reloadToken,
   ]);
 
+  const displayedRows = useMemo(() => {
+    if (!resultFilter.trim()) return rows;
+    const terms = resultFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return rows.filter((r) => {
+      const rowText = `${r.materialNo} ${r.censusNo} ${r.nomenclature} ${r.classOfEqpt} ${r.catPartNo} ${r.au} ${r.status}`.toLowerCase();
+      return terms.every((term) => rowText.includes(term));
+    });
+  }, [rows, resultFilter]);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageStart = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const pageEnd = Math.min(currentPage * pageSize, total);
+
+  const handleClassChange = (val: string) => {
+    setClassOfEqpt(val);
+    setAppliedClass(val);
+    setPage(1);
+    setReloadToken((n) => n + 1);
+  };
 
   const handleSearch = () => {
     toastOnLoadRef.current = true;
@@ -346,7 +367,7 @@ export function ViewMlccs() {
 
   const handleModify = () => {
     if (!selectedId) {
-      toast.error("Select a Census No first");
+      toast.error("Please select a Census record from the table first");
       return;
     }
     const row = rows.find((r) => r.id === selectedId);
@@ -390,9 +411,22 @@ export function ViewMlccs() {
     }
   };
 
+  if (addingNew) {
+    return (
+      <CaptureMlccs
+        initialMode="add"
+        onBack={() => {
+          setAddingNew(false);
+          setReloadToken((n) => n + 1);
+        }}
+      />
+    );
+  }
+
   if (modifyTarget) {
     return (
       <CaptureMlccs
+        initialMode="modify"
         initialModify={modifyTarget}
         onBack={() => {
           setModifyTarget(null);
@@ -405,132 +439,126 @@ export function ViewMlccs() {
   return (
     <FormPanel
       title="VIEW MLCCS"
-      fill
+      fill={false}
       footer={
         <>
+          {admin && (
+            <Button
+              className="h-9.5 px-4 font-semibold bg-primary hover:bg-primary/90"
+              disabled={busy}
+              onClick={() => setAddingNew(true)}
+            >
+              Add New Eqpt
+            </Button>
+          )}
           <Button
-            size="sm"
+            className="h-9.5 px-4 font-semibold"
             disabled={busy || total === 0}
             onClick={() => void handleExport()}
           >
             Export
           </Button>
           <Button
-            size="sm"
+            className="h-9.5 px-4 font-semibold"
             disabled={busy || total === 0}
             onClick={() => void handlePrint()}
           >
             Print Page
           </Button>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={handleModify}
-          >
-            Modify Census Details
-          </Button>
+          {admin && (
+            <Button
+              className="h-9.5 px-4 font-semibold"
+              disabled={busy}
+              onClick={handleModify}
+            >
+              Modify Census Details
+            </Button>
+          )}
         </>
       }
     >
-      <div className="absolute inset-0 flex flex-col gap-3 overflow-hidden">
-        <div className="shrink-0 rounded-[10px] border border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] p-3">
+      <div className="flex flex-col gap-3 overflow-hidden p-3.5">
+        <div className="shrink-0 rounded-[10px] border border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] p-3 shadow-xs">
           <div className="flex flex-wrap items-center gap-3">
             <Input
-              className="max-w-xs"
+              className="h-9.5 flex-1 min-w-[220px]"
               placeholder="Search..."
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => setSearchText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSearch();
               }}
             />
-            <span className="text-[12px] font-semibold text-[var(--ink-soft,#54606c)]">in</span>
+            <span className="shrink-0 font-semibold text-[var(--ink-soft,#54606c)]">in</span>
             <Select value={searchIn} onValueChange={(v) => setSearchIn(v as SearchField)}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="h-9.5 w-[180px] shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Nomenclature">Nomenclature</SelectItem>
-                <SelectItem value="Census No">Census No</SelectItem>
-                <SelectItem value="Material No">Material No</SelectItem>
-                <SelectItem value="Cat Part No">Cat Part No</SelectItem>
+                <SelectItem className="py-2" value="Nomenclature">Nomenclature</SelectItem>
+                <SelectItem className="py-2" value="Census No">Census No</SelectItem>
+                <SelectItem className="py-2" value="Material No">Material No</SelectItem>
+                <SelectItem className="py-2" value="Cat Part No">Cat Part No</SelectItem>
               </SelectContent>
             </Select>
-            <span className="text-[12px] font-semibold text-[var(--ink-soft,#54606c)]">
+            <span className="shrink-0 font-semibold text-[var(--ink-soft,#54606c)]">
               Class of Eqpt
             </span>
-            <Select value={classOfEqpt} onValueChange={setClassOfEqpt}>
-              <SelectTrigger className="w-[180px]">
+            <Select value={classOfEqpt} onValueChange={handleClassChange}>
+              <SelectTrigger className="h-9.5 w-[200px] shrink-0">
                 <SelectValue placeholder="--Select--" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_CLASS}>--Select--</SelectItem>
+                <SelectItem className="py-2" value={ALL_CLASS}>--Select--</SelectItem>
                 {classOptions.map((c) => (
-                  <SelectItem key={c} value={c}>
+                  <SelectItem className="py-2" key={c} value={c}>
                     {c}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button disabled={busy} onClick={handleSearch}>
+            <Button className="h-9.5 px-6 font-semibold shrink-0" disabled={busy} onClick={handleSearch}>
               {busy ? "Searching..." : "Search"}
             </Button>
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-[12.5px] font-semibold text-[var(--accent,#14568c)]">
-            Select a Census No to Modify Data
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-0.5">
+          <p className="font-bold text-[var(--accent,#14568c)]">
+            {admin ? "Select a Census No to Modify Data" : "Master List of Census Records"}
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 text-[12px] text-[var(--ink-soft,#54606c)]">
-              Show
-              <select
-                className="h-[38px] rounded-[8px] border border-[var(--line,#cddcec)] bg-[var(--surface,#fff)] px-2 text-[14px] text-[var(--ink,#15202b)] shadow-[var(--shadow-sm)]"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-              entries
-            </div>
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[var(--ink-soft,#54606c)]">
-                Search in Result({pageSize}):
+              <span className="font-semibold text-[var(--ink-soft,#54606c)]">
+                Search in Result({total}):
               </span>
               <Input
-                className="w-40"
+                className="h-9.5 w-56 rounded-md border border-[var(--line,#cddcec)] bg-background px-3 shadow-xs placeholder:text-muted-foreground focus-visible:ring-1"
+                placeholder="Type to filter..."
                 value={resultFilter}
-                onChange={(e) => setResultFilter(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+                onChange={(e) => setResultFilter(e.target.value)}
               />
             </div>
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--line,#cddcec)]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--line,#cddcec)] bg-card shadow-xs">
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <table className="w-full caption-bottom border-collapse text-[14px]">
-              <thead className="sticky top-0 z-10">
+            <table className="w-full caption-bottom border-collapse">
+              <thead className="sticky top-0 z-10 border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)]">
                 <tr>
-                  <th className="w-10 text-left" />
-                  <th className="text-left">Material No</th>
-                  <th className="text-left">Census No</th>
-                  <th className="text-left">Nomenclature</th>
-                  <th className="text-left">Class of Eqpt</th>
-                  <th className="text-left">Cat Part No</th>
-                  <th className="text-left">A/U</th>
-                  <th className="text-left">Status</th>
+                  <th className="w-10 border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]" />
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Material No</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Census No</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Nomenclature</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Class of Eqpt</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Cat Part No</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">A/U</th>
+                  <th className="border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2.5 text-left font-bold uppercase tracking-wider text-[var(--ink-soft,#54606c)]">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => {
+                {displayedRows.map((row, idx) => {
                   const selected = selectedId === row.id;
                   return (
                     <tr
@@ -541,13 +569,13 @@ export function ViewMlccs() {
                         selected ? "bg-primary/15" : idx % 2 === 1 ? "bg-muted/40" : undefined,
                       )}
                     >
-                      <td className="w-10 px-2 py-0 align-middle">
+                      <td className="w-10 px-3.5 py-2 align-middle">
                         <span
                           role="radio"
                           aria-checked={selected}
                           aria-label={`Select ${row.censusNo || row.id}`}
                           className={cn(
-                            "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-primary bg-card shadow-sm",
+                            "inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-primary bg-card shadow-sm",
                             selected && "border-primary bg-primary/10",
                           )}
                         >
@@ -556,19 +584,19 @@ export function ViewMlccs() {
                           )}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.materialNo}</td>
-                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.censusNo}</td>
-                      <td className="min-w-[220px] px-2 py-0 align-middle">{row.nomenclature}</td>
-                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.classOfEqpt}</td>
-                      <td className="whitespace-nowrap px-2 py-0 align-middle">{row.catPartNo}</td>
-                      <td className="px-2 py-0 align-middle">{row.au}</td>
-                      <td className="px-2 py-0 align-middle">{row.status}</td>
+                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.materialNo}</td>
+                      <td className="whitespace-nowrap px-3.5 py-2 align-middle font-semibold">{row.censusNo}</td>
+                      <td className="min-w-[220px] px-3.5 py-2 align-middle">{row.nomenclature}</td>
+                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.classOfEqpt}</td>
+                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.catPartNo}</td>
+                      <td className="px-3.5 py-2 align-middle">{row.au}</td>
+                      <td className="px-3.5 py-2 align-middle">{row.status}</td>
                     </tr>
                   );
                 })}
-                {!busy && total === 0 && (
+                {!busy && displayedRows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="h-16 text-center text-sm text-muted-foreground">
+                    <td colSpan={8} className="h-16 text-center text-muted-foreground">
                       No records found
                     </td>
                   </tr>
@@ -577,16 +605,16 @@ export function ViewMlccs() {
             </table>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2 font-medium text-[var(--ink-soft,#54606c)]">
             <div>
               Showing {pageStart} to {pageEnd} of {total} entries
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 px-2 text-[12px]"
+                className="h-9 px-3.5 font-semibold"
                 disabled={currentPage <= 1 || busy}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
@@ -614,7 +642,7 @@ export function ViewMlccs() {
                       type="button"
                       variant={n === currentPage ? "default" : "outline"}
                       size="sm"
-                      className="h-7 min-w-7 px-2 text-[12px]"
+                      className="h-9 min-w-9 px-3.5 font-semibold"
                       disabled={busy}
                       onClick={() => setPage(n)}
                     >
@@ -626,7 +654,7 @@ export function ViewMlccs() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 px-2 text-[12px]"
+                className="h-9 px-3.5 font-semibold"
                 disabled={currentPage >= totalPages || total === 0 || busy}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >

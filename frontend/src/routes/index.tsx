@@ -4,7 +4,6 @@ import { AppLayout, type ModuleId, type WeaponSub } from "@/components/AppLayout
 import { LoginScreen } from "@/components/LoginScreen";
 import { FormScreen } from "@/components/FormPanel";
 import { SubModuleTiles } from "@/components/SubModuleTiles";
-import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { LinkEqptUe } from "@/components/mms/LinkEqptUe";
 import { UnitObsnStatus } from "@/components/mms/UnitObsnStatus";
 import { MmsDomainMaster } from "@/components/mms/MmsDomainMaster";
@@ -93,7 +92,6 @@ export const Route = createFileRoute("/")({
 });
 
 const MMS_TILES = [
-  { id: "capture-mlccs", label: "Capture MLCCS Details", icon: FileText, description: "Add / modify census records" },
   { id: "link-eqpt-ue", label: "Link Eqpt with UE", icon: Link2, description: "Link census to item code" },
   { id: "unit-obsn-status", label: "Unit Obsn Status", icon: ClipboardList, description: "Track unit observations" },
   { id: "mms-domain-master", label: "MMS Domain Master", icon: Database, description: "Domain reference data" },
@@ -480,7 +478,6 @@ export function Index() {
             title={activeTile?.label ?? ""}
             onBack={() => void navigate({ to: "/weapon/mms-admin" })}
           >
-            {activeMms === "capture-mlccs" && <CaptureMlccs />}
             {activeMms === "link-eqpt-ue" && <LinkEqptUe />}
             {activeMms === "unit-obsn-status" && <UnitObsnStatus />}
             {activeMms === "mms-domain-master" && <MmsDomainMaster />}

@@ -13,11 +13,13 @@
   --line-soft: #dfe9f4;
 
   /* Brand */
-  --accent: #14568c; /* 7.0:1 on white */
+  --accent: #14568c;
+  /* 7.0:1 on white */
   --accent-hi: #1d74b8;
   --accent-soft: #e8f2fa;
   --aid-cyan: #2ea8d5;
-  --saffron: #a85711; /* ≥4.5:1 on white */
+  --saffron: #a85711;
+  /* ≥4.5:1 on white */
   --saffron-soft: #fbf0e4;
 
   /* Status */
@@ -63,6 +65,7 @@
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -87,7 +90,7 @@
 }
 
 .mms-page-header__eyebrow {
-  font-size: 11px;
+  font-size: 13px !important;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -97,7 +100,7 @@
 .mms-page-header h1,
 .mms-page-header__title {
   margin: 2px 0 0;
-  font-size: 25px;
+  font-size: 27px !important;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
@@ -107,19 +110,20 @@
 .mms-page-header__subtitle {
   margin-top: 4px;
   max-width: 68ch;
-  font-size: 13.5px;
+  font-size: 15px !important;
+  font-weight: 500;
   color: var(--ink-soft, #54606c);
 }
 
 /* Compact form screens keep a denser page header */
 .mms-page-header--compact .mms-page-header__title {
-  font-size: 15px;
+  font-size: 16.5px !important;
   letter-spacing: -0.01em;
   color: var(--accent, #14568c);
 }
 
 .mms-page-header--compact .mms-page-header__eyebrow {
-  font-size: 11px;
+  font-size: 12.5px !important;
 }
 
 /* ── Panel (white paper on icy canvas) — §4.5 / §5.1 ── */
@@ -180,7 +184,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 10px 16px;
   background-color: var(--surface-alt, #eff5fb);
@@ -240,13 +244,13 @@
 .mms-form select,
 .mms-form [data-slot="select-trigger"],
 .mms-form button[role="combobox"] {
-  height: 32px !important;
-  min-height: 32px !important;
+  height: 36px !important;
+  min-height: 36px !important;
   padding-top: 4px;
   padding-bottom: 4px;
-  padding-left: 8px;
-  padding-right: 8px;
-  font-size: 13px !important;
+  padding-left: 10px;
+  padding-right: 10px;
+  font-size: 14.5px !important;
   line-height: 1.2;
   border-radius: 8px;
   background-color: var(--surface, #ffffff);
@@ -257,7 +261,7 @@
 
 .mms-form input::placeholder,
 .mms-form textarea::placeholder {
-  font-size: 12px;
+  font-size: 14px !important;
   color: var(--ink-faint, #616d79);
 }
 
@@ -284,10 +288,10 @@
 
 .mms-form label,
 .mms-form .mms-form__label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
   line-height: 1.2;
-  color: var(--ink-soft, #54606c);
+  color: var(--ink-soft, #54606c) !important;
 }
 
 /* Footer / primary actions — compact 32px */
@@ -324,20 +328,23 @@
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: 4px 8px;
-  margin-bottom: 8px;
+  gap: 4px 10px;
+  margin-bottom: 0;
   min-width: 0;
 }
 
-.mms-form-row > label,
-.mms-form-row > .mms-form__label {
+.mms-form-row>label,
+.mms-form-row>.mms-form__label {
   text-align: right;
   white-space: nowrap;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: var(--ink-soft, #54606c) !important;
 }
 
 .mms-form-grid {
   display: grid;
-  gap: 0 14px;
+  gap: 8px 16px;
 }
 
 /* Tables inside panels — denser rows, same header treatment */
@@ -356,10 +363,10 @@
 .mms-panel table th,
 .mms-form table th {
   height: auto !important;
-  min-height: 34px;
-  padding: 6px 8px !important;
-  font-size: 11px !important;
-  font-weight: 600;
+  min-height: 38px;
+  padding: 10px 12px !important;
+  font-size: 14.5px !important;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-soft, #54606c);
@@ -373,9 +380,54 @@
 
 .mms-panel table td,
 .mms-form table td {
-  padding: 6px 8px !important;
-  font-size: 13px !important;
+  padding: 8px 12px !important;
+  font-size: 15.5px !important;
   color: var(--ink, #15202b);
+}
+
+/* Global Form Field Labels Across Standalone Panels */
+label,
+.mms-field label {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--ink-soft, #54606c) !important;
+  line-height: 1.35 !important;
+}
+
+/* Global Input Boxes & Textareas Sizing Across Standalone Panels */
+.mms-panel input:not([type="checkbox"]):not([type="radio"]),
+input.mms-input,
+.mms-panel textarea {
+  font-size: 15.5px !important;
+  min-height: 38px !important;
+  height: 38px;
+  padding: 6px 12px !important;
+}
+
+.mms-panel input::placeholder,
+textarea::placeholder {
+  font-size: 15.5px !important;
+}
+
+/* Global Select Triggers & Dropdown Option Values Across Standalone Panels */
+.mms-panel select,
+[role="combobox"] {
+  font-size: 15.5px !important;
+  min-height: 38px !important;
+  height: 38px;
+  padding: 6px 12px !important;
+}
+
+[role="option"] {
+  font-size: 15.5px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+.mms-panel button,
+.mms-panel__foot button {
+  font-size: 15px !important;
+  font-weight: 600;
 }
 
 .mms-panel table tbody tr:hover,
@@ -403,6 +455,7 @@
 }
 
 @media (max-width: 960px) {
+
   .mms-form-grid--4,
   .mms-form-grid--3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -414,21 +467,25 @@
   .mms-form-row {
     grid-template-columns: 1fr;
   }
-  .mms-form-row > label,
-  .mms-form-row > .mms-form__label {
+
+  .mms-form-row>label,
+  .mms-form-row>.mms-form__label {
     text-align: left;
   }
 }
 
 @media (max-width: 760px) {
+
   .mms-form-grid--2,
   .mms-form-grid--3,
   .mms-form-grid--4 {
     grid-template-columns: 1fr;
   }
+
   .mms-panel__body {
     padding: 10px 12px;
   }
+
   .mms-panel__head,
   .mms-panel__foot {
     padding: 8px 12px;
@@ -463,11 +520,13 @@
 }
 
 @media (max-width: 760px) {
+
   .mms-grid--2,
   .mms-grid--3,
   .mms-grid--4 {
     grid-template-columns: 1fr;
   }
+
   .mms-span-2 {
     grid-column: auto;
   }
@@ -540,7 +599,7 @@
 }
 
 .mms-tile__title {
-  font-size: 15.5px;
+  font-size: 17px !important;
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
@@ -548,7 +607,7 @@
 
 .mms-tile__desc {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: 14.5px !important;
   line-height: 1.35;
   color: var(--ink-faint, #616d79);
 }
@@ -569,10 +628,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .mms-tile,
   .mms-tile__icon {
     transition: none;
   }
+
   .mms-tile:hover,
   .mms-tile:hover .mms-tile__icon {
     transform: none;
@@ -650,12 +711,10 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       rgba(215, 232, 247, 0.68) 0%,
       rgba(210, 228, 245, 0.8) 45%,
-      rgba(205, 225, 244, 0.9) 100%
-    ),
+      rgba(205, 225, 244, 0.9) 100%),
     radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.42), transparent 62%),
     radial-gradient(80% 60% at 12% 88%, rgba(46, 168, 213, 0.16), transparent 70%),
     radial-gradient(70% 55% at 88% 12%, rgba(29, 116, 184, 0.14), transparent 70%);
@@ -666,11 +725,9 @@
   position: relative;
   overflow: hidden;
   background-color: rgba(255, 255, 255, 0.74);
-  background-image: linear-gradient(
-    165deg,
-    rgba(255, 255, 255, 0.82),
-    rgba(232, 242, 250, 0.7)
-  );
+  background-image: linear-gradient(165deg,
+      rgba(255, 255, 255, 0.82),
+      rgba(232, 242, 250, 0.7));
   backdrop-filter: blur(22px) saturate(170%);
   -webkit-backdrop-filter: blur(22px) saturate(170%);
   border: 1px solid rgba(20, 86, 140, 0.13);
@@ -686,13 +743,11 @@
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.65) 18%,
-    rgba(255, 255, 255, 0.65) 82%,
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.65) 18%,
+      rgba(255, 255, 255, 0.65) 82%,
+      transparent);
   pointer-events: none;
 }
 
