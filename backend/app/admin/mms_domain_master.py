@@ -1,4 +1,4 @@
-"""MMS Domain Master — CRUD against MMS_DOMAIN_VALUES."""
+"""MMS Domain Master — CRUD against MMS_DOMAIN_VALUES using Native SQL."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, get_principal
-from app.models import DomainValue
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
 from app.utils.ids import next_int_id
+
 
 def _clean_text(val: str | None) -> str:
     if not val:
         return ""
-    return re.sub(r"[^A-Z0-9\s]", "", val.strip().upper())
+    return re.sub(r"[^A-Z0-9\s\-_/]", "", val.strip().upper())
 
 
 router = APIRouter(
@@ -37,7 +37,7 @@ class DomainValueIn(BaseModel):
 
 
 class DomainValueOut(DomainValueIn):
-    id: str
+    id: str | int
     created_by: str | None = None
     created_date: str | None = None
     updated_by: str | None = None
@@ -45,32 +45,28 @@ class DomainValueOut(DomainValueIn):
     version_no: str | None = None
 
 
-def _disp_order_key():
-    """Numeric-ish sort so Display Order 1,2,10 sorts correctly (not 1,10,2)."""
-    return func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0")
+def _fmt_dt(value: Any) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
+    if value is not None:
+        return str(value)
+    return None
 
 
-def _fmt_dt(value: datetime | None) -> str | None:
-    """Keep API date fields as strings for the existing UI contract."""
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds")
-
-
-def _to_out(row: DomainValue) -> DomainValueOut:
+def _to_out(row: dict) -> DomainValueOut:
     return DomainValueOut(
-        id=row.id,
-        domain_name=row.domain_name or "",
-        code_value=row.code_value or "",
-        label_name=row.label_name or "",
-        label_short=row.label_short,
-        disp_order=row.disp_order,
-        module=row.module,
-        created_by=row.created_by,
-        created_date=_fmt_dt(row.created_date),
-        updated_by=row.updated_by,
-        updated_date=_fmt_dt(row.updated_date),
-        version_no=row.version_no,
+        id=str(row.get("id") or ""),
+        domain_name=str(row.get("domain_name") or ""),
+        code_value=str(row.get("code_value") or ""),
+        label_name=str(row.get("label_name") or ""),
+        label_short=row.get("label_short"),
+        disp_order=row.get("disp_order"),
+        module=row.get("module"),
+        created_by=row.get("created_by"),
+        created_date=_fmt_dt(row.get("created_date")),
+        updated_by=row.get("updated_by"),
+        updated_date=_fmt_dt(row.get("updated_date")),
+        version_no=row.get("version_no"),
     )
 
 
@@ -84,24 +80,25 @@ def _assert_unique_within_domain(
     order: str | None,
     exclude_id: str | None = None,
 ) -> None:
-    """Within one DOMAIN_NAME, code/label/short/display order must each be unique."""
     domain_u = domain.upper()
-    checks: list[tuple[str, object, str]] = [
-        ("Code Value", DomainValue.code_value, code),
-        ("Label Name", DomainValue.label_name, label),
-        ("Label Short", DomainValue.label_short, short),
+    checks: list[tuple[str, str, str]] = [
+        ("Code Value", "code_value", code),
+        ("Label Name", "label_name", label),
+        ("Label Short", "label_short", short),
     ]
     if order is not None:
-        checks.append(("Display Order", DomainValue.disp_order, order))
+        checks.append(("Display Order", "disp_order", order))
 
-    for field_label, column, value in checks:
-        stmt = select(DomainValue).where(
-            func.upper(DomainValue.domain_name) == domain_u,
-            func.upper(func.trim(column)) == value.upper(),
-        )
+    for field_label, col_name, value in checks:
+        sql = f"SELECT id FROM MMS_DOMAIN_VALUES WHERE UPPER(domain_name) = :dname AND UPPER(TRIM({col_name})) = :val"
+        params: dict = {"dname": domain_u, "val": value.upper()}
         if exclude_id is not None:
-            stmt = stmt.where(DomainValue.id != exclude_id)
-        if session.scalar(stmt) is not None:
+            sql += " AND id != :ex_id AND TO_CHAR(id) != :ex_id_str"
+            params["ex_id"] = exclude_id
+            params["ex_id_str"] = str(exclude_id)
+
+        clash = fetch_one(session, sql, params)
+        if clash is not None:
             raise HTTPException(
                 status_code=409,
                 detail=f"{field_label} '{value}' already exists in domain '{domain}'",
@@ -110,13 +107,8 @@ def _assert_unique_within_domain(
 
 @router.get("/domains")
 def list_domain_names(session: Session = Depends(get_db_session)) -> list[str]:
-    rows = session.scalars(
-        select(DomainValue.domain_name)
-        .where(DomainValue.domain_name.is_not(None))
-        .distinct()
-        .order_by(DomainValue.domain_name)
-    ).all()
-    return [r for r in rows if r]
+    rows = fetch_all(session, "SELECT DISTINCT domain_name FROM MMS_DOMAIN_VALUES WHERE domain_name IS NOT NULL ORDER BY domain_name")
+    return [str(r["domain_name"]) for r in rows if r.get("domain_name")]
 
 
 @router.get("/suggest-domains", response_model=list[str])
@@ -124,18 +116,16 @@ def suggest_domains(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[str]:
-    """Typeahead for Domain Name — distinct DOMAIN_NAME values."""
     term = q.strip().upper()
-    stmt = (
-        select(DomainValue.domain_name)
-        .where(DomainValue.domain_name.is_not(None))
-        .distinct()
-        .order_by(DomainValue.domain_name)
-    )
+    sql = "SELECT DISTINCT domain_name FROM MMS_DOMAIN_VALUES WHERE domain_name IS NOT NULL"
+    params: dict = {}
     if term:
-        stmt = stmt.where(func.upper(DomainValue.domain_name).like(f"%{term}%"))
-    rows = session.scalars(stmt.limit(50)).all()
-    return [str(r) for r in rows if r and str(r).strip()]
+        sql += " AND UPPER(domain_name) LIKE :term"
+        params["term"] = f"%{term}%"
+
+    sql += " ORDER BY domain_name"
+    rows = fetch_all(session, sql, params)[:50]
+    return [str(r["domain_name"]) for r in rows if r.get("domain_name") and str(r["domain_name"]).strip()]
 
 
 @router.get("/search", response_model=list[DomainValueOut])
@@ -143,16 +133,19 @@ def search_domain(
     domain_name: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[DomainValueOut]:
-    stmt = select(DomainValue).order_by(
-        DomainValue.domain_name,
-        _disp_order_key(),
-        DomainValue.label_name,
-    )
+    sql = """
+        SELECT id, domain_name, code_value, label_name, label_short, disp_order,
+               module, created_by, created_date, updated_by, updated_date, version_no
+        FROM MMS_DOMAIN_VALUES
+    """
+    params: dict = {}
     if domain_name and domain_name.strip():
-        stmt = stmt.where(
-            func.upper(DomainValue.domain_name) == domain_name.strip().upper()
-        )
-    return [_to_out(r) for r in session.scalars(stmt).all()]
+        sql += " WHERE UPPER(domain_name) = :dname"
+        params["dname"] = domain_name.strip().upper()
+
+    sql += " ORDER BY domain_name, LPAD(NVL(disp_order, '9999'), 10, '0'), label_name"
+    rows = fetch_all(session, sql, params)
+    return [_to_out(r) for r in rows]
 
 
 @router.post("/", response_model=DomainValueOut)
@@ -178,23 +171,36 @@ def create_domain_value(
 
     now = datetime.now()
     actor = principal.username
-    row = DomainValue(
-        id=str(next_int_id(session, DomainValue)),
-        domain_name=domain,
-        code_value=code,
-        label_name=label,
-        label_short=short,
-        disp_order=order,
-        module=_clean_text(body.module) or "MMS",
-        created_by=actor,
-        created_date=now,
-        updated_by=actor,
-        updated_date=now,
-        version_no="1",
+    next_id = str(next_int_id(session, "MMS_DOMAIN_VALUES"))
+
+    row_data = {
+        "id": next_id,
+        "domain_name": domain,
+        "code_value": code,
+        "label_name": label,
+        "label_short": short,
+        "disp_order": order,
+        "module": _clean_text(body.module) or "MMS",
+        "created_by": actor,
+        "created_date": now,
+        "updated_by": actor,
+        "updated_date": now,
+        "version_no": "1",
+    }
+    execute_sql(
+        session,
+        """
+        INSERT INTO MMS_DOMAIN_VALUES (
+            id, domain_name, code_value, label_name, label_short, disp_order, module,
+            created_by, created_date, updated_by, updated_date, version_no
+        ) VALUES (
+            :id, :domain_name, :code_value, :label_name, :label_short, :disp_order, :module,
+            :created_by, :created_date, :updated_by, :updated_date, :version_no
+        )
+        """,
+        row_data,
     )
-    session.add(row)
-    session.flush()
-    return _to_out(row)
+    return _to_out(row_data)
 
 
 @router.put("/{row_id}", response_model=DomainValueOut)
@@ -204,7 +210,7 @@ def update_domain_value(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> DomainValueOut:
-    row = session.get(DomainValue, row_id)
+    row = fetch_one(session, "SELECT * FROM MMS_DOMAIN_VALUES WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": row_id, "rid_str": str(row_id)})
     if row is None:
         raise HTTPException(status_code=404, detail="Domain value not found")
 
@@ -226,21 +232,43 @@ def update_domain_value(
 
     now = datetime.now()
     try:
-        next_ver = str(int((row.version_no or "1").strip() or "1") + 1)
+        next_ver = str(int((str(row.get("version_no") or "1")).strip() or "1") + 1)
     except ValueError:
         next_ver = "1"
 
-    row.domain_name = domain
-    row.code_value = code
-    row.label_name = label
-    row.label_short = short
-    row.disp_order = order
-    row.module = (body.module or row.module or "MMS").strip() or "MMS"
-    row.updated_by = principal.username
-    row.updated_date = now
-    row.version_no = next_ver
-    session.flush()
-    return _to_out(row)
+    update_params = {
+        "domain_name": domain,
+        "code_value": code,
+        "label_name": label,
+        "label_short": short,
+        "disp_order": order,
+        "module": (body.module or row.get("module") or "MMS").strip() or "MMS",
+        "updated_by": principal.username,
+        "updated_date": now,
+        "version_no": next_ver,
+        "rid": row_id,
+        "rid_str": str(row_id),
+    }
+
+    execute_sql(
+        session,
+        """
+        UPDATE MMS_DOMAIN_VALUES
+        SET domain_name = :domain_name,
+            code_value = :code_value,
+            label_name = :label_name,
+            label_short = :label_short,
+            disp_order = :disp_order,
+            module = :module,
+            updated_by = :updated_by,
+            updated_date = :updated_date,
+            version_no = :version_no
+        WHERE id = :rid OR TO_CHAR(id) = :rid_str
+        """,
+        update_params,
+    )
+    updated_row = fetch_one(session, "SELECT * FROM MMS_DOMAIN_VALUES WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": row_id, "rid_str": str(row_id)})
+    return _to_out(updated_row or {})
 
 
 @router.delete("/{row_id}")
@@ -249,9 +277,8 @@ def delete_domain_value(
     session: Session = Depends(get_db_session),
     _principal: Principal = Depends(get_principal),
 ) -> dict[str, str]:
-    row = session.get(DomainValue, row_id)
+    row = fetch_one(session, "SELECT id FROM MMS_DOMAIN_VALUES WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": row_id, "rid_str": str(row_id)})
     if row is None:
         raise HTTPException(status_code=404, detail="Domain value not found")
-    session.delete(row)
-    session.flush()
+    execute_sql(session, "DELETE FROM MMS_DOMAIN_VALUES WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": row_id, "rid_str": str(row_id)})
     return {"status": "deleted", "id": row_id}

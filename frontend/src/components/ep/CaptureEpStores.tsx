@@ -34,27 +34,29 @@ interface EquipRow {
 }
 
 interface DomainRow {
-  id: string;
+  id: number | string;
   eqpt_cat: string;
 }
 
 interface SubDomainRow {
-  id: string;
-  equipment_domain_id: string;
+  id: number | string;
+  equipment_domain_id: number | string;
   sub_domain_name: string;
 }
 
 interface IssuerUnit {
-  id: string;
+  id: number | string;
   sanctioning_auth: string;
   unit_name: string;
   sus_no: string;
+  form_code?: string | null;
 }
 
 interface HoldingUnit {
-  id: string;
+  id: number | string;
   unit_name: string;
   sus_no: string;
+  form_code?: string | null;
 }
 
 const getTodayIso = () => {
@@ -607,7 +609,7 @@ export function CaptureEpStores() {
               </SelectTrigger>
               <SelectContent>
                 {domains.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
+                  <SelectItem key={d.id} value={String(d.id)}>
                     {d.eqpt_cat}
                   </SelectItem>
                 ))}
@@ -625,7 +627,7 @@ export function CaptureEpStores() {
               </SelectTrigger>
               <SelectContent>
                 {subDomains.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
+                  <SelectItem key={s.id} value={String(s.id)}>
                     {s.sub_domain_name}
                   </SelectItem>
                 ))}

@@ -24,7 +24,7 @@ interface CensusSuggestion {
 }
 
 interface LinkDetails {
-  id?: string | null;
+  id?: number | string | null;
   census_no?: string | null;
   nomenclature?: string | null;
   item_code?: string | null;

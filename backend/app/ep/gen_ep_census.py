@@ -1,4 +1,4 @@
-"""Gen EP Census — allocate census numbers and persist MMS_EP_MSTR."""
+"""Gen EP Census — allocate census numbers and persist MMS_EP_MSTR using Native SQL."""
 
 from __future__ import annotations
 
@@ -8,13 +8,12 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
-from app.models import DomainValue, EpDomainMaster, EpMstr, EpSubDomain
 from app.auth.principal import Principal
-from app.utils.ids import next_int_id
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
+from app.utils.ids import get_by_id, next_int_id
 
 router = APIRouter(
     prefix="/ep/gen-census",
@@ -29,41 +28,39 @@ class OptionOut(BaseModel):
 
 def _option_list(session: Session, *domains: str) -> list[OptionOut]:
     for domain in domains:
-        rows = session.scalars(
-            select(DomainValue)
-            .where(
-                func.replace(func.upper(DomainValue.domain_name), "_", "")
-                == domain.replace("_", "").upper()
-            )
-            .order_by(
-                func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
-                DomainValue.label_name,
-            )
-        ).all()
+        sql = """
+            SELECT code_value, label_name
+            FROM MMS_DOMAIN_VALUES
+            WHERE REPLACE(UPPER(domain_name), '_', '') = :dname
+            ORDER BY LPAD(NVL(disp_order, '9999'), 10, '0'), label_name
+        """
+        rows = fetch_all(session, sql, {"dname": domain.replace("_", "").upper()})
         options = [
-            OptionOut(value=r.code_value or "", label=r.label_name or r.code_value or "")
+            OptionOut(
+                value=str(r.get("code_value") or ""),
+                label=str(r.get("label_name") or r.get("code_value") or ""),
+            )
             for r in rows
-            if r.code_value
+            if r.get("code_value")
         ]
         if options:
             return options
     return []
 
 
-
 class GenerateCensusIn(BaseModel):
-    sub_domain_id: str = Field(..., min_length=1, max_length=36)
+    sub_domain_id: str | int = Field(...)
 
 
 class GenerateCensusOut(BaseModel):
     census_no: str
-    sub_domain_id: str
+    sub_domain_id: str | int
     sub_domain_name: str
-    domain_id: str
+    domain_id: str | int
 
 
 class EpCensusIn(BaseModel):
-    sub_domain_id: str = Field(..., min_length=1, max_length=36)
+    sub_domain_id: str | int = Field(...)
     census_no: str = Field(..., min_length=1, max_length=30)
     auth_letter_no: str = Field(..., min_length=1, max_length=100)
     auth_date: str = Field(..., min_length=1, max_length=10, description="DD-MM-YYYY")
@@ -87,37 +84,45 @@ class EpCensusIn(BaseModel):
 
 
 class EpCensusOut(BaseModel):
-    id: str
+    id: str | int
     census_no: str
-    sub_domain_id: str
-    domain_id: str
+    sub_domain_id: str | int
+    domain_id: str | int
     status: str | None = None
 
 
 def _next_census_no(
     session: Session,
-    domain: EpDomainMaster,
-    sub_domain: EpSubDomain,
+    domain: dict,
+    sub_domain: dict,
 ) -> str:
-    if not 0 <= domain.domain_id <= 99 or not 0 <= sub_domain.sub_domain_id <= 99:
-        raise HTTPException(
-            status_code=400,
-            detail="Domain and Sub Domain IDs must be between 0 and 99",
-        )
+    dom_id_val = str(domain.get("domain_id") if domain.get("domain_id") is not None else "1")
+    sub_id_val = str(sub_domain.get("sub_domain_id") if sub_domain.get("sub_domain_id") is not None else "1")
+    dom_num = int(dom_id_val) if dom_id_val.isdigit() else 1
+    sub_num = int(sub_id_val) if sub_id_val.isdigit() else 1
 
-    prefix = f"EP{domain.domain_id:02d}{sub_domain.sub_domain_id:02d}"
+    prefix = f"EP{dom_num:02d}{sub_num:02d}"
     census_re = re.compile(rf"^{re.escape(prefix)}(\d{{4}})$", re.IGNORECASE)
-    rows = session.scalars(
-        select(EpMstr.census_no).where(
-            EpMstr.domain_id == sub_domain.equipment_domain_id,
-            EpMstr.sub_domain_id == sub_domain.id,
-        )
-    ).all()
+
+    sql = """
+        SELECT census_no FROM MMS_EP_MSTR
+        WHERE (domain_id = :did OR TO_CHAR(domain_id) = :did)
+        AND (sub_domain_id = :sid OR TO_CHAR(sub_domain_id) = :sid)
+    """
+    rows = fetch_all(
+        session,
+        sql,
+        {
+            "did": str(sub_domain.get("equipment_domain_id")),
+            "sid": str(sub_domain.get("id")),
+        },
+    )
     max_sequence = 0
-    for raw in rows:
+    for r in rows:
+        raw = r.get("census_no")
         if not raw:
             continue
-        m = census_re.match(raw.strip())
+        m = census_re.match(str(raw).strip())
         if m:
             max_sequence = max(max_sequence, int(m.group(1)))
 
@@ -181,19 +186,19 @@ def generate_census(
     body: GenerateCensusIn,
     session: Session = Depends(get_db_session),
 ) -> GenerateCensusOut:
-    sub = session.get(EpSubDomain, body.sub_domain_id.strip())
+    sub = get_by_id(session, "MMS_EP_SUB_DOMAIN", body.sub_domain_id)
     if sub is None:
         raise HTTPException(status_code=400, detail="Invalid Sub Domain selected")
 
-    domain = session.get(EpDomainMaster, sub.equipment_domain_id)
+    domain = get_by_id(session, "MMS_EP_DOMAIN_MASTER", sub.get("equipment_domain_id"))
     if domain is None:
         raise HTTPException(status_code=400, detail="Sub Domain has no valid Domain")
 
     return GenerateCensusOut(
         census_no=_next_census_no(session, domain, sub),
-        sub_domain_id=sub.id,
-        sub_domain_name=sub.sub_domain_name,
-        domain_id=sub.equipment_domain_id,
+        sub_domain_id=str(sub.get("id")),
+        sub_domain_name=str(sub.get("sub_domain_name")),
+        domain_id=str(sub.get("equipment_domain_id")),
     )
 
 
@@ -203,71 +208,86 @@ def save_census(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> EpCensusOut:
-    sub = session.get(EpSubDomain, body.sub_domain_id.strip())
+    sub = get_by_id(session, "MMS_EP_SUB_DOMAIN", body.sub_domain_id)
     if sub is None:
         raise HTTPException(status_code=400, detail="Invalid Sub Domain selected")
 
     census_no = body.census_no.strip().upper()
-    clash = session.scalar(select(EpMstr).where(func.upper(EpMstr.census_no) == census_no))
+    clash = fetch_one(session, "SELECT id FROM MMS_EP_MSTR WHERE UPPER(census_no) = :c", {"c": census_no})
     if clash is not None:
         raise HTTPException(
             status_code=409,
             detail=f"Census No '{census_no}' already exists",
         )
 
-    opstatus_approved = session.scalar(
-        select(DomainValue).where(
-            func.upper(DomainValue.domain_name) == "OPSTATUS",
-            or_(
-                func.upper(func.trim(DomainValue.code_value)) == "APPROVED",
-                func.upper(func.trim(DomainValue.label_name)) == "APPROVED",
-            ),
-        )
+    opstatus_approved = fetch_one(
+        session,
+        """
+        SELECT code_value FROM MMS_DOMAIN_VALUES
+        WHERE UPPER(domain_name) = 'OPSTATUS'
+        AND (UPPER(TRIM(code_value)) = 'APPROVED' OR UPPER(TRIM(label_name)) = 'APPROVED')
+        """,
     )
-    if opstatus_approved is None or not opstatus_approved.code_value:
+    code_val = opstatus_approved.get("code_value") if opstatus_approved else None
+    if not code_val:
         raise HTTPException(
             status_code=400,
             detail="OPSTATUS domain has no APPROVED value configured",
         )
 
-    next_id = next_int_id(session, EpMstr)
+    next_id = next_int_id(session, "MMS_EP_MSTR")
 
     now = datetime.now()
-    row = EpMstr(
-        id=str(next_id),
-        domain_id=sub.equipment_domain_id,
-        sub_domain_id=sub.id,
-        census_no=census_no,
-        auth_letter_no=body.auth_letter_no.strip(),
-        auth_date=datetime.combine(_parse_auth_date(body.auth_date), datetime.min.time()),
-        cat_part_no=body.cat_part_no.strip(),
-        brief_description=body.brief_description.strip(),
-        accounting_unit=body.accounting_unit.strip()[:2000],
-        item_status=body.item_status.strip()[:10],
-        item_category=body.item_category.strip()[:10],
-        class_of_equipment=body.class_of_equipment.strip()[:10],
-        nodal_directorate=(body.nodal_directorate or "").strip()[:10] or None,
-        digest_category=(body.digest_category or "").strip()[:10] or None,
-        equipment_category=(body.equipment_category or "").strip()[:10] or None,
-        country=(body.country or "").strip()[:100] or None,
-        year_of_induction=_parse_year(body.year_of_induction),
-        cost=_parse_cost(body.cost),
-        manufacturing_agency=(body.manufacturing_agency or "").strip()[:255] or None,
-        ahsp_agency=(body.ahsp_agency or "").strip()[:255] or None,
-        nato_stock_no=(body.nato_stock_no or "").strip()[:100] or None,
-        defence_catalogue_no=(body.defence_catalogue_no or "").strip()[:100] or None,
-        status=opstatus_approved.code_value.strip()[:10],
-        remarks=(body.remarks or "").strip()[:1000] or None,
-        created_by=principal.username,
-        created_date=now,
-    )
-    session.add(row)
-    session.flush()
-    return EpCensusOut(
-        id=row.id,
-        census_no=row.census_no,
-        sub_domain_id=row.sub_domain_id,
-        domain_id=row.domain_id,
-        status=row.status,
-    )
+    params = {
+        "id": str(next_id),
+        "domain_id": str(sub.get("equipment_domain_id")),
+        "sub_domain_id": str(sub.get("id")),
+        "census_no": census_no,
+        "auth_letter_no": body.auth_letter_no.strip(),
+        "auth_date": datetime.combine(_parse_auth_date(body.auth_date), datetime.min.time()),
+        "cat_part_no": body.cat_part_no.strip(),
+        "brief_description": body.brief_description.strip(),
+        "accounting_unit": body.accounting_unit.strip()[:2000],
+        "item_status": body.item_status.strip()[:10],
+        "item_category": body.item_category.strip()[:10],
+        "class_of_equipment": body.class_of_equipment.strip()[:10],
+        "nodal_directorate": (body.nodal_directorate or "").strip()[:10] or None,
+        "digest_category": (body.digest_category or "").strip()[:10] or None,
+        "equipment_category": (body.equipment_category or "").strip()[:10] or None,
+        "country": (body.country or "").strip()[:100] or None,
+        "year_of_induction": _parse_year(body.year_of_induction),
+        "cost": _parse_cost(body.cost),
+        "manufacturing_agency": (body.manufacturing_agency or "").strip()[:255] or None,
+        "ahsp_agency": (body.ahsp_agency or "").strip()[:255] or None,
+        "nato_stock_no": (body.nato_stock_no or "").strip()[:100] or None,
+        "defence_catalogue_no": (body.defence_catalogue_no or "").strip()[:100] or None,
+        "status": str(code_val).strip()[:10],
+        "remarks": (body.remarks or "").strip()[:1000] or None,
+        "created_by": principal.username,
+        "created_date": now,
+    }
 
+    insert_sql = """
+        INSERT INTO MMS_EP_MSTR (
+            id, domain_id, sub_domain_id, census_no, auth_letter_no, auth_date,
+            cat_part_no, brief_description, accounting_unit, item_status, item_category,
+            class_of_equipment, nodal_directorate, digest_category, equipment_category,
+            country, year_of_induction, cost, manufacturing_agency, ahsp_agency,
+            nato_stock_no, defence_catalogue_no, status, remarks, created_by, created_date
+        ) VALUES (
+            :id, :domain_id, :sub_domain_id, :census_no, :auth_letter_no, :auth_date,
+            :cat_part_no, :brief_description, :accounting_unit, :item_status, :item_category,
+            :class_of_equipment, :nodal_directorate, :digest_category, :equipment_category,
+            :country, :year_of_induction, :cost, :manufacturing_agency, :ahsp_agency,
+            :nato_stock_no, :defence_catalogue_no, :status, :remarks, :created_by, :created_date
+        )
+    """
+    execute_sql(session, insert_sql, params)
+
+    return EpCensusOut(
+        id=params["id"],
+        census_no=params["census_no"],
+        sub_domain_id=params["sub_domain_id"],
+        domain_id=params["domain_id"],
+        status=params["status"],
+    )

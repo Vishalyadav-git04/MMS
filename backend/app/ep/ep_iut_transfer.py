@@ -1,4 +1,4 @@
-"""EP IUT (Inter Unit Transfer) — backend API endpoints."""
+"""EP IUT (Inter Unit Transfer) — backend API endpoints using Native SQL."""
 
 from __future__ import annotations
 
@@ -6,29 +6,15 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session
-from app.models import (
-    DomainValue,
-    EpDomainMaster,
-    EpSubDomain,
-    EpTransaction,
-    OrbatUnitDetl,
-)
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
 
 router = APIRouter(
     prefix="/ep/iut",
     tags=["ep: inter unit transfer"],
 )
-
-_APPROVED_OP_STATUSES = ("1", "A", "APPROVED")
-
-
-def _is_approved(col):
-    """Filter records whose OP_STATUS is approved (1, A, APPROVED)."""
-    return func.upper(func.trim(func.coalesce(col, ""))).in_(_APPROVED_OP_STATUSES)
 
 
 class ParentUnitOut(BaseModel):
@@ -38,12 +24,12 @@ class ParentUnitOut(BaseModel):
 
 
 class DomainOptionOut(BaseModel):
-    id: str
+    id: str | int
     eqpt_cat: str
 
 
 class SubDomainOptionOut(BaseModel):
-    id: str
+    id: str | int
     sub_domain_name: str
 
 
@@ -57,8 +43,8 @@ class ReceivingUnitOut(BaseModel):
 class TransferSubmitIn(BaseModel):
     parent_sus_no: str = Field(..., min_length=1)
     receiving_sus_no: str = Field(..., min_length=1)
-    domain_id: str = Field(..., min_length=1)
-    sub_domain_id: str = Field(..., min_length=1)
+    domain_id: str | int = Field(...)
+    sub_domain_id: str | int = Field(...)
     rv_no: str = Field(..., min_length=1)
     rv_date: str = Field(..., min_length=1)
     upload_rv: str | None = None
@@ -74,32 +60,29 @@ class TransferSubmitOut(BaseModel):
 def get_parent_units(
     session: Session = Depends(get_db_session),
 ) -> list[ParentUnitOut]:
-    distinct_suses = session.scalars(
-        select(func.distinct(EpTransaction.to_sus_no))
-        .where(
-            EpTransaction.to_sus_no.is_not(None),
-            _is_approved(EpTransaction.op_status),
-        )
-    ).all()
-
+    sql = """
+        SELECT DISTINCT to_sus_no
+        FROM MMS_EP_TRANSACTION
+        WHERE to_sus_no IS NOT NULL
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
+    """
+    rows = fetch_all(session, sql)
+    distinct_suses = [str(r["to_sus_no"]).strip().upper() for r in rows if r.get("to_sus_no")]
     if not distinct_suses:
         return []
 
-    clean_suses = [s.strip().upper() for s in distinct_suses if s and s.strip()]
-    if not clean_suses:
-        return []
+    in_clause = ", ".join(f":s_{i}" for i in range(len(distinct_suses)))
+    params = {f"s_{i}": s for i, s in enumerate(distinct_suses)}
 
-    orbat_map = {}
-    orbat_rows = session.scalars(
-        select(OrbatUnitDetl).where(
-            func.upper(OrbatUnitDetl.sus_no).in_(clean_suses)
-        )
-    ).all()
-    for row in orbat_rows:
-        orbat_map[row.sus_no.strip().upper()] = row.unit_name.strip()
+    orbat_rows = fetch_all(
+        session,
+        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause})",
+        params,
+    )
+    orbat_map = {str(r["sus_no"]).strip().upper(): str(r["unit_name"]).strip() for r in orbat_rows if r.get("sus_no")}
 
     results: list[ParentUnitOut] = []
-    for sus in clean_suses:
+    for sus in distinct_suses:
         name = orbat_map.get(sus, sus)
         display = f"{sus} - {name}" if name != sus else sus
         results.append(ParentUnitOut(sus_no=sus, unit_name=name, display=display))
@@ -114,25 +97,28 @@ def get_domains_for_parent(
     session: Session = Depends(get_db_session),
 ) -> list[DomainOptionOut]:
     sus = parent_sus_no.strip().upper()
-    domain_ids = session.scalars(
-        select(func.distinct(EpTransaction.domain_id))
-        .where(
-            func.upper(EpTransaction.to_sus_no) == sus,
-            EpTransaction.domain_id.is_not(None),
-            _is_approved(EpTransaction.op_status),
-        )
-    ).all()
-
+    sql = """
+        SELECT DISTINCT domain_id
+        FROM MMS_EP_TRANSACTION
+        WHERE UPPER(to_sus_no) = :sus
+        AND domain_id IS NOT NULL
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
+    """
+    rows = fetch_all(session, sql, {"sus": sus})
+    domain_ids = [str(r["domain_id"]).strip() for r in rows if r.get("domain_id")]
     if not domain_ids:
         return []
 
-    clean_ids = [d.strip() for d in domain_ids if d and d.strip()]
-    domains = session.scalars(
-        select(EpDomainMaster).where(EpDomainMaster.id.in_(clean_ids))
-    ).all()
+    in_clause = ", ".join(f":d_{i}" for i in range(len(domain_ids)))
+    params = {f"d_{i}": d for i, d in enumerate(domain_ids)}
 
+    domains = fetch_all(
+        session,
+        f"SELECT id, eqpt_cat FROM MMS_EP_DOMAIN_MASTER WHERE id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
+        params,
+    )
     res = [
-        DomainOptionOut(id=d.id, eqpt_cat=d.eqpt_cat)
+        DomainOptionOut(id=str(d["id"]), eqpt_cat=str(d.get("eqpt_cat") or ""))
         for d in domains
     ]
     res.sort(key=lambda x: x.eqpt_cat.lower())
@@ -148,26 +134,29 @@ def get_sub_domains_for_parent_domain(
     sus = parent_sus_no.strip().upper()
     dom_id = domain_id.strip()
 
-    sub_ids = session.scalars(
-        select(func.distinct(EpTransaction.sub_domain_id))
-        .where(
-            func.upper(EpTransaction.to_sus_no) == sus,
-            EpTransaction.domain_id == dom_id,
-            EpTransaction.sub_domain_id.is_not(None),
-            _is_approved(EpTransaction.op_status),
-        )
-    ).all()
-
+    sql = """
+        SELECT DISTINCT sub_domain_id
+        FROM MMS_EP_TRANSACTION
+        WHERE UPPER(to_sus_no) = :sus
+        AND (domain_id = :dom_id OR TO_CHAR(domain_id) = :dom_id)
+        AND sub_domain_id IS NOT NULL
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
+    """
+    rows = fetch_all(session, sql, {"sus": sus, "dom_id": dom_id})
+    sub_ids = [str(r["sub_domain_id"]).strip() for r in rows if r.get("sub_domain_id")]
     if not sub_ids:
         return []
 
-    clean_ids = [s.strip() for s in sub_ids if s and s.strip()]
-    sub_domains = session.scalars(
-        select(EpSubDomain).where(EpSubDomain.id.in_(clean_ids))
-    ).all()
+    in_clause = ", ".join(f":sd_{i}" for i in range(len(sub_ids)))
+    params = {f"sd_{i}": sd for i, sd in enumerate(sub_ids)}
 
+    sub_domains = fetch_all(
+        session,
+        f"SELECT id, sub_domain_name FROM MMS_EP_SUB_DOMAIN WHERE id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
+        params,
+    )
     res = [
-        SubDomainOptionOut(id=s.id, sub_domain_name=s.sub_domain_name)
+        SubDomainOptionOut(id=str(s["id"]), sub_domain_name=str(s.get("sub_domain_name") or ""))
         for s in sub_domains
     ]
     res.sort(key=lambda x: x.sub_domain_name.lower())
@@ -179,26 +168,26 @@ def get_receiving_units(
     search: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[ReceivingUnitOut]:
-    stmt = select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.status) == "ACTIVE")
+    sql = "SELECT sus_no, unit_name, form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(status) = 'ACTIVE'"
+    params: dict = {}
     if search and search.strip():
         q = f"%{search.strip().upper()}%"
-        stmt = stmt.where(
-            or_(
-                func.upper(OrbatUnitDetl.unit_name).like(q),
-                func.upper(OrbatUnitDetl.sus_no).like(q),
-            )
-        )
-    stmt = stmt.order_by(OrbatUnitDetl.unit_name).limit(100)
+        sql += " AND (UPPER(unit_name) LIKE :q OR UPPER(sus_no) LIKE :q)"
+        params["q"] = q
 
-    rows = session.scalars(stmt).all()
+    sql += " ORDER BY unit_name"
+    rows = fetch_all(session, sql, params)[:100]
+
     results: list[ReceivingUnitOut] = []
     for r in rows:
-        display = f"{r.sus_no} - {r.unit_name}"
+        sus = str(r.get("sus_no") or "")
+        uname = str(r.get("unit_name") or "")
+        display = f"{sus} - {uname}"
         results.append(
             ReceivingUnitOut(
-                sus_no=r.sus_no,
-                unit_name=r.unit_name,
-                form_code=r.form_code,
+                sus_no=sus,
+                unit_name=uname,
+                form_code=r.get("form_code"),
                 display=display,
             )
         )
@@ -216,18 +205,17 @@ def get_regn_list(
     dom_id = domain_id.strip()
     sub_dom_id = sub_domain_id.strip()
 
-    rows = session.scalars(
-        select(EpTransaction.eqpt_regn_no)
-        .where(
-            func.upper(EpTransaction.to_sus_no) == sus,
-            EpTransaction.domain_id == dom_id,
-            EpTransaction.sub_domain_id == sub_dom_id,
-            EpTransaction.eqpt_regn_no.is_not(None),
-            _is_approved(EpTransaction.op_status),
-        )
-    ).all()
-
-    regns = sorted(list({r.strip() for r in rows if r and r.strip()}))
+    sql = """
+        SELECT eqpt_regn_no
+        FROM MMS_EP_TRANSACTION
+        WHERE UPPER(to_sus_no) = :sus
+        AND (domain_id = :dom_id OR TO_CHAR(domain_id) = :dom_id)
+        AND (sub_domain_id = :sub_dom_id OR TO_CHAR(sub_domain_id) = :sub_dom_id)
+        AND eqpt_regn_no IS NOT NULL
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
+    """
+    rows = fetch_all(session, sql, {"sus": sus, "dom_id": dom_id, "sub_dom_id": sub_dom_id})
+    regns = sorted(list({str(r["eqpt_regn_no"]).strip() for r in rows if r.get("eqpt_regn_no") and str(r["eqpt_regn_no"]).strip()}))
     return regns
 
 
@@ -238,49 +226,44 @@ def submit_transfer(
 ) -> TransferSubmitOut:
     parent_sus = body.parent_sus_no.strip().upper()
     rec_sus = body.receiving_sus_no.strip().upper()
-    dom_id = body.domain_id.strip()
-    sub_dom_id = body.sub_domain_id.strip()
+    dom_id = str(body.domain_id).strip()
+    sub_dom_id = str(body.sub_domain_id).strip()
 
     if not body.regn_numbers:
         raise HTTPException(status_code=400, detail="No registration numbers provided for transfer")
 
-    # Fetch Parent Unit details (for form_code)
-    parent_unit = session.scalar(
-        select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.sus_no) == parent_sus)
+    parent_unit = fetch_one(session, "SELECT form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) = :sus", {"sus": parent_sus})
+    parent_form_code = parent_unit.get("form_code") if parent_unit else None
+
+    rec_unit = fetch_one(session, "SELECT form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) = :sus", {"sus": rec_sus})
+    rec_form_code = rec_unit.get("form_code") if rec_unit else None
+
+    tfr_row = fetch_one(
+        session,
+        "SELECT code_value FROM MMS_DOMAIN_VALUES WHERE UPPER(domain_name) = 'TFRSTATUS' AND UPPER(label_name) LIKE '%TRANSFER%'",
     )
-    parent_form_code = parent_unit.form_code if parent_unit else None
+    if not tfr_row:
+        tfr_row = fetch_one(session, "SELECT code_value FROM MMS_DOMAIN_VALUES WHERE UPPER(domain_name) = 'TFRSTATUS'")
+    tfr_status_val = tfr_row.get("code_value") if tfr_row else "TRANSFERRED"
 
-    # Fetch Receiving Unit details (for form_code)
-    rec_unit = session.scalar(
-        select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.sus_no) == rec_sus)
-    )
-    rec_form_code = rec_unit.form_code if rec_unit else None
+    in_clause = ", ".join(f":r_{i}" for i in range(len(body.regn_numbers)))
+    params = {
+        "parent_sus": parent_sus,
+        "dom_id": dom_id,
+        "sub_dom_id": sub_dom_id,
+        **{f"r_{i}": r for i, r in enumerate(body.regn_numbers)},
+    }
 
-    # Look up tfr_status code from MMS_DOMAIN_VALUES for TFRSTATUS
-    tfr_status_val = session.scalar(
-        select(DomainValue.code_value).where(
-            func.upper(DomainValue.domain_name) == "TFRSTATUS",
-            func.upper(DomainValue.label_name).like("%TRANSFER%"),
-        ).limit(1)
-    )
-    if not tfr_status_val:
-        tfr_status_val = session.scalar(
-            select(DomainValue.code_value).where(
-                func.upper(DomainValue.domain_name) == "TFRSTATUS"
-            ).limit(1)
-        ) or "TRANSFERRED"
-
-    # Find matching EpTransaction records (must be approved)
-    txns = session.scalars(
-        select(EpTransaction).where(
-            func.upper(EpTransaction.to_sus_no) == parent_sus,
-            EpTransaction.domain_id == dom_id,
-            EpTransaction.sub_domain_id == sub_dom_id,
-            EpTransaction.eqpt_regn_no.in_(body.regn_numbers),
-            _is_approved(EpTransaction.op_status),
-        )
-    ).all()
-
+    find_sql = f"""
+        SELECT id, eqpt_regn_no
+        FROM MMS_EP_TRANSACTION
+        WHERE UPPER(to_sus_no) = :parent_sus
+        AND (domain_id = :dom_id OR TO_CHAR(domain_id) = :dom_id)
+        AND (sub_domain_id = :sub_dom_id OR TO_CHAR(sub_domain_id) = :sub_dom_id)
+        AND eqpt_regn_no IN ({in_clause})
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
+    """
+    txns = fetch_all(session, find_sql, params)
     if not txns:
         raise HTTPException(status_code=404, detail="No approved transaction records found for transfer")
 
@@ -292,21 +275,41 @@ def submit_transfer(
 
     transferred: list[str] = []
     for row in txns:
-        row.issued_from = parent_sus
-        row.from_sus_no = parent_sus
-        row.iv_sus_no = parent_sus
-        row.from_form_code = parent_form_code
-        row.to_sus_no = rec_sus
-        row.to_form_code = rec_form_code
-        row.tfr_status = tfr_status_val
-        row.to_tr_date = now
-        row.from_tr_date = now
-        row.iv_no = body.rv_no.strip()
-        row.iv_date = rv_dt
+        txn_id = row["id"]
+        update_sql = """
+            UPDATE MMS_EP_TRANSACTION
+            SET issued_from = :psus,
+                from_sus_no = :psus,
+                iv_sus_no = :psus,
+                from_form_code = :pform,
+                to_sus_no = :rsus,
+                to_form_code = :rform,
+                tfr_status = :tfr_status,
+                to_tr_date = :now_dt,
+                from_tr_date = :now_dt,
+                iv_no = :rv_no,
+                iv_date = :rv_date
+        """
+        up_params = {
+            "psus": parent_sus,
+            "pform": parent_form_code,
+            "rsus": rec_sus,
+            "rform": rec_form_code,
+            "tfr_status": tfr_status_val,
+            "now_dt": now,
+            "rv_no": body.rv_no.strip(),
+            "rv_date": rv_dt,
+            "tid": txn_id,
+            "tid_str": str(txn_id),
+        }
         if body.upload_rv:
-            row.upload_voucher = body.upload_rv
-        if row.eqpt_regn_no:
-            transferred.append(row.eqpt_regn_no)
+            update_sql += ", upload_voucher = :upload_rv"
+            up_params["upload_rv"] = body.upload_rv
 
-    session.flush()
+        update_sql += " WHERE id = :tid OR TO_CHAR(id) = :tid_str"
+        execute_sql(session, update_sql, up_params)
+
+        if row.get("eqpt_regn_no"):
+            transferred.append(str(row["eqpt_regn_no"]))
+
     return TransferSubmitOut(count=len(transferred), transferred_regns=transferred)

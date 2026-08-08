@@ -56,7 +56,7 @@ interface HoldingType {
 }
 
 interface EqptRow {
-  id: string;
+  id: number | string;
   source_table: string;
   source_label: string;
   eqpt_regn_no?: string | null;

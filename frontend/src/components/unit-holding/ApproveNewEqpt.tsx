@@ -23,7 +23,7 @@ import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 interface OrbatUnit {
-  id: string;
+  id: number | string;
   unit_name: string;
   sus_no: string;
   form_code: string | null;
@@ -31,7 +31,7 @@ interface OrbatUnit {
 }
 
 interface NewEqptRow {
-  id: string;
+  id: number | string;
   source_table: string;
   iv_no?: string | null;
   iv_date?: string | null;

@@ -34,7 +34,7 @@ interface Option {
 }
 
 interface RegnRecord {
-  id: string;
+  id: number | string;
   source_table: string;
   source_label: string;
   eqpt_regn_no?: string | null;
@@ -64,7 +64,6 @@ export function SearchRegnNo() {
   const [censusNo, setCensusNo] = useState("");
   const [prfCode, setPrfCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [lookingUp, setLookingUp] = useState(false);
   const [results, setResults] = useState<RegnRecord[]>([]);
   const [serviceOpts, setServiceOpts] = useState<Option[]>([]);
   const [editRow, setEditRow] = useState<RegnRecord | null>(null);
@@ -78,26 +77,6 @@ export function SearchRegnNo() {
       .then((res) => setServiceOpts(res.service_status ?? []))
       .catch(() => toast.error("Failed to load serviceability options"));
   }, []);
-
-  const lookupByRegn = async (value: string) => {
-    const key = value.trim();
-    if (!key || key.toUpperCase() === lastLookupRef.current) return;
-    lastLookupRef.current = key.toUpperCase();
-    setLookingUp(true);
-    try {
-      const rec = await api<LookupOut>(
-        `/admin/search-regn-no/lookup?regn_no=${encodeURIComponent(key)}`,
-      );
-      setCensusNo(rec.census_no || "");
-      setPrfCode(rec.prf_code || "");
-    } catch {
-      setCensusNo("");
-      setPrfCode("");
-      lastLookupRef.current = "";
-    } finally {
-      setLookingUp(false);
-    }
-  };
 
   const handleSearch = async () => {
     if (!regnNo.trim()) return toast.error("Regn No is required");
@@ -127,10 +106,37 @@ export function SearchRegnNo() {
     }
   };
 
+  useEffect(() => {
+    if (!editRow) return;
+    const rawVal = (editRow.service_status || "").trim().toUpperCase();
+    const rawLbl = (editRow.service_status_label || "").trim().toUpperCase();
+    const match = serviceOpts.find(
+      (o) =>
+        o.value.trim().toUpperCase() === rawVal ||
+        o.value.trim().toUpperCase() === rawLbl ||
+        o.label.trim().toUpperCase() === rawLbl ||
+        o.label.trim().toUpperCase() === rawVal,
+    );
+    if (match) {
+      setEditServiceStatus(match.value);
+    } else if (editRow.service_status) {
+      setEditServiceStatus(editRow.service_status);
+    }
+  }, [editRow, serviceOpts]);
+
   const openEdit = (row: RegnRecord) => {
     setEditRow(row);
     setEditRegnNo(row.eqpt_regn_no || "");
-    setEditServiceStatus(row.service_status || "");
+    const rawVal = (row.service_status || "").trim().toUpperCase();
+    const rawLbl = (row.service_status_label || "").trim().toUpperCase();
+    const match = serviceOpts.find(
+      (o) =>
+        o.value.trim().toUpperCase() === rawVal ||
+        o.value.trim().toUpperCase() === rawLbl ||
+        o.label.trim().toUpperCase() === rawLbl ||
+        o.label.trim().toUpperCase() === rawVal,
+    );
+    setEditServiceStatus(match ? match.value : row.service_status || "");
   };
 
   const handleUpdate = async () => {
@@ -195,7 +201,7 @@ export function SearchRegnNo() {
         footer={
           <>
             <Button
-              disabled={busy || lookingUp}
+              disabled={busy}
               className="bg-primary hover:bg-primary/90"
               onClick={() => void handleSearch()}
             >
@@ -221,15 +227,11 @@ export function SearchRegnNo() {
             <Input
               placeholder="e.g. REGN-2000"
               value={regnNo}
-              onChange={(e) => {
-                setRegnNo(e.target.value);
-                lastLookupRef.current = "";
-              }}
-              onBlur={() => void lookupByRegn(regnNo)}
+              onChange={(e) => setRegnNo(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void lookupByRegn(regnNo).then(() => void handleSearch());
+                  void handleSearch();
                 }
               }}
             />
@@ -310,7 +312,12 @@ export function SearchRegnNo() {
           </DialogHeader>
           <div className="space-y-3 py-1">
             <FormRow label="Census No">
-              <Input value={editRow?.census_no || ""} readOnly />
+              <Input
+                value={editRow?.census_no || ""}
+                disabled
+                readOnly
+                className="bg-muted text-muted-foreground cursor-not-allowed select-none"
+              />
             </FormRow>
             <FormRow label="Regn No" required>
               <Input

@@ -12,7 +12,7 @@ backend/
 │   ├── admin/           # Admin module APIs (MLCCS Capture, Domain Master, Links, Unit Obsn)
 │   ├── api/             # API Router, public/health/auth routes, file upload routes
 │   │   ├── routes/      # Individual API route handlers (auth, health, upload)
-│   │   └── router.py    # Aggregated API router mounted at /api
+│   │   └── router.py    # Aggregated API router mounted at root
 │   ├── auth/            # Authentication & JWT services
 │   ├── dashboard/       # Dashboard counts & metrics APIs
 │   ├── db/              # SQLAlchemy & Oracle pool session management
@@ -46,8 +46,8 @@ The service loads configuration parameters via environment variables or `.env` f
 
 | Setting | Local Environment | Staging Environment |
 |---|---|---|
-| **API Base URL** | `http://localhost:8000/api/` | `http://131.3.54.120/api/` |
-| **API Prefix** | `/api` | `/api` |
+| **API Base URL** | `http://localhost:8000/` | `http://131.3.54.120/` |
+| **API Prefix** | `""` | `""` |
 | **Upload Path** | `D:/miso/` | `/srv/` |
 | **DB DSN** | `localhost:1521/FREEPDB1` | `131.3.54.122:1521/ORCLPDB1` |
 | **DB User / Schema** | `MMS` / `MMS` | `MMS` / `ORCLPDB1` |
@@ -73,8 +73,8 @@ python -m uvicorn main:app --reload --port 8000
 ```
 
 The API will be live at:
-- **Base URL**: `http://localhost:8000/api`
-- **Health check**: `http://localhost:8000/api/health`
+- **Base URL**: `http://localhost:8000`
+- **Health check**: `http://localhost:8000/health`
 - **OpenAPI Docs**: `http://localhost:8000/docs`
 
 ---
@@ -83,7 +83,7 @@ The API will be live at:
 
 Uploaded documents are saved to the file system at `UPLOAD_PATH` (`D:/miso/` locally, `/srv/` on staging).
 
-- **Upload Endpoint**: `POST /api/upload`
+- **Upload Endpoint**: `POST /upload`
 - **Request**: Multipart Form Data (`file`)
 - **Response**: Returns document filename, relative path, absolute path, and file size.
 - **Service Handler**: `app/services/upload.py`

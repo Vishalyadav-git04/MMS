@@ -22,10 +22,10 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 interface ObsnRecord {
-  id: string;
+  id: number | string;
   unit_name?: string | null;
   uploaded_doc?: string | null;
-  obsn_id?: number | null;
+  obsn_id?: number | string | null;
   observation?: string | null;
   obsn_date?: string | null;
   date_of_completion?: string | null;

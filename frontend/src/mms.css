@@ -244,8 +244,8 @@
   min-height: 32px !important;
   padding-top: 4px;
   padding-bottom: 4px;
-  padding-left: 10px;
-  padding-right: 10px;
+  padding-left: 8px;
+  padding-right: 8px;
   font-size: 13px !important;
   line-height: 1.2;
   border-radius: 8px;
@@ -253,6 +253,12 @@
   border: 1px solid var(--line, #cddcec);
   color: var(--ink, #15202b);
   box-shadow: var(--shadow-sm);
+}
+
+.mms-form input::placeholder,
+.mms-form textarea::placeholder {
+  font-size: 12px;
+  color: var(--ink-faint, #616d79);
 }
 
 .mms-form input[data-date-input] {
@@ -316,9 +322,9 @@
 /* Side-by-side label + control — packs ~2× more fields than stacked labels */
 .mms-form-row {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: 4px 10px;
+  gap: 4px 8px;
   margin-bottom: 8px;
   min-width: 0;
 }
@@ -326,6 +332,7 @@
 .mms-form-row > label,
 .mms-form-row > .mms-form__label {
   text-align: right;
+  white-space: nowrap;
 }
 
 .mms-form-grid {
@@ -386,6 +393,21 @@
 
 .mms-form-grid--4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1280px) {
+  .mms-form-grid--4 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+}
+
+@media (max-width: 960px) {
+  .mms-form-grid--4,
+  .mms-form-grid--3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
 }
 
 @media (max-width: 900px) {

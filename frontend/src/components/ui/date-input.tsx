@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format, parse } from "date-fns";
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
@@ -117,8 +117,9 @@ function FieldIconButton({
         "absolute inset-y-0 right-0 z-10 flex w-7 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground",
         disabled && "pointer-events-none opacity-50",
       )}
-      onMouseDown={(e) => {
+      onClick={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         onOpen();
       }}
     >
@@ -143,6 +144,7 @@ export function DateInput({
 }: DateInputProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(() => toDmyDisplay(value));
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setText(toDmyDisplay(value));
@@ -188,10 +190,10 @@ export function DateInput({
     <Popover open={open} onOpenChange={(next) => !disabled && setOpen(next)}>
       <PopoverAnchor asChild>
         <div
+          ref={containerRef}
           className={cn("relative w-full min-w-[9.5rem]", className)}
           data-date-invalid={invalid ? "true" : "false"}
-          onMouseDown={(e) => {
-            // Clicking the box (not only the icon) opens the calendar.
+          onClick={(e) => {
             if (disabled) return;
             if ((e.target as HTMLElement).closest("[data-date-calendar]")) return;
             setOpen(true);
@@ -245,6 +247,16 @@ export function DateInput({
         align="end"
         sideOffset={4}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
       >
         <Calendar
           mode="single"
@@ -293,6 +305,7 @@ export function MonthInput({
 }: MonthInputProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(() => yearMonthToDisplay(value));
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setText(yearMonthToDisplay(value));
@@ -350,9 +363,10 @@ export function MonthInput({
     <Popover open={open} onOpenChange={(next) => !disabled && setOpen(next)}>
       <PopoverAnchor asChild>
         <div
+          ref={containerRef}
           className={cn("relative w-full min-w-[8.5rem]", className)}
           data-date-invalid={invalid ? "true" : "false"}
-          onMouseDown={(e) => {
+          onClick={(e) => {
             if (disabled) return;
             if ((e.target as HTMLElement).closest("[data-date-calendar]")) return;
             setOpen(true);
@@ -403,6 +417,16 @@ export function MonthInput({
         align="end"
         sideOffset={4}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
       >
         <div className="mb-2 flex items-center justify-between gap-1">
           <button

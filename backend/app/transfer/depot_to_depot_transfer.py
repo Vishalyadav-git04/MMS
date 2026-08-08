@@ -1,8 +1,4 @@
-"""EQPT Transfer (Depot to Depot) — Weapon → EQPT Transfer.
-
-Queries and updates MMS_DEPOT_MASTER table.
-Maps units with MMS_ORBAT_UNIT_DETL and domain codes with MMS_DOMAIN_VALUES.
-"""
+"""EQPT Transfer (Depot to Depot) — Weapon → EQPT Transfer using Native SQL."""
 
 from __future__ import annotations
 
@@ -10,18 +6,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import String, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session
-from app.models import (
-    DepotMaster,
-    DomainValue,
-    MlccsEquipmentMaster,
-    OrbatUnitDetl,
-    PrfGrpMstr,
-    UnitMasterDetail,
-)
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
+from app.utils.ids import next_int_id
 
 router = APIRouter(
     prefix="/transfer/depot-to-depot",
@@ -30,40 +19,28 @@ router = APIRouter(
 
 
 def _get_approved_op_codes(session: Session) -> list[str]:
-    """Retrieve OPSTATUS approved code values from MMS_DOMAIN_VALUES."""
-    codes = session.scalars(
-        select(DomainValue.code_value).where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "OPSTATUS",
-            or_(
-                func.upper(func.trim(DomainValue.code_value)).in_(["1", "A", "APPROVED"]),
-                func.upper(DomainValue.label_name).like("%APPROV%"),
-            ),
-        )
-    ).all()
-    clean = [c.strip().upper() for c in codes if c and c.strip()]
+    sql = """
+        SELECT code_value FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = 'OPSTATUS'
+        AND (UPPER(TRIM(code_value)) IN ('1', 'A', 'APPROVED') OR UPPER(label_name) LIKE '%APPROV%')
+    """
+    rows = fetch_all(session, sql)
+    clean = [str(r["code_value"]).strip().upper() for r in rows if r.get("code_value")]
     fallbacks = ["1", "A", "APPROVED"]
     return list(set(clean + fallbacks))
 
 
 def _get_tfr_status_code(session: Session) -> str:
-    """Retrieve TFRSTATUS code value for transferred equipment."""
-    code = session.scalar(
-        select(DomainValue.code_value).where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TFRSTATUS",
-            or_(
-                func.upper(DomainValue.label_name).like("%TRANSFER%"),
-                func.upper(DomainValue.code_value).like("%TRANS%"),
-                func.upper(DomainValue.code_value).like("%TFR%"),
-            ),
-        ).limit(1)
-    )
-    if not code:
-        code = session.scalar(
-            select(DomainValue.code_value).where(
-                func.replace(func.upper(DomainValue.domain_name), "_", "") == "TFRSTATUS"
-            ).limit(1)
-        )
-    return (code or "TRANSFERRED").strip()
+    sql = """
+        SELECT code_value FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = 'TFRSTATUS'
+        AND (UPPER(label_name) LIKE '%TRANSFER%' OR UPPER(code_value) LIKE '%TRANS%' OR UPPER(code_value) LIKE '%TFR%')
+    """
+    row = fetch_one(session, sql)
+    if not row:
+        row = fetch_one(session, "SELECT code_value FROM MMS_DOMAIN_VALUES WHERE REPLACE(UPPER(domain_name), '_', '') = 'TFRSTATUS'")
+    val = row.get("code_value") if row else None
+    return str(val or "TRANSFERRED").strip()
 
 
 class ParentUnitOut(BaseModel):
@@ -118,38 +95,29 @@ def status() -> dict[str, str]:
 
 @router.get("/parent-units", response_model=list[ParentUnitOut])
 def get_parent_units(session: Session = Depends(get_db_session)) -> list[ParentUnitOut]:
-    """Get distinct parent depots from MMS_DEPOT_MASTER (and MMS_UNIT_MSTR_DETL) mapped with ORBAT."""
     approved_codes = _get_approved_op_codes(session)
-    
-    # Query from MMS_DEPOT_MASTER primarily
-    depot_suses = session.scalars(
-        select(func.distinct(DepotMaster.to_sus_no)).where(
-            DepotMaster.to_sus_no.is_not(None),
-            func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-        )
-    ).all()
-    
-    # Also check MMS_UNIT_MSTR_DETL as secondary source
-    unit_suses = session.scalars(
-        select(func.distinct(UnitMasterDetail.to_sus_no)).where(
-            UnitMasterDetail.to_sus_no.is_not(None),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
-    ).all()
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
 
-    all_suses = list(depot_suses) + list(unit_suses)
-    clean_suses = [s.strip().upper() for s in all_suses if s and s.strip()]
+    sql = f"""
+        SELECT DISTINCT to_sus_no FROM MMS_DEPOT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
+        UNION
+        SELECT DISTINCT to_sus_no FROM MMS_UNIT_MSTR_DETL WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
+    """
+    rows = fetch_all(session, sql, params)
+    clean_suses = [str(r["to_sus_no"]).strip().upper() for r in rows if r.get("to_sus_no")]
     if not clean_suses:
         return []
 
-    orbat_map = {}
-    orbat_rows = session.scalars(
-        select(OrbatUnitDetl).where(
-            func.upper(OrbatUnitDetl.sus_no).in_(clean_suses)
-        )
-    ).all()
-    for row in orbat_rows:
-        orbat_map[row.sus_no.strip().upper()] = row.unit_name.strip()
+    sin_clause = ", ".join(f":s_{i}" for i in range(len(clean_suses)))
+    sparams = {f"s_{i}": s for i, s in enumerate(clean_suses)}
+
+    orbat_rows = fetch_all(
+        session,
+        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({sin_clause})",
+        sparams,
+    )
+    orbat_map = {str(r["sus_no"]).strip().upper(): str(r["unit_name"]).strip() for r in orbat_rows if r.get("sus_no")}
 
     res: list[ParentUnitOut] = []
     for s in sorted(list(set(clean_suses))):
@@ -166,40 +134,24 @@ def get_parent_holding_types(
     parent_sus_no: str = Query(..., min_length=1),
     session: Session = Depends(get_db_session),
 ) -> list[OptionOut]:
-    """Get distinct holding types for the selected parent depot from MMS_DEPOT_MASTER."""
     approved_codes = _get_approved_op_codes(session)
-    sus = parent_sus_no.strip().upper()
-    
-    distinct_types = session.scalars(
-        select(func.distinct(DepotMaster.type_of_hldg)).where(
-            func.upper(DepotMaster.to_sus_no) == sus,
-            DepotMaster.type_of_hldg.is_not(None),
-            func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-        )
-    ).all()
-    
-    if not distinct_types:
-        distinct_types = session.scalars(
-            select(func.distinct(UnitMasterDetail.type_of_hldg)).where(
-                func.upper(UnitMasterDetail.to_sus_no) == sus,
-                UnitMasterDetail.type_of_hldg.is_not(None),
-                func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-            )
-        ).all()
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
+    params["sus"] = parent_sus_no.strip().upper()
 
-    clean_types = [t.strip() for t in distinct_types if t and t.strip()]
+    sql = f"SELECT DISTINCT type_of_hldg FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
+    rows = fetch_all(session, sql, params)
+    clean_types = [str(r["type_of_hldg"]).strip() for r in rows if r.get("type_of_hldg")]
+    if not clean_types:
+        sql_u = f"SELECT DISTINCT type_of_hldg FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
+        rows = fetch_all(session, sql_u, params)
+        clean_types = [str(r["type_of_hldg"]).strip() for r in rows if r.get("type_of_hldg")]
+
     if not clean_types:
         return []
 
-    dv_rows = session.scalars(
-        select(DomainValue).where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TYPEOFHOLDING"
-        )
-    ).all()
-    dv_map = {}
-    for r in dv_rows:
-        if r.code_value:
-            dv_map[r.code_value.strip().upper()] = r.label_name or r.code_value
+    dv_rows = fetch_all(session, "SELECT code_value, label_name FROM MMS_DOMAIN_VALUES WHERE REPLACE(UPPER(domain_name), '_', '') = 'TYPEOFHOLDING'")
+    dv_map = {str(r["code_value"]).strip().upper(): str(r.get("label_name") or r["code_value"]) for r in dv_rows if r.get("code_value")}
 
     res: list[OptionOut] = []
     for t in sorted(list(set(clean_types))):
@@ -214,42 +166,30 @@ def get_parent_eqpt_types(
     holding_type: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[OptionOut]:
-    """Get distinct equipment types for the selected parent depot from MMS_DEPOT_MASTER."""
     approved_codes = _get_approved_op_codes(session)
-    sus = parent_sus_no.strip().upper()
-    
-    stmt = select(func.distinct(DepotMaster.type_of_eqpt)).where(
-        func.upper(DepotMaster.to_sus_no) == sus,
-        DepotMaster.type_of_eqpt.is_not(None),
-        func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-    )
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
+    params["sus"] = parent_sus_no.strip().upper()
+
+    sql = f"SELECT DISTINCT type_of_eqpt FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
     if holding_type and holding_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_hldg) == holding_type.strip().upper())
+        sql += " AND UPPER(type_of_hldg) = :htype"
+        params["htype"] = holding_type.strip().upper()
 
-    distinct_types = session.scalars(stmt).all()
-    if not distinct_types:
-        stmt_unit = select(func.distinct(UnitMasterDetail.type_of_eqpt)).where(
-            func.upper(UnitMasterDetail.to_sus_no) == sus,
-            UnitMasterDetail.type_of_eqpt.is_not(None),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
+    rows = fetch_all(session, sql, params)
+    clean_types = [str(r["type_of_eqpt"]).strip() for r in rows if r.get("type_of_eqpt")]
+    if not clean_types:
+        sql_u = f"SELECT DISTINCT type_of_eqpt FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
         if holding_type and holding_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_hldg) == holding_type.strip().upper())
-        distinct_types = session.scalars(stmt_unit).all()
+            sql_u += " AND UPPER(type_of_hldg) = :htype"
+        rows = fetch_all(session, sql_u, params)
+        clean_types = [str(r["type_of_eqpt"]).strip() for r in rows if r.get("type_of_eqpt")]
 
-    clean_types = [t.strip() for t in distinct_types if t and t.strip()]
     if not clean_types:
         return []
 
-    dv_rows = session.scalars(
-        select(DomainValue).where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TYPEOFEQPT"
-        )
-    ).all()
-    dv_map = {}
-    for r in dv_rows:
-        if r.code_value:
-            dv_map[r.code_value.strip().upper()] = r.label_name or r.code_value
+    dv_rows = fetch_all(session, "SELECT code_value, label_name FROM MMS_DOMAIN_VALUES WHERE REPLACE(UPPER(domain_name), '_', '') = 'TYPEOFEQPT'")
+    dv_map = {str(r["code_value"]).strip().upper(): str(r.get("label_name") or r["code_value"]) for r in dv_rows if r.get("code_value")}
 
     res: list[OptionOut] = []
     for t in sorted(list(set(clean_types))):
@@ -265,77 +205,51 @@ def get_parent_prf_groups(
     eqpt_type: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[PrfOptionOut]:
-    """Get distinct PRF groups for parent depot from MMS_DEPOT_MASTER mapped with MMS_PRF_GRP_MSTR."""
     approved_codes = _get_approved_op_codes(session)
-    sus = parent_sus_no.strip().upper()
-    
-    stmt = select(func.distinct(DepotMaster.prf_code)).where(
-        func.upper(DepotMaster.to_sus_no) == sus,
-        DepotMaster.prf_code.is_not(None),
-        func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-    )
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
+    params["sus"] = parent_sus_no.strip().upper()
+
+    sql = f"SELECT DISTINCT prf_code FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
     if holding_type and holding_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_hldg) == holding_type.strip().upper())
+        sql += " AND UPPER(type_of_hldg) = :htype"
+        params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_eqpt) == eqpt_type.strip().upper())
+        sql += " AND UPPER(type_of_eqpt) = :etype"
+        params["etype"] = eqpt_type.strip().upper()
 
-    codes = session.scalars(stmt).all()
-    if not codes:
-        stmt_unit = select(func.distinct(UnitMasterDetail.prf_code)).where(
-            func.upper(UnitMasterDetail.to_sus_no) == sus,
-            UnitMasterDetail.prf_code.is_not(None),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
+    rows = fetch_all(session, sql, params)
+    clean_codes = [str(r["prf_code"]).strip() for r in rows if r.get("prf_code")]
+    if not clean_codes:
+        sql_u = f"SELECT DISTINCT prf_code FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
         if holding_type and holding_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_hldg) == holding_type.strip().upper())
+            sql_u += " AND UPPER(type_of_hldg) = :htype"
         if eqpt_type and eqpt_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_eqpt) == eqpt_type.strip().upper())
-        codes = session.scalars(stmt_unit).all()
+            sql_u += " AND UPPER(type_of_eqpt) = :etype"
+        rows = fetch_all(session, sql_u, params)
+        clean_codes = [str(r["prf_code"]).strip() for r in rows if r.get("prf_code")]
 
-    clean_codes = [c.strip() for c in codes if c and c.strip()]
     if not clean_codes:
         return []
 
-    # Map PRF_CODE from MMS_DEPOT_MASTER with MMS_PRF_GRP_MSTR to get PRF_GRP
-    int_codes = []
-    for c in clean_codes:
-        try:
-            int_codes.append(int(c))
-        except ValueError:
-            pass
-
     prf_map: dict[str, str] = {}
+    int_codes = [int(c) for c in clean_codes if c.isdigit()]
     if int_codes:
-        prf_rows = session.execute(
-            select(PrfGrpMstr.prf_code, PrfGrpMstr.prf_grp)
-            .where(PrfGrpMstr.prf_code.in_(int_codes))
-            .distinct()
-        ).all()
-        for p_code, p_grp in prf_rows:
-            if p_grp:
-                prf_map[str(p_code).strip()] = p_grp.strip()
+        pin_clause = ", ".join(f":p_{i}" for i in range(len(int_codes)))
+        pparams = {f"p_{i}": p for i, p in enumerate(int_codes)}
+        prf_rows = fetch_all(session, f"SELECT DISTINCT prf_code, prf_grp FROM MMS_PRF_GRP_MSTR WHERE prf_code IN ({pin_clause})", pparams)
+        for r in prf_rows:
+            if r.get("prf_grp"):
+                prf_map[str(r["prf_code"]).strip()] = str(r["prf_grp"]).strip()
 
     unmapped = [c for c in clean_codes if c not in prf_map]
     if unmapped:
-        str_rows = session.execute(
-            select(PrfGrpMstr.prf_code, PrfGrpMstr.prf_grp)
-            .where(func.cast(PrfGrpMstr.prf_code, String).in_(unmapped))
-            .distinct()
-        ).all()
-        for p_code, p_grp in str_rows:
-            if p_grp:
-                prf_map[str(p_code).strip()] = p_grp.strip()
-
-    missing = [c for c in clean_codes if c not in prf_map]
-    if missing:
-        mlccs_rows = session.scalars(
-            select(MlccsEquipmentMaster).where(
-                MlccsEquipmentMaster.prf_code.in_(missing)
-            )
-        ).all()
+        umin_clause = ", ".join(f":u_{i}" for i in range(len(unmapped)))
+        uparams = {f"u_{i}": u for i, u in enumerate(unmapped)}
+        mlccs_rows = fetch_all(session, f"SELECT prf_code, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE prf_code IN ({umin_clause})", uparams)
         for r in mlccs_rows:
-            if r.prf_code and r.prf_group:
-                prf_map[r.prf_code.strip()] = r.prf_group.strip()
+            if r.get("prf_code") and r.get("prf_group"):
+                prf_map[str(r["prf_code"]).strip()] = str(r["prf_group"]).strip()
 
     res: list[PrfOptionOut] = []
     for c in sorted(list(set(clean_codes))):
@@ -353,50 +267,42 @@ def get_parent_nomenclatures(
     prf_code: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[CensusOptionOut]:
-    """Get distinct census/nomenclatures for parent depot from MMS_DEPOT_MASTER."""
     approved_codes = _get_approved_op_codes(session)
-    sus = parent_sus_no.strip().upper()
-    
-    stmt = select(func.distinct(DepotMaster.census_no)).where(
-        func.upper(DepotMaster.to_sus_no) == sus,
-        DepotMaster.census_no.is_not(None),
-        func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-    )
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
+    params["sus"] = parent_sus_no.strip().upper()
+
+    sql = f"SELECT DISTINCT census_no FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
     if holding_type and holding_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_hldg) == holding_type.strip().upper())
+        sql += " AND UPPER(type_of_hldg) = :htype"
+        params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_eqpt) == eqpt_type.strip().upper())
+        sql += " AND UPPER(type_of_eqpt) = :etype"
+        params["etype"] = eqpt_type.strip().upper()
     if prf_code and prf_code.strip():
-        stmt = stmt.where(func.upper(DepotMaster.prf_code) == prf_code.strip().upper())
+        sql += " AND UPPER(prf_code) = :pcode"
+        params["pcode"] = prf_code.strip().upper()
 
-    censuses = session.scalars(stmt).all()
-    if not censuses:
-        stmt_unit = select(func.distinct(UnitMasterDetail.census_no)).where(
-            func.upper(UnitMasterDetail.to_sus_no) == sus,
-            UnitMasterDetail.census_no.is_not(None),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
+    rows = fetch_all(session, sql, params)
+    clean_censuses = [str(r["census_no"]).strip() for r in rows if r.get("census_no")]
+    if not clean_censuses:
+        sql_u = f"SELECT DISTINCT census_no FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
         if holding_type and holding_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_hldg) == holding_type.strip().upper())
+            sql_u += " AND UPPER(type_of_hldg) = :htype"
         if eqpt_type and eqpt_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_eqpt) == eqpt_type.strip().upper())
+            sql_u += " AND UPPER(type_of_eqpt) = :etype"
         if prf_code and prf_code.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.prf_code) == prf_code.strip().upper())
-        censuses = session.scalars(stmt_unit).all()
+            sql_u += " AND UPPER(prf_code) = :pcode"
+        rows = fetch_all(session, sql_u, params)
+        clean_censuses = [str(r["census_no"]).strip() for r in rows if r.get("census_no")]
 
-    clean_censuses = [c.strip() for c in censuses if c and c.strip()]
     if not clean_censuses:
         return []
 
-    mlccs_rows = session.scalars(
-        select(MlccsEquipmentMaster).where(
-            MlccsEquipmentMaster.census_no.in_(clean_censuses)
-        )
-    ).all()
-    mlccs_map = {}
-    for r in mlccs_rows:
-        if r.census_no and r.nomen:
-            mlccs_map[r.census_no.strip()] = r.nomen.strip()
+    cin_clause = ", ".join(f":c_{i}" for i in range(len(clean_censuses)))
+    cparams = {f"c_{i}": c for i, c in enumerate(clean_censuses)}
+    mlccs_rows = fetch_all(session, f"SELECT census_no, nomen FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE census_no IN ({cin_clause})", cparams)
+    mlccs_map = {str(r["census_no"]).strip(): str(r["nomen"]).strip() for r in mlccs_rows if r.get("census_no") and r.get("nomen")}
 
     res: list[CensusOptionOut] = []
     for c in sorted(list(set(clean_censuses))):
@@ -411,26 +317,25 @@ def get_receiving_units(
     search: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[ReceivingUnitOut]:
-    """Get active receiving units/depots from MMS_ORBAT_UNIT_DETL."""
-    stmt = select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.status) == "ACTIVE")
+    sql = "SELECT sus_no, unit_name, form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(status) = 'ACTIVE'"
+    params: dict = {}
     if search and search.strip():
         q = f"%{search.strip().upper()}%"
-        stmt = stmt.where(
-            or_(
-                func.upper(OrbatUnitDetl.unit_name).like(q),
-                func.upper(OrbatUnitDetl.sus_no).like(q),
-            )
-        )
-    stmt = stmt.order_by(OrbatUnitDetl.unit_name).limit(100)
-    rows = session.scalars(stmt).all()
+        sql += " AND (UPPER(unit_name) LIKE :q OR UPPER(sus_no) LIKE :q)"
+        params["q"] = q
+    sql += " ORDER BY unit_name"
+    rows = fetch_all(session, sql, params)[:100]
+
     res: list[ReceivingUnitOut] = []
     for r in rows:
-        display = f"{r.sus_no} - {r.unit_name}"
+        sus = str(r["sus_no"])
+        uname = str(r["unit_name"])
+        display = f"{sus} - {uname}"
         res.append(
             ReceivingUnitOut(
-                sus_no=r.sus_no,
-                unit_name=r.unit_name,
-                form_code=r.form_code,
+                sus_no=sus,
+                unit_name=uname,
+                form_code=r.get("form_code"),
                 display=display,
             )
         )
@@ -441,21 +346,15 @@ def get_receiving_units(
 def get_receiving_holding_types(
     session: Session = Depends(get_db_session),
 ) -> list[OptionOut]:
-    """Get receiving holding types from MMS_DOMAIN_VALUES where code_value is LIKE '%D%' OR '%R%'."""
-    rows = session.scalars(
-        select(DomainValue)
-        .where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TYPEOFHOLDING",
-            or_(
-                func.upper(DomainValue.code_value).like("%D%"),
-                func.upper(DomainValue.code_value).like("%R%"),
-                func.upper(DomainValue.label_name).like("%DEPOT%"),
-                func.upper(DomainValue.label_name).like("%REGIMENTAL%"),
-            ),
-        )
-        .order_by(func.lpad(func.coalesce(DomainValue.disp_order, "9999"), 10, "0"), DomainValue.label_name)
-    ).all()
-
+    rows = fetch_all(
+        session,
+        """
+        SELECT code_value, label_name FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = 'TYPEOFHOLDING'
+        AND (UPPER(code_value) LIKE '%D%' OR UPPER(code_value) LIKE '%R%' OR UPPER(label_name) LIKE '%DEPOT%' OR UPPER(label_name) LIKE '%REGIMENTAL%')
+        ORDER BY LPAD(COALESCE(disp_order, '9999'), 10, '0'), label_name
+        """,
+    )
     if not rows:
         return [
             OptionOut(value="D", label="Depot Holding"),
@@ -465,8 +364,8 @@ def get_receiving_holding_types(
     res: list[OptionOut] = []
     seen = set()
     for r in rows:
-        val = (r.code_value or r.label_name or "").strip()
-        lbl = (r.label_name or r.code_value or "").strip()
+        val = str(r.get("code_value") or r.get("label_name") or "").strip()
+        lbl = str(r.get("label_name") or r.get("code_value") or "").strip()
         if val and val not in seen:
             seen.add(val)
             res.append(OptionOut(value=val, label=lbl))
@@ -477,15 +376,10 @@ def get_receiving_holding_types(
 def get_receiving_eqpt_types(
     session: Session = Depends(get_db_session),
 ) -> list[OptionOut]:
-    """Get receiving eqpt types from MMS_DOMAIN_VALUES where domain_name = TYPEOFEQPT."""
-    rows = session.scalars(
-        select(DomainValue)
-        .where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "") == "TYPEOFEQPT"
-        )
-        .order_by(func.lpad(func.coalesce(DomainValue.disp_order, "9999"), 10, "0"), DomainValue.label_name)
-    ).all()
-
+    rows = fetch_all(
+        session,
+        "SELECT code_value, label_name FROM MMS_DOMAIN_VALUES WHERE REPLACE(UPPER(domain_name), '_', '') = 'TYPEOFEQPT' ORDER BY LPAD(COALESCE(disp_order, '9999'), 10, '0'), label_name",
+    )
     if not rows:
         return [
             OptionOut(value="S", label="Small Arms"),
@@ -497,8 +391,8 @@ def get_receiving_eqpt_types(
     res: list[OptionOut] = []
     seen = set()
     for r in rows:
-        val = (r.code_value or r.label_name or "").strip()
-        lbl = (r.label_name or r.code_value or "").strip()
+        val = str(r.get("code_value") or r.get("label_name") or "").strip()
+        lbl = str(r.get("label_name") or r.get("code_value") or "").strip()
         if val and val not in seen:
             seen.add(val)
             res.append(OptionOut(value=val, label=lbl))
@@ -514,43 +408,39 @@ def get_regn_list(
     census_no: str | None = None,
     session: Session = Depends(get_db_session),
 ) -> list[str]:
-    """Get approved registration numbers for parent depot from MMS_DEPOT_MASTER."""
     approved_codes = _get_approved_op_codes(session)
-    sus = parent_sus_no.strip().upper()
-    
-    stmt = select(DepotMaster.eqpt_regn_no).where(
-        func.upper(DepotMaster.to_sus_no) == sus,
-        DepotMaster.eqpt_regn_no.is_not(None),
-        func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-    )
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
+    params["sus"] = parent_sus_no.strip().upper()
+
+    sql = f"SELECT eqpt_regn_no FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
     if holding_type and holding_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_hldg) == holding_type.strip().upper())
+        sql += " AND UPPER(type_of_hldg) = :htype"
+        params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_eqpt) == eqpt_type.strip().upper())
+        sql += " AND UPPER(type_of_eqpt) = :etype"
+        params["etype"] = eqpt_type.strip().upper()
     if prf_code and prf_code.strip():
-        stmt = stmt.where(func.upper(DepotMaster.prf_code) == prf_code.strip().upper())
+        sql += " AND UPPER(prf_code) = :pcode"
+        params["pcode"] = prf_code.strip().upper()
     if census_no and census_no.strip():
-        stmt = stmt.where(func.upper(DepotMaster.census_no) == census_no.strip().upper())
+        sql += " AND UPPER(census_no) = :cno"
+        params["cno"] = census_no.strip().upper()
 
-    rows = session.scalars(stmt).all()
+    rows = fetch_all(session, sql, params)
     if not rows:
-        # Fallback to UnitMasterDetail if no records found in DepotMaster
-        stmt_unit = select(UnitMasterDetail.eqpt_regn_no).where(
-            func.upper(UnitMasterDetail.to_sus_no) == sus,
-            UnitMasterDetail.eqpt_regn_no.is_not(None),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
+        sql_u = f"SELECT eqpt_regn_no FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})"
         if holding_type and holding_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_hldg) == holding_type.strip().upper())
+            sql_u += " AND UPPER(type_of_hldg) = :htype"
         if eqpt_type and eqpt_type.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_eqpt) == eqpt_type.strip().upper())
+            sql_u += " AND UPPER(type_of_eqpt) = :etype"
         if prf_code and prf_code.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.prf_code) == prf_code.strip().upper())
+            sql_u += " AND UPPER(prf_code) = :pcode"
         if census_no and census_no.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.census_no) == census_no.strip().upper())
-        rows = session.scalars(stmt_unit).all()
+            sql_u += " AND UPPER(census_no) = :cno"
+        rows = fetch_all(session, sql_u, params)
 
-    regns = sorted(list({r.strip() for r in rows if r and r.strip()}))
+    regns = sorted(list({str(r["eqpt_regn_no"]).strip() for r in rows if r.get("eqpt_regn_no") and str(r["eqpt_regn_no"]).strip()}))
     return regns
 
 
@@ -559,115 +449,166 @@ def submit_transfer(
     body: TransferSubmitIn,
     session: Session = Depends(get_db_session),
 ) -> TransferSubmitOut:
-    """Transform data in MMS_DEPOT_MASTER for selected approved registration numbers."""
     parent_sus = body.parent_sus_no.strip().upper()
     receiving_sus = body.receiving_sus_no.strip().upper()
 
     if not body.regn_numbers:
         raise HTTPException(status_code=400, detail="No registration numbers provided for transfer")
 
-    parent_unit = session.scalar(
-        select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.sus_no) == parent_sus)
-    )
-    parent_form_code = parent_unit.form_code if parent_unit else None
+    parent_unit = fetch_one(session, "SELECT form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) = :sus", {"sus": parent_sus})
+    parent_form_code = parent_unit.get("form_code") if parent_unit else None
 
-    receiving_unit = session.scalar(
-        select(OrbatUnitDetl).where(func.upper(OrbatUnitDetl.sus_no) == receiving_sus)
-    )
-    receiving_form_code = receiving_unit.form_code if receiving_unit else None
+    receiving_unit = fetch_one(session, "SELECT form_code FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) = :sus", {"sus": receiving_sus})
+    receiving_form_code = receiving_unit.get("form_code") if receiving_unit else None
 
     tfr_status_code = _get_tfr_status_code(session)
     approved_codes = _get_approved_op_codes(session)
 
-    stmt = select(DepotMaster).where(
-        func.upper(DepotMaster.to_sus_no) == parent_sus,
-        DepotMaster.eqpt_regn_no.in_(body.regn_numbers),
-        func.upper(func.trim(func.coalesce(DepotMaster.op_status, ""))).in_(approved_codes),
-    )
+    ac_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
+    r_clause = ", ".join(f":r_{i}" for i in range(len(body.regn_numbers)))
+
+    params = {
+        "psus": parent_sus,
+        **{f"ac_{i}": c for i, c in enumerate(approved_codes)},
+        **{f"r_{i}": r for i, r in enumerate(body.regn_numbers)},
+    }
+
+    find_sql = f"""
+        SELECT * FROM MMS_DEPOT_MASTER
+        WHERE UPPER(to_sus_no) = :psus
+        AND eqpt_regn_no IN ({r_clause})
+        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
+    """
     if body.parent_type_of_hldg and body.parent_type_of_hldg.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_hldg) == body.parent_type_of_hldg.strip().upper())
+        find_sql += " AND UPPER(type_of_hldg) = :htype"
+        params["htype"] = body.parent_type_of_hldg.strip().upper()
     if body.parent_type_of_eqpt and body.parent_type_of_eqpt.strip():
-        stmt = stmt.where(func.upper(DepotMaster.type_of_eqpt) == body.parent_type_of_eqpt.strip().upper())
+        find_sql += " AND UPPER(type_of_eqpt) = :etype"
+        params["etype"] = body.parent_type_of_eqpt.strip().upper()
     if body.prf_code and body.prf_code.strip():
-        stmt = stmt.where(func.upper(DepotMaster.prf_code) == body.prf_code.strip().upper())
+        find_sql += " AND UPPER(prf_code) = :pcode"
+        params["pcode"] = body.prf_code.strip().upper()
     if body.census_no and body.census_no.strip():
-        stmt = stmt.where(func.upper(DepotMaster.census_no) == body.census_no.strip().upper())
+        find_sql += " AND UPPER(census_no) = :cno"
+        params["cno"] = body.census_no.strip().upper()
 
-    rows = session.scalars(stmt).all()
+    rows = fetch_all(session, find_sql, params)
 
-    # Fallback to UnitMasterDetail if records exist in UnitMasterDetail
     if not rows:
-        stmt_unit = select(UnitMasterDetail).where(
-            func.upper(UnitMasterDetail.to_sus_no) == parent_sus,
-            UnitMasterDetail.eqpt_regn_no.in_(body.regn_numbers),
-            func.upper(func.trim(func.coalesce(UnitMasterDetail.op_status, ""))).in_(approved_codes),
-        )
+        unit_find_sql = f"""
+            SELECT * FROM MMS_UNIT_MSTR_DETL
+            WHERE UPPER(to_sus_no) = :psus
+            AND eqpt_regn_no IN ({r_clause})
+            AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
+        """
         if body.parent_type_of_hldg and body.parent_type_of_hldg.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_hldg) == body.parent_type_of_hldg.strip().upper())
+            unit_find_sql += " AND UPPER(type_of_hldg) = :htype"
         if body.parent_type_of_eqpt and body.parent_type_of_eqpt.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.type_of_eqpt) == body.parent_type_of_eqpt.strip().upper())
+            unit_find_sql += " AND UPPER(type_of_eqpt) = :etype"
         if body.prf_code and body.prf_code.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.prf_code) == body.prf_code.strip().upper())
+            unit_find_sql += " AND UPPER(prf_code) = :pcode"
         if body.census_no and body.census_no.strip():
-            stmt_unit = stmt_unit.where(func.upper(UnitMasterDetail.census_no) == body.census_no.strip().upper())
+            unit_find_sql += " AND UPPER(census_no) = :cno"
 
-        unit_rows = session.scalars(stmt_unit).all()
+        unit_rows = fetch_all(session, unit_find_sql, params)
         if not unit_rows:
             raise HTTPException(status_code=404, detail="No approved equipment records found for transfer")
-        
-        # Transform by inserting or updating into MMS_DEPOT_MASTER
+
         now = datetime.now()
         transferred: list[str] = []
+        last_id: int | None = None
         for ur in unit_rows:
-            dm = DepotMaster(
-                id=ur.id,
-                sus_no=receiving_sus,
-                census_seq_no=ur.census_seq_no,
-                census_no=ur.census_no,
-                type_of_hldg=body.receiving_type_of_hldg.strip() if body.receiving_type_of_hldg else ur.type_of_hldg,
-                type_of_eqpt=body.receiving_type_of_eqpt.strip() if body.receiving_type_of_eqpt else ur.type_of_eqpt,
-                eqpt_regn_no=ur.eqpt_regn_no,
-                regn_seq_no=ur.regn_seq_no,
-                from_sus_no=parent_sus,
-                from_form_code=parent_form_code,
-                from_tr_date=now,
-                to_sus_no=receiving_sus,
-                to_form_code=receiving_form_code,
-                to_tr_date=now,
-                service_status=ur.service_status,
-                op_status=ur.op_status,
-                tfr_status=tfr_status_code,
-                prf_code=ur.prf_code,
+            next_id = str(next_int_id(session, "MMS_DEPOT_MASTER", start_after=last_id))
+            last_id = int(next_id) if next_id.isdigit() else None
+
+            insert_params = {
+                "id": next_id,
+                "sus_no": receiving_sus,
+                "census_seq_no": ur.get("census_seq_no"),
+                "census_no": ur.get("census_no"),
+                "type_of_hldg": body.receiving_type_of_hldg.strip() if body.receiving_type_of_hldg else ur.get("type_of_hldg"),
+                "type_of_eqpt": body.receiving_type_of_eqpt.strip() if body.receiving_type_of_eqpt else ur.get("type_of_eqpt"),
+                "eqpt_regn_no": ur.get("eqpt_regn_no"),
+                "regn_seq_no": ur.get("regn_seq_no"),
+                "from_sus_no": parent_sus,
+                "from_form_code": parent_form_code,
+                "from_tr_date": now,
+                "to_sus_no": receiving_sus,
+                "to_form_code": receiving_form_code,
+                "to_tr_date": now,
+                "service_status": ur.get("service_status"),
+                "op_status": ur.get("op_status"),
+                "tfr_status": tfr_status_code,
+                "prf_code": ur.get("prf_code"),
+            }
+            insert_sql = """
+                INSERT INTO MMS_DEPOT_MASTER (
+                    id, sus_no, census_seq_no, census_no, type_of_hldg, type_of_eqpt,
+                    eqpt_regn_no, regn_seq_no, from_sus_no, from_form_code, from_tr_date,
+                    to_sus_no, to_form_code, to_tr_date, service_status, op_status, tfr_status, prf_code
+                ) VALUES (
+                    :id, :sus_no, :census_seq_no, :census_no, :type_of_hldg, :type_of_eqpt,
+                    :eqpt_regn_no, :regn_seq_no, :from_sus_no, :from_form_code, :from_tr_date,
+                    :to_sus_no, :to_form_code, :to_tr_date, :service_status, :op_status, :tfr_status, :prf_code
+                )
+            """
+            execute_sql(session, insert_sql, insert_params)
+
+            u_up_params = {
+                "rsus": receiving_sus,
+                "psus": parent_sus,
+                "now_dt": now,
+                "tfr_code": tfr_status_code,
+                "uid": ur["id"],
+                "uid_str": str(ur["id"]),
+            }
+            execute_sql(
+                session,
+                "UPDATE MMS_UNIT_MSTR_DETL SET to_sus_no = :rsus, sus_no = :rsus, from_sus_no = :psus, to_tr_date = :now_dt, from_tr_date = :now_dt, tfr_status = :tfr_code WHERE id = :uid OR TO_CHAR(id) = :uid_str",
+                u_up_params,
             )
-            session.add(dm)
-            ur.to_sus_no = receiving_sus
-            ur.sus_no = receiving_sus
-            ur.from_sus_no = parent_sus
-            ur.to_tr_date = now
-            ur.from_tr_date = now
-            ur.tfr_status = tfr_status_code
-            if ur.eqpt_regn_no:
-                transferred.append(ur.eqpt_regn_no)
-        session.flush()
+
+            if ur.get("eqpt_regn_no"):
+                transferred.append(str(ur["eqpt_regn_no"]))
+
         return TransferSubmitOut(count=len(transferred), transferred_regns=transferred)
 
     now = datetime.now()
     transferred: list[str] = []
     for r in rows:
-        r.from_sus_no = parent_sus
-        r.from_form_code = parent_form_code
-        r.to_sus_no = receiving_sus
-        r.sus_no = receiving_sus
-        r.to_form_code = receiving_form_code
-        r.from_tr_date = now
-        r.to_tr_date = now
+        rec_id = r["id"]
+        update_sql = """
+            UPDATE MMS_DEPOT_MASTER
+            SET from_sus_no = :psus,
+                from_form_code = :pform,
+                to_sus_no = :rsus,
+                sus_no = :rsus,
+                to_form_code = :rform,
+                from_tr_date = :now_dt,
+                to_tr_date = :now_dt,
+                tfr_status = :tfr_code
+        """
+        up_params = {
+            "psus": parent_sus,
+            "pform": parent_form_code,
+            "rsus": receiving_sus,
+            "rform": receiving_form_code,
+            "now_dt": now,
+            "tfr_code": tfr_status_code,
+            "rid": rec_id,
+            "rid_str": str(rec_id),
+        }
         if body.receiving_type_of_hldg and body.receiving_type_of_hldg.strip():
-            r.type_of_hldg = body.receiving_type_of_hldg.strip()
+            update_sql += ", type_of_hldg = :rhldg"
+            up_params["rhldg"] = body.receiving_type_of_hldg.strip()
         if body.receiving_type_of_eqpt and body.receiving_type_of_eqpt.strip():
-            r.type_of_eqpt = body.receiving_type_of_eqpt.strip()
-        r.tfr_status = tfr_status_code
-        if r.eqpt_regn_no:
-            transferred.append(r.eqpt_regn_no)
+            update_sql += ", type_of_eqpt = :reqpt"
+            up_params["reqpt"] = body.receiving_type_of_eqpt.strip()
 
-    session.flush()
+        update_sql += " WHERE id = :rid OR TO_CHAR(id) = :rid_str"
+        execute_sql(session, update_sql, up_params)
+
+        if r.get("eqpt_regn_no"):
+            transferred.append(str(r["eqpt_regn_no"]))
+
     return TransferSubmitOut(count=len(transferred), transferred_regns=transferred)

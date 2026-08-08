@@ -1,4 +1,4 @@
-"""Search / Approve EP Stores — query and update MMS_EP_TRANSACTION."""
+"""Search / Approve EP Stores — query and update MMS_EP_TRANSACTION using Native SQL."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session, get_principal
-from app.models import EpHoldingUnit, EpTransaction
 from app.auth.principal import Principal
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
+from app.utils.ids import get_by_id
 
 router = APIRouter(
     prefix="/ep/search-approve",
@@ -46,7 +46,7 @@ class SearchEpIn(BaseModel):
 
 
 class EpTxnOut(BaseModel):
-    id: str
+    id: str | int
     sus_no: str | None = None
     unit_name: str | None = None
     issued_from: str | None = None
@@ -65,35 +65,35 @@ class EpTxnOut(BaseModel):
 
 
 class ApproveEpIn(BaseModel):
-    ids: list[str] = Field(..., min_length=1)
+    ids: list[str | int] = Field(..., min_length=1)
 
 
 class ApproveEpOut(BaseModel):
-    approved_ids: list[str]
+    approved_ids: list[str | int]
     count: int
 
 
-def _to_out(row: EpTransaction, unit_name: str | None) -> EpTxnOut:
-    status = (row.op_status or "").strip().upper()
-    auth = row.auth_date
-    iv = row.iv_date
+def _to_out(row: dict) -> EpTxnOut:
+    status = str(row.get("op_status") or "").strip().upper()
+    auth = row.get("auth_date")
+    iv = row.get("iv_date")
     return EpTxnOut(
-        id=row.id,
-        sus_no=row.to_sus_no,
-        unit_name=unit_name,
-        issued_from=row.issued_from,
-        from_sus_no=row.from_sus_no,
-        census_no=row.census_no,
-        auth_letter_no=row.auth_letter_no,
-        auth_date=auth.date().isoformat() if isinstance(auth, datetime) else None,
-        iv_no=row.iv_no,
-        iv_date=iv.date().isoformat() if isinstance(iv, datetime) else None,
-        qty=row.qty,
-        eqpt_regn_no=row.eqpt_regn_no,
-        service_status=row.service_status,
+        id=str(row.get("id") or ""),
+        sus_no=row.get("to_sus_no"),
+        unit_name=row.get("unit_name"),
+        issued_from=row.get("issued_from"),
+        from_sus_no=row.get("from_sus_no"),
+        census_no=row.get("census_no"),
+        auth_letter_no=row.get("auth_letter_no"),
+        auth_date=auth.date().isoformat() if isinstance(auth, datetime) else (str(auth) if auth else None),
+        iv_no=row.get("iv_no"),
+        iv_date=iv.date().isoformat() if isinstance(iv, datetime) else (str(iv) if iv else None),
+        qty=row.get("qty"),
+        eqpt_regn_no=row.get("eqpt_regn_no"),
+        service_status=row.get("service_status"),
         op_status=status or None,
         op_status_label=_STATUS_LABEL.get(status, status or None),
-        remarks=row.remarks,
+        remarks=row.get("remarks"),
     )
 
 
@@ -109,55 +109,50 @@ def search_transactions(
             detail="Status must be Approved, Pending, Rejected, or All",
         )
 
-    stmt = (
-        select(EpTransaction, EpHoldingUnit.unit_name)
-        .outerjoin(
-            EpHoldingUnit,
-            func.upper(EpHoldingUnit.sus_no) == func.upper(EpTransaction.to_sus_no),
-        )
-        .order_by(EpTransaction.id)
-    )
+    sql = """
+        SELECT t.id, t.to_sus_no, t.issued_from, t.from_sus_no, t.census_no,
+               t.auth_letter_no, t.auth_date, t.iv_no, t.iv_date, t.qty,
+               t.eqpt_regn_no, t.service_status, t.op_status, t.remarks, u.unit_name
+        FROM MMS_EP_TRANSACTION t
+        LEFT JOIN MMS_EP_HOLDING_UNIT u ON UPPER(u.sus_no) = UPPER(t.to_sus_no)
+        WHERE 1=1
+    """
+    params: dict = {}
 
     if body.sus_no and body.sus_no.strip():
         sus = body.sus_no.strip().upper()
-        stmt = stmt.where(
-            or_(
-                func.upper(EpTransaction.to_sus_no) == sus,
-                func.upper(EpHoldingUnit.sus_no) == sus,
-            )
-        )
+        sql += " AND (UPPER(t.to_sus_no) = :sus OR UPPER(u.sus_no) = :sus)"
+        params["sus"] = sus
 
     if body.unit_name and body.unit_name.strip():
         unit = body.unit_name.strip().upper()
-        stmt = stmt.where(
-            or_(
-                func.upper(EpHoldingUnit.unit_name).like(f"%{unit}%"),
-                # allow exact-ish match when unit name typed from suggestions
-                func.upper(EpHoldingUnit.unit_name) == unit,
-            )
-        )
+        sql += " AND (UPPER(u.unit_name) LIKE :unit OR UPPER(u.unit_name) = :exact_unit)"
+        params["unit"] = f"%{unit}%"
+        params["exact_unit"] = unit
 
     if status_key != "all":
-        stmt = stmt.where(
-            func.upper(func.trim(EpTransaction.op_status)).in_(_STATUS_CODES[status_key])
-        )
+        codes = _STATUS_CODES[status_key]
+        in_clause = ", ".join(f":st_{i}" for i in range(len(codes)))
+        sql += f" AND UPPER(TRIM(t.op_status)) IN ({in_clause})"
+        for i, c in enumerate(codes):
+            params[f"st_{i}"] = c
 
     if body.date_from is not None or body.date_to is not None:
-        effective = func.coalesce(
-            EpTransaction.auth_date,
-            EpTransaction.from_tr_date,
-            EpTransaction.created_date,
-        )
-        if body.date_from is not None:
-            stmt = stmt.where(
-                effective >= datetime.combine(body.date_from, datetime.min.time())
-            )
-        if body.date_to is not None:
-            stmt = stmt.where(
-                effective <= datetime.combine(body.date_to, datetime.max.time())
-            )
+        sql += " AND COALESCE(t.auth_date, t.from_tr_date, t.created_date) "
+        if body.date_from is not None and body.date_to is not None:
+            sql += " BETWEEN :dfrom AND :dto"
+            params["dfrom"] = datetime.combine(body.date_from, datetime.min.time())
+            params["dto"] = datetime.combine(body.date_to, datetime.max.time())
+        elif body.date_from is not None:
+            sql += " >= :dfrom"
+            params["dfrom"] = datetime.combine(body.date_from, datetime.min.time())
+        elif body.date_to is not None:
+            sql += " <= :dto"
+            params["dto"] = datetime.combine(body.date_to, datetime.max.time())
 
-    return [_to_out(row, name) for row, name in session.execute(stmt).all()]
+    sql += " ORDER BY t.id"
+    rows = fetch_all(session, sql, params)
+    return [_to_out(r) for r in rows]
 
 
 @router.post("/approve", response_model=ApproveEpOut)
@@ -166,29 +161,40 @@ def approve_transactions(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> ApproveEpOut:
-    ids = [i.strip() for i in body.ids if i and i.strip()]
-    if not ids:
+    raw_ids = [str(i).strip() for i in body.ids if i is not None and str(i).strip()]
+    if not raw_ids:
         raise HTTPException(status_code=400, detail="No records selected")
 
     now = datetime.now()
     approved: list[str] = []
-    for txn_id in ids:
-        row = session.get(EpTransaction, txn_id)
+    for txn_id in raw_ids:
+        row = get_by_id(session, "MMS_EP_TRANSACTION", txn_id)
         if row is None:
             raise HTTPException(status_code=404, detail=f"Record '{txn_id}' not found")
-        curr_status = (row.op_status or "").strip().upper()
+        curr_status = str(row.get("op_status") or "").strip().upper()
         if curr_status in ("A", "1"):
             continue
         if curr_status not in ("P", "0", "R", "2", ""):
             raise HTTPException(
                 status_code=400,
-                detail=f"Record '{txn_id}' cannot be approved (status={row.op_status})",
+                detail=f"Record '{txn_id}' cannot be approved (status={curr_status})",
             )
-        row.op_status = "1" if curr_status == "0" else "A"
-        row.approved_by = principal.username
-        row.approved_date = now
-        approved.append(row.id)
+        new_status = "1" if curr_status == "0" else "A"
+        execute_sql(
+            session,
+            """
+            UPDATE MMS_EP_TRANSACTION
+            SET op_status = :status, approved_by = :app_by, approved_date = :app_date
+            WHERE id = :id OR TO_CHAR(id) = :id_str
+            """,
+            {
+                "status": new_status,
+                "app_by": principal.username,
+                "app_date": now,
+                "id": row.get("id"),
+                "id_str": str(row.get("id")),
+            },
+        )
+        approved.append(str(row.get("id")))
 
-    session.flush()
     return ApproveEpOut(approved_ids=approved, count=len(approved))
-

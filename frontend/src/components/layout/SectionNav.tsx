@@ -42,16 +42,15 @@ export function SectionNav({
   formOpen = false,
   screenLabel,
 }: Props) {
-  const [open, setOpen] = useState(!formOpen);
+  const [open, setOpen] = useState(true);
   const [menuQuery, setMenuQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
 
-  // Collapse on navigation when a form owns the page; stay expanded on main screens.
+  // Reset menu search query on navigation; keep user's open/collapsed sidebar state
   useEffect(() => {
     setMenuQuery("");
-    setOpen(!formOpen);
-  }, [active, activeSub, formOpen]);
+  }, [active, activeSub]);
 
   const activeSection = sections.find((s) => s.id === active);
   const screens = activeSection?.children ?? [];
@@ -136,7 +135,6 @@ export function SectionNav({
                     } else {
                       onSelect(s.id);
                     }
-                    if (formOpen && !open) setOpen(false);
                   }}
                 >
                   <Icon className={cn("h-4 w-4 shrink-0", on ? "text-white" : "text-[#14568c]")} />
@@ -200,7 +198,6 @@ export function SectionNav({
                         )}
                         onClick={() => {
                           onSelect(active, c.id);
-                          if (formOpen) setOpen(false);
                         }}
                       >
                         <span
@@ -239,19 +236,6 @@ export function SectionNav({
           </div>
         )}
       </div>
-
-      {/* Footer info in sidebar when expanded */}
-      {open && formOpen && (
-        <div className="p-2 border-t border-[#dfe9f4] bg-[#eff5fb]/50">
-          <button
-            type="button"
-            className="w-full text-center py-1 text-[11px] font-semibold text-[#14568c] hover:underline cursor-pointer"
-            onClick={() => setOpen(false)}
-          >
-            Collapse sidebar
-          </button>
-        </div>
-      )}
     </aside>
   );
 }

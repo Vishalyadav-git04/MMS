@@ -86,3 +86,5 @@ async def miso_error_handler(_: Request, exc: MisoError) -> JSONResponse:
 
 
 app.include_router(api_router, prefix=settings.api_prefix)
+if settings.api_prefix != "/api":
+    app.include_router(api_router, prefix="/api")

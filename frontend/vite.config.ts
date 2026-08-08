@@ -13,17 +13,16 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  // Proxy API calls to the MMS FastAPI service (Orbat-style backend on :8001).
-  // Existing UI is unchanged; screens can opt into /api/v1 later.
+  // Proxy API calls directly to the MMS FastAPI service (backend on :8000).
   vite: {
     server: {
       port: 3000,
       proxy: {
-        "/api": {
-          target: "http://localhost:8000",
-          changeOrigin: true,
-          xfwd: true,
-        },
+        ...Object.fromEntries(
+          ["/auth", "/health", "/upload", "/dashboard", "/mms", "/ep", "/mlccs", "/ro", "/transfer", "/unit-holding"].map(
+            (path) => [path, { target: "http://localhost:8000", changeOrigin: true, xfwd: true }]
+          )
+        ),
       },
     },
   },

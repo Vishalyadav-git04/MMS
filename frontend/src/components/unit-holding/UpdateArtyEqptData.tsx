@@ -52,7 +52,7 @@ const OH_TYPE_OPTIONS = ["Minor OH", "Major OH", "Base OH", "Intermediate OH"];
 const OP_CLEARANCE_OPTIONS = ["Cleared", "Not Cleared", "Pending"];
 
 type EqptResult = {
-  id: string;
+  id: number | string;
   regnNo: string;
   unit: string;
   prfGroup: string;
@@ -327,7 +327,7 @@ function BarrelDetailsForm({
 }
 
 type StripRow = {
-  id: string;
+  id: number | string;
   recoilSysRegnNo: string;
   periodicity: string;
   dtOfInsp: string;

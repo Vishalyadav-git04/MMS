@@ -1,14 +1,32 @@
-"""Create and seed dummy issuer / holding unit lookup tables for EP Stores."""
+"""Create and seed dummy issuer / holding unit lookup tables for EP Stores using Native SQL."""
 
 from __future__ import annotations
 
 import logging
+from sqlalchemy import inspect, text
 
-from sqlalchemy import inspect, select, text
-
-from app.models import EpHoldingUnit, EpIssuerUnit
+from app.db.native_utils import execute_sql, fetch_one
 
 logger = logging.getLogger("mms.ep.lookups")
+
+_CREATE_ISSUER_DDL = """
+CREATE TABLE MMS_EP_ISSUER_UNIT (
+    ID VARCHAR2(36) PRIMARY KEY,
+    SANCTIONING_AUTH VARCHAR2(255),
+    UNIT_NAME VARCHAR2(255),
+    SUS_NO VARCHAR2(255),
+    FORM_CODE VARCHAR2(50)
+)
+"""
+
+_CREATE_HOLDING_DDL = """
+CREATE TABLE MMS_EP_HOLDING_UNIT (
+    ID VARCHAR2(36) PRIMARY KEY,
+    UNIT_NAME VARCHAR2(255),
+    SUS_NO VARCHAR2(255),
+    FORM_CODE VARCHAR2(50)
+)
+"""
 
 _ISSUER_SEED = (
     ("1", "DG CD", "1 Corps Ordnance Depot", "99101112", "FC01"),
@@ -46,44 +64,50 @@ def _ensure_form_code_column(db, table_name: str) -> None:
 
 def ensure_ep_lookup_tables(db) -> None:
     """Create MMS_EP_ISSUER_UNIT / MMS_EP_HOLDING_UNIT and seed dummy rows."""
-    EpIssuerUnit.__table__.create(bind=db.engine, checkfirst=True)
-    EpHoldingUnit.__table__.create(bind=db.engine, checkfirst=True)
+    with db.engine.begin() as conn:
+        try:
+            conn.execute(text(_CREATE_ISSUER_DDL))
+        except Exception:
+            pass
+        try:
+            conn.execute(text(_CREATE_HOLDING_DDL))
+        except Exception:
+            pass
+
     _ensure_form_code_column(db, "MMS_EP_ISSUER_UNIT")
     _ensure_form_code_column(db, "MMS_EP_HOLDING_UNIT")
 
     with db.session() as session:
-        if session.scalar(select(EpIssuerUnit.id).limit(1)) is None:
+        has_issuer = fetch_one(session, "SELECT id FROM MMS_EP_ISSUER_UNIT WHERE ROWNUM = 1")
+        if has_issuer is None:
             for id_, auth, name, sus, form_code in _ISSUER_SEED:
-                session.add(
-                    EpIssuerUnit(
-                        id=id_,
-                        sanctioning_auth=auth,
-                        unit_name=name,
-                        sus_no=sus,
-                        form_code=form_code,
-                    )
+                execute_sql(
+                    session,
+                    "INSERT INTO MMS_EP_ISSUER_UNIT (id, sanctioning_auth, unit_name, sus_no, form_code) VALUES (:id, :auth, :name, :sus, :form)",
+                    {"id": id_, "auth": auth, "name": name, "sus": sus, "form": form_code},
                 )
             logger.info("seeded %s issuer units", len(_ISSUER_SEED))
         else:
-            # Backfill FORM_CODE on existing seed rows when null.
             for id_, auth, name, sus, form_code in _ISSUER_SEED:
-                row = session.get(EpIssuerUnit, id_)
-                if row is not None and not row.form_code:
-                    row.form_code = form_code
+                execute_sql(
+                    session,
+                    "UPDATE MMS_EP_ISSUER_UNIT SET form_code = :form WHERE id = :id AND (form_code IS NULL OR form_code = '')",
+                    {"id": id_, "form": form_code},
+                )
 
-        if session.scalar(select(EpHoldingUnit.id).limit(1)) is None:
+        has_holding = fetch_one(session, "SELECT id FROM MMS_EP_HOLDING_UNIT WHERE ROWNUM = 1")
+        if has_holding is None:
             for id_, name, sus, form_code in _HOLDING_SEED:
-                session.add(
-                    EpHoldingUnit(
-                        id=id_,
-                        unit_name=name,
-                        sus_no=sus,
-                        form_code=form_code,
-                    )
+                execute_sql(
+                    session,
+                    "INSERT INTO MMS_EP_HOLDING_UNIT (id, unit_name, sus_no, form_code) VALUES (:id, :name, :sus, :form)",
+                    {"id": id_, "name": name, "sus": sus, "form": form_code},
                 )
             logger.info("seeded %s holding units", len(_HOLDING_SEED))
         else:
             for id_, name, sus, form_code in _HOLDING_SEED:
-                row = session.get(EpHoldingUnit, id_)
-                if row is not None and not row.form_code:
-                    row.form_code = form_code
+                execute_sql(
+                    session,
+                    "UPDATE MMS_EP_HOLDING_UNIT SET form_code = :form WHERE id = :id AND (form_code IS NULL OR form_code = '')",
+                    {"id": id_, "form": form_code},
+                )

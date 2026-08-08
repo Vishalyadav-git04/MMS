@@ -14,8 +14,8 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 interface EpDomainRow {
-  id: string;
-  domain_id: number;
+  id: number | string;
+  domain_id: number | string;
   eqpt_cat: string;
   created_by?: string | null;
 }

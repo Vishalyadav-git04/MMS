@@ -25,7 +25,7 @@ import { toast } from "sonner";
 type Mode = "add" | "search";
 
 interface DomainRow {
-  id: string;
+  id: number | string;
   domain_name: string;
   code_value: string;
   label_name: string;

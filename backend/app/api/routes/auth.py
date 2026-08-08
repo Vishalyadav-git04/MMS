@@ -8,11 +8,10 @@ from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.native_utils import fetch_one
 from app.deps import get_optional_db_session, get_principal, get_settings_dep
-from app.models import MmsUser
 from app.settings import MmsSettings
 from app.auth.jwt import create_access_token, hash_password, verify_password
 from app.auth.principal import Principal, Role
@@ -78,7 +77,7 @@ def _lan_rank(ip: str) -> int:
 
 
 @lru_cache(maxsize=1)
-def _primary_lan_ip() -> str | None:
+def _primary_lan_ip() -> str:
     """Best private NIC on this host — used when the browser hits us via localhost."""
     candidates: list[str] = []
 
@@ -86,7 +85,14 @@ def _primary_lan_ip() -> str | None:
         if _is_private_lan_ip(ip) and ip not in candidates:
             candidates.append(ip)
 
-    for target in (("8.8.8.8", 80), ("192.168.0.1", 1)):
+    for target in (
+        ("8.8.8.8", 80),
+        ("192.168.0.1", 1),
+        ("192.168.1.1", 1),
+        ("10.255.255.255", 1),
+        ("192.168.255.255", 1),
+        ("172.31.255.255", 1),
+    ):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                 sock.settimeout(0.2)
@@ -96,13 +102,20 @@ def _primary_lan_ip() -> str | None:
             pass
 
     try:
+        _, _, ip_list = socket.gethostbyname_ex(socket.gethostname())
+        for ip in ip_list:
+            _add(ip)
+    except OSError:
+        pass
+
+    try:
         for info in socket.getaddrinfo(socket.gethostname(), None, family=socket.AF_INET):
             _add(info[4][0])
     except OSError:
         pass
 
     if not candidates:
-        return None
+        return "127.0.0.1"
     candidates.sort(key=_lan_rank)
     return candidates[0]
 
@@ -199,36 +212,41 @@ def login(
 ) -> TokenResponse:
     username = body.username.strip()
     client_ip = _client_ip(request)
-    row: MmsUser | None = None
+    row: dict | None = None
     if session is not None:
         try:
-            row = session.scalar(
-                select(MmsUser).where(
-                    func.upper(MmsUser.username) == username.upper()
-                )
+            row = fetch_one(
+                session,
+                "SELECT id, username, display_name, password_hash, role, unit_id, active FROM MMS_USER WHERE UPPER(username) = UPPER(:u)",
+                {"u": username},
             )
         except Exception:
             row = None
 
     if row is not None:
-        if (row.active or "Y").upper() != "Y":
+        active = str(row.get("active") or "Y").upper()
+        if active != "Y":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Account is inactive",
             )
-        if not verify_password(body.password, row.password_hash):
+        pwd_hash = str(row.get("password_hash") or "")
+        if not verify_password(body.password, pwd_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
             )
-        role = (row.role or Role.UNIT.value).upper()
+        db_user = str(row.get("username") or username)
+        role = str(row.get("role") or Role.UNIT.value).upper()
         if role not in (Role.ADMIN.value, Role.UNIT.value):
             role = Role.UNIT.value
+        disp_name = row.get("display_name") or db_user
+        unit_id = row.get("unit_id")
         return _token_for(
-            username=row.username,
+            username=db_user,
             role=role,
-            display_name=row.display_name or row.username,
-            unit_id=row.unit_id,
+            display_name=disp_name,
+            unit_id=str(unit_id) if unit_id else None,
             settings=settings,
             client_ip=client_ip,
         )

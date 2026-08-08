@@ -23,13 +23,13 @@ import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
 
 interface HoldingUnit {
-  id: string;
+  id: number | string;
   unit_name: string;
   sus_no: string;
 }
 
 interface EpTxnRow {
-  id: string;
+  id: number | string;
   sus_no?: string | null;
   unit_name?: string | null;
   issued_from?: string | null;
@@ -222,7 +222,7 @@ export function SearchApproveEpStores() {
     }
   };
 
-  const toggleRow = (id: string, checked: boolean) => {
+  const toggleRow = (id: number | string, checked: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (checked) next.add(id);

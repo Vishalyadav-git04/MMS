@@ -17,9 +17,9 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 interface SubDomainSuggestion {
-  id: string;
-  equipment_domain_id: string;
-  sub_domain_id: number;
+  id: number | string;
+  equipment_domain_id: number | string;
+  sub_domain_id: number | string;
   sub_domain_name: string;
   eqpt_cat?: string | null;
 }
@@ -183,18 +183,18 @@ export function GenEpCensus() {
       const [generated, fetchedOptions] = await Promise.all([
         api<{
           census_no: string;
-          sub_domain_id: string;
+          sub_domain_id: number | string;
           sub_domain_name: string;
-          domain_id: string;
+          domain_id: number | string;
         }>("/ep/gen-census/generate", {
           method: "POST",
-          body: JSON.stringify({ sub_domain_id: selected.id }),
+          body: JSON.stringify({ sub_domain_id: String(selected.id) }),
         }),
         api<CensusOptions>("/ep/gen-census/options"),
       ]);
       setForm({
         ...emptyForm,
-        subDomainId: generated.sub_domain_id,
+        subDomainId: String(generated.sub_domain_id),
         subDomainName: generated.sub_domain_name,
         censusNo: generated.census_no,
       });
@@ -418,11 +418,11 @@ function MlccsEpForm({
             <Input
               value={form.authLetterNo}
               onChange={(e) => upd("authLetterNo", e.target.value)}
-              placeholder="Enter Auth/Letter No.."
+              placeholder="Enter Auth/Letter No"
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Date" required className="sm:grid-cols-[52px_minmax(10rem,1fr)]">
+          <FormRow label="Date" required>
             <DateInput
               value={form.date}
               onChange={(v) => upd("date", v)}
@@ -433,7 +433,7 @@ function MlccsEpForm({
             <Input
               value={form.catPartNo}
               onChange={(e) => upd("catPartNo", e.target.value)}
-              placeholder="Enter Cat/Part No.."
+              placeholder="Enter Cat/Part No"
               disabled={busy}
             />
           </FormRow>
@@ -473,7 +473,7 @@ function MlccsEpForm({
             <Input
               value={form.countryOfOrigin}
               onChange={(e) => upd("countryOfOrigin", e.target.value)}
-              placeholder="Search.."
+              placeholder="Search..."
               disabled={busy}
             />
           </FormRow>
@@ -512,7 +512,7 @@ function MlccsEpForm({
             <Input
               value={form.cost}
               onChange={(e) => upd("cost", e.target.value)}
-              placeholder="Enter Cost.."
+              placeholder="Enter Cost"
               disabled={busy}
             />
           </FormRow>
@@ -520,7 +520,7 @@ function MlccsEpForm({
             <Input
               value={form.manufacturingAgency}
               onChange={(e) => upd("manufacturingAgency", e.target.value)}
-              placeholder="Enter Man. Agency.."
+              placeholder="Enter Man. Agency"
               disabled={busy}
             />
           </FormRow>
@@ -528,23 +528,23 @@ function MlccsEpForm({
             <Input
               value={form.ahspAgency}
               onChange={(e) => upd("ahspAgency", e.target.value)}
-              placeholder="Enter AHSP Agency..."
+              placeholder="Enter AHSP Agency"
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="NATO Stock No(NSN)">
+          <FormRow label="NATO Stock No (NSN)">
             <Input
               value={form.natoStockNo}
               onChange={(e) => upd("natoStockNo", e.target.value)}
-              placeholder="Enter No..."
+              placeholder="Enter NSN"
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Def Catalogue No(DCAN)">
+          <FormRow label="Def Catalogue No (DCAN)">
             <Input
               value={form.defCatalogueNo}
               onChange={(e) => upd("defCatalogueNo", e.target.value)}
-              placeholder="Enter No..."
+              placeholder="Enter DCAN"
               disabled={busy}
             />
           </FormRow>
@@ -553,7 +553,7 @@ function MlccsEpForm({
               rows={2}
               value={form.briefDescription}
               onChange={(e) => upd("briefDescription", e.target.value)}
-              placeholder="Enter Brief Description.."
+              placeholder="Enter Brief Description"
               disabled={busy}
             />
           </FormRow>
@@ -562,7 +562,7 @@ function MlccsEpForm({
               rows={2}
               value={form.remarks}
               onChange={(e) => upd("remarks", e.target.value)}
-              placeholder="Enter Your Remarks..."
+              placeholder="Enter Remarks"
               disabled={busy}
             />
           </FormRow>

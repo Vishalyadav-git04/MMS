@@ -24,12 +24,12 @@ interface UnitOption {
 }
 
 interface DomainOption {
-  id: string;
+  id: number | string;
   eqpt_cat: string;
 }
 
 interface SubDomainOption {
-  id: string;
+  id: number | string;
   sub_domain_name: string;
 }
 
@@ -420,7 +420,7 @@ export function EpIutTransfer() {
               </SelectTrigger>
               <SelectContent className="max-h-72">
                 {domains.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
+                  <SelectItem key={d.id} value={String(d.id)}>
                     {d.eqpt_cat}
                   </SelectItem>
                 ))}
@@ -441,7 +441,7 @@ export function EpIutTransfer() {
               </SelectTrigger>
               <SelectContent className="max-h-72">
                 {subDomains.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
+                  <SelectItem key={s.id} value={String(s.id)}>
                     {s.sub_domain_name}
                   </SelectItem>
                 ))}

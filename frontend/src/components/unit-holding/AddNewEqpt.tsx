@@ -22,7 +22,7 @@ interface Option {
 }
 
 interface OrbatUnit {
-  id: string;
+  id: number | string;
   unit_name: string;
   sus_no: string;
   form_code: string | null;
@@ -38,7 +38,7 @@ interface CensusItem {
 }
 
 interface ItemRow {
-  id: string;
+  id: number | string;
   issuingDepotName: string;
   toUnitName: string;
   prfGroup: string;
@@ -166,22 +166,35 @@ export function AddNewEqpt() {
   ) => setForm((prev) => ({ ...prev, [k]: v }));
 
   useEffect(() => {
+    let active = true;
+
     api<{ type_of_hldg: Option[]; type_of_eqpt: Option[] }>(
       "/unit-holding/add-new-eqpt/options",
     )
       .then((res) => {
+        if (!active) return;
         setHoldingOpts(res.type_of_hldg ?? []);
         setEqptOpts(res.type_of_eqpt ?? []);
       })
       .catch(() => toast.error("Failed to load holding / eqpt options"));
 
     api<OrbatUnit[]>("/unit-holding/add-new-eqpt/orbat-units")
-      .then(setDepotOpts)
+      .then((res) => {
+        if (!active) return;
+        setDepotOpts(res);
+      })
       .catch(() => toast.error("Failed to load ORBAT units"));
 
     api<{ prf_group: string }[]>("/unit-holding/add-new-eqpt/prf-groups")
-      .then((rows) => setPrfOptions(rows.map((r) => r.prf_group).filter(Boolean)))
+      .then((rows) => {
+        if (!active) return;
+        setPrfOptions(rows.map((r) => r.prf_group).filter(Boolean));
+      })
       .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -261,12 +274,12 @@ export function AddNewEqpt() {
       ...prev,
       censusNo,
       prfCode: row?.prf_code?.trim() ?? prev.prfCode,
-      materialNo:
-        prev.materialNo.trim() || row?.material_no?.trim() || prev.materialNo,
+      materialNo: row?.material_no?.trim() ?? "",
     }));
   };
 
   const handleAddItems = async () => {
+    if (busy) return;
     if (pageHasInvalidDateInputs()) {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
       return;
@@ -280,7 +293,6 @@ export function AddNewEqpt() {
       !form.typeOfHolding ||
       !form.typeOfEqpt ||
       !form.prfGroup ||
-      !form.prfCode.trim() ||
       !form.censusNo ||
       !form.materialNo.trim() ||
       !form.issuedQty.trim()
@@ -366,11 +378,11 @@ export function AddNewEqpt() {
     }
   };
 
-  const removeItem = (id: string) =>
-    setItems((prev) => prev.filter((r) => r.id !== id));
+  const removeItem = (id: string | number) =>
+    setItems((prev) => prev.filter((i) => i.id !== id));
 
   const updateItem = (
-    id: string,
+    id: string | number,
     patch: Partial<Pick<ItemRow, "materialNo" | "eqptRegnNo">>,
   ) => {
     setItems((prev) =>
@@ -379,6 +391,7 @@ export function AddNewEqpt() {
   };
 
   const handleSubmit = async () => {
+    if (busy) return;
     if (!items.length) {
       toast.error("Add at least one item before submitting");
       return;
@@ -461,13 +474,14 @@ export function AddNewEqpt() {
       fill={hasItems}
       footer={
         <>
-          <Button size="sm" onClick={() => void handleAddItems()} disabled={busy}>
+          <Button type="button" size="sm" onClick={() => void handleAddItems()} disabled={busy}>
             Add Items in List
           </Button>
-          <Button size="sm" variant="secondary" onClick={handleClear} disabled={busy}>
+          <Button type="button" size="sm" variant="secondary" onClick={handleClear} disabled={busy}>
             Clear
           </Button>
           <Button
+            type="button"
             size="sm"
             variant="destructive"
             onClick={handleCancel}
@@ -592,10 +606,11 @@ export function AddNewEqpt() {
                     upd("prfGroup", v);
                     upd("censusNo", "");
                     upd("prfCode", "");
+                    upd("materialNo", "");
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="----Select PRF Group----" />
+                    <SelectValue placeholder="--Select PRF Group--" />
                   </SelectTrigger>
                   <SelectContent>
                     {prfOptions.map((g) => (
@@ -615,7 +630,7 @@ export function AddNewEqpt() {
               disabled={!form.prfGroup}
             >
               <SelectTrigger>
-                <SelectValue placeholder="--Select Item Nomenclature--" />
+                <SelectValue placeholder="--Select Census / Item--" />
               </SelectTrigger>
               <SelectContent>
                 {censusOptions.map((c) => (
@@ -629,9 +644,10 @@ export function AddNewEqpt() {
           </FormRow>
           <FormRow label="Material No" required>
             <Input
-              placeholder="Enter Material No..."
+              placeholder="Material No..."
               value={form.materialNo}
-              onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              disabled
+              readOnly
             />
           </FormRow>
 
@@ -658,7 +674,7 @@ export function AddNewEqpt() {
           </FormRow>
           <FormRow label="Unit Price">
             <Input
-              placeholder="Enter Unit Price..."
+              placeholder="Enter Price..."
               value={form.unitPrice}
               onChange={(e) => upd("unitPrice", e.target.value.replace(/[^0-9.]/g, ""))}
             />
@@ -673,7 +689,7 @@ export function AddNewEqpt() {
           </FormRow>
           <FormRow label="Life (Yr)">
             <Input
-              placeholder="Enter Life of Assets..."
+              placeholder="Enter Life (Yr)..."
               value={form.lifeOfAsset}
               onChange={(e) => upd("lifeOfAsset", e.target.value.replace(/\D/g, ""))}
             />
@@ -713,7 +729,6 @@ const ITEM_COLUMNS = [
   "Census No",
   "Material No",
   "Regn No",
-  "Reg Seq No",
 ];
 
 function ItemsList({
@@ -725,10 +740,10 @@ function ItemsList({
 }: {
   items: ItemRow[];
   busy: boolean;
-  onRemove: (id: string) => void;
+  onRemove: (id: string | number) => void;
   onChange: (
-    id: string,
-    patch: Partial<Pick<ItemRow, "materialNo" | "eqptRegnNo">>,
+    id: string | number,
+    patch: Partial<Pick<ItemRow, "eqptRegnNo">>,
   ) => void;
   onSubmit: () => void;
 }) {
@@ -780,16 +795,8 @@ function ItemsList({
                 <td className="min-w-[160px] px-2 py-0 align-middle">
                   {row.censusNo}
                 </td>
-                <td className="min-w-[110px] px-1 py-0.5 align-middle">
-                  <Input
-                    value={row.materialNo}
-                    disabled={busy}
-                    className="h-7 min-w-[90px] text-[13px]"
-                    aria-label={`Material No row ${idx + 1}`}
-                    onChange={(e) =>
-                      onChange(row.id, { materialNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") })
-                    }
-                  />
+                <td className="whitespace-nowrap px-2 py-0 align-middle">
+                  {row.materialNo}
                 </td>
                 <td className="min-w-[170px] px-1 py-0.5 align-middle">
                   <Input
@@ -801,9 +808,6 @@ function ItemsList({
                       onChange(row.id, { eqptRegnNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") })
                     }
                   />
-                </td>
-                <td className="whitespace-nowrap px-2 py-0 align-middle">
-                  {row.regnSeqNo}
                 </td>
                 <td className="px-2 py-0 align-middle">
                   <button
@@ -821,7 +825,7 @@ function ItemsList({
         </table>
       </div>
       <div className="flex shrink-0 justify-center border-t border-border bg-muted/40 px-3 py-1.5">
-        <Button size="sm" disabled={items.length === 0 || busy} onClick={onSubmit}>
+        <Button type="button" size="sm" disabled={items.length === 0 || busy} onClick={onSubmit}>
           Submit
         </Button>
       </div>

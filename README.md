@@ -9,7 +9,7 @@ Monorepo for the MMS frontend (TanStack Start / React) and FastAPI backend.
 ```
 MMS/
 ├── frontend/            # TanStack / React UI (Port 3000) - See frontend/README.md
-├── backend/             # FastAPI MMS API (Port 8000, /api) - See backend/README.md
+├── backend/             # FastAPI MMS API (Port 8000) - See backend/README.md
 └── docs/                # Architecture and FAQ documentation
 ```
 
@@ -19,8 +19,8 @@ MMS/
 
 | Environment | Frontend URL | Backend API Base URL | Document Upload Path | Oracle Database Details |
 |---|---|---|---|---|
-| **Local** | `http://localhost:3000` | `http://localhost:8000/api/` | `D:/miso/` | `localhost:1521/FREEPDB1` (user/schema: `MMS`) |
-| **Staging** | `http://131.3.54.120` | `http://131.3.54.120/api/` | `/srv/` | `131.3.54.122:1521/ORCLPDB1` |
+| **Local** | `http://localhost:3000` | `http://localhost:8000` | `D:/miso/` | `localhost:1521/FREEPDB1` (user/schema: `MMS`) |
+| **Staging** | `http://131.3.54.120` | `http://131.3.54.120` | `/srv/` | `131.3.54.122:1521/ORCLPDB1` |
 
 ---
 
@@ -57,8 +57,8 @@ Or from repo root:
 npm run dev:backend
 ```
 
-Backend API: `http://localhost:8000/api/health`  
-Vite proxies `/api` → `http://localhost:8000` during frontend `npm run dev`.
+Backend API: `http://localhost:8000/health`  
+Vite proxies API routes → `http://localhost:8000` during frontend `npm run dev`.
 
 For air-gapped installation details, see [backend/README.md](backend/README.md#offline-installation-air-gapped-environment).
 

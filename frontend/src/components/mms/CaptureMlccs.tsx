@@ -52,7 +52,7 @@ interface FullForm {
 }
 
 interface MlccsRecord {
-  id?: string | null;
+  id?: number | string | null;
   cos_section?: string | null;
   census_no?: string | null;
   nomenclature?: string | null;
@@ -121,7 +121,7 @@ function recordToForm(r: MlccsRecord): FullForm {
     itemCode: r.item_code ?? "",
     catPartNo: r.cat_part_no ?? "",
     accountingUnit: r.accounting_unit ?? "",
-    briefDescription: r.brief_description ?? "",
+    briefDescription: r.brief_description ?? r.nomenclature ?? "",
     itemStatus: r.item_status ?? "",
     itemCategory: r.item_category ?? "",
     classOfEqpt: r.class_of_eqpt ?? "",
@@ -492,8 +492,60 @@ export function CaptureMlccs({ initialModify, onBack }: CaptureMlccsProps = {}) 
   };
 
   const handleSave = async (form: FullForm, isUpdate: boolean) => {
+    if (!form.cosSection?.trim()) {
+      toast.error("COS Section is required");
+      return;
+    }
+    if (!form.censusNo?.trim()) {
+      toast.error("Census No is required");
+      return;
+    }
+    if (!form.nomenclature?.trim()) {
+      toast.error("Nomenclature is required");
+      return;
+    }
+    if (!form.authLetterNo?.trim()) {
+      toast.error("Auth/Letter No is required");
+      return;
+    }
+    if (!form.date?.trim()) {
+      toast.error("Date is required");
+      return;
+    }
     if (pageHasInvalidDateInputs()) {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
+      return;
+    }
+    if (!form.prfGroup?.trim()) {
+      toast.error("PRF Group is required");
+      return;
+    }
+    if (!form.itemCode?.trim()) {
+      toast.error("Item Code is required");
+      return;
+    }
+    if (!form.catPartNo?.trim()) {
+      toast.error("Cat/Part No is required");
+      return;
+    }
+    if (!form.accountingUnit?.trim()) {
+      toast.error("Accounting Unit is required");
+      return;
+    }
+    if (!form.itemStatus?.trim()) {
+      toast.error("Item Status is required");
+      return;
+    }
+    if (!form.itemCategory?.trim()) {
+      toast.error("Item Category is required");
+      return;
+    }
+    if (!form.classOfEqpt?.trim()) {
+      toast.error("Class of Eqpt is required");
+      return;
+    }
+    if (!form.briefDescription?.trim()) {
+      toast.error("Brief Description is required");
       return;
     }
     setBusy(true);
@@ -973,7 +1025,7 @@ function FullEqptForm({
             onChange={(v) => setForm({ ...form, prfGroup: v, itemCode: "" })}
             options={prfOptions}
             placeholder={
-              prfOptions.length ? "--Select PRF Group--" : "No PRF groups for this COS"
+              prfOptions.length ? "--Select PRF Group--" : "No PRF groups"
             }
           />
         </FormRow>
@@ -984,10 +1036,10 @@ function FullEqptForm({
             options={itemOptions}
             placeholder={
               !form.prfGroup
-                ? "Select PRF Group first"
+                ? "Select PRF first"
                 : itemOptions.length
                   ? "--Select Item Code--"
-                  : "No item codes for this PRF"
+                  : "No item codes"
             }
             disabled={!form.prfGroup}
           />
@@ -1065,42 +1117,42 @@ function FullEqptForm({
           <Input
             value={form.cost}
             onChange={(e) => upd("cost", e.target.value.replace(/[^0-9.]/g, ""))}
-            placeholder="Enter Cost..."
+            placeholder="Enter Cost"
           />
         </FormRow>
         <FormRow label="Manufacturing Agency">
           <Input
             value={form.manufacturingAgency}
             onChange={(e) => upd("manufacturingAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter Man. Agency..."
+            placeholder="Enter Man. Agency"
           />
         </FormRow>
         <FormRow label="AHSP Agency">
           <Input
             value={form.ahspAgency}
             onChange={(e) => upd("ahspAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter AHSP Agency..."
+            placeholder="Enter AHSP Agency"
           />
         </FormRow>
         <FormRow label="NATO Stock No (NSN)">
           <Input
             value={form.natoStockNo}
             onChange={(e) => upd("natoStockNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter No..."
+            placeholder="Enter NSN"
           />
         </FormRow>
         <FormRow label="Def Catalogue No (DCAN)">
           <Input
             value={form.defCatalogueNo}
             onChange={(e) => upd("defCatalogueNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter No..."
+            placeholder="Enter DCAN"
           />
         </FormRow>
         <FormRow label="Material No">
           <Input
             value={form.materialNo}
             onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter Material No..."
+            placeholder="Enter Material No"
             maxLength={15}
           />
         </FormRow>
@@ -1108,14 +1160,14 @@ function FullEqptForm({
           <Input
             value={form.briefDescription}
             onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            placeholder="Enter Brief Description..."
+            placeholder="Enter Description"
           />
         </FormRow>
         <FormRow label="Remarks">
           <Input
             value={form.remarks}
             onChange={(e) => upd("remarks", e.target.value)}
-            placeholder="Enter Your Remarks..."
+            placeholder="Enter Remarks"
           />
         </FormRow>
       </FormGrid>

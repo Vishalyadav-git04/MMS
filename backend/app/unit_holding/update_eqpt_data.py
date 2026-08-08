@@ -1,9 +1,4 @@
-"""Update Eqpt Data — Weapon → Unit Holding.
-
-Cascade: Unit (TO_SUS_NO × 3 holding tables → ORBAT name) →
-PRF Group (holding CENSUS_NO → MLCCS.PRF_GROUP) → Census → Type of Holding →
-search approved rows → update SERVICE_STATUS / barrels / SPL_REMARKS.
-"""
+"""Update Eqpt Data — Weapon → Unit Holding using Native SQL."""
 
 from __future__ import annotations
 
@@ -11,27 +6,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, union
 from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
-from app.models import (
-    DepotMaster,
-    DomainValue,
-    MlccsEquipmentMaster,
-    OrbatUnitDetl,
-    OthMaster,
-    PrfGrpMstr,
-    UnitMasterDetail,
-)
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
 
 router = APIRouter(
     prefix="/unit-holding/update-eqpt-data",
     tags=["unit-holding: update eqpt data"],
 )
 
-# Approved holdings only (same codes as Approve New Eqpt).
 _APPROVED_CODES = ("1", "A")
 
 _SOURCE_UNIT = "unit"
@@ -42,6 +27,12 @@ _SOURCE_LABEL = {
     _SOURCE_UNIT: "Unit",
     _SOURCE_DEPOT: "Depot",
     _SOURCE_OTH: "Other",
+}
+
+_TABLE_MAP = {
+    _SOURCE_UNIT: "MMS_UNIT_MSTR_DETL",
+    _SOURCE_DEPOT: "MMS_DEPOT_MASTER",
+    _SOURCE_OTH: "MMS_OTH_MASTER",
 }
 
 
@@ -80,7 +71,7 @@ class SearchIn(BaseModel):
 
 
 class EqptRowOut(BaseModel):
-    id: str
+    id: str | int
     source_table: str
     source_label: str
     eqpt_regn_no: str | None = None
@@ -105,7 +96,7 @@ class EqptDetailOut(EqptRowOut):
 
 
 class UpdateIn(BaseModel):
-    id: str = Field(..., min_length=1, max_length=36)
+    id: str | int = Field(...)
     source_table: str = Field(..., min_length=1, max_length=10)
     service_status: str = Field(..., min_length=1, max_length=10)
     barrel1_detl: str | None = Field(None, max_length=150)
@@ -116,110 +107,138 @@ class UpdateIn(BaseModel):
 
 
 class UpdateOut(BaseModel):
-    id: str
+    id: str | int
     source_table: str
     updated: bool
 
 
 def _option_list(session: Session, domain: str) -> list[OptionOut]:
-    rows = session.scalars(
-        select(DomainValue)
-        .where(
-            func.replace(func.upper(DomainValue.domain_name), "_", "")
-            == domain.replace("_", "").upper()
-        )
-        .order_by(
-            func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
-            DomainValue.label_name,
-        )
-    ).all()
-    return [
-        OptionOut(value=r.code_value or "", label=r.label_name or r.code_value or "")
-        for r in rows
-        if r.code_value
-    ]
+    dname = domain.replace("_", "").upper()
+    dnames = [dname]
+    if dname in ("SERVICEABLITY", "SERVICEABILITY"):
+        dnames = ["SERVICEABLITY", "SERVICEABILITY"]
 
+    in_clause = ", ".join(f":d_{i}" for i in range(len(dnames)))
+    params = {f"d_{i}": d for i, d in enumerate(dnames)}
 
-def _domain_map(session: Session, domain: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for opt in _option_list(session, domain):
-        out[opt.value.strip().upper()] = opt.label
+    sql = f"""
+        SELECT code_value, label_name
+        FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') IN ({in_clause})
+        ORDER BY LPAD(NVL(disp_order, '9999'), 10, '0'), label_name
+    """
+    rows = fetch_all(session, sql, params)
+    out: list[OptionOut] = []
+    for r in rows:
+        val = str(r.get("code_value") or "").strip()
+        lbl = str(r.get("label_name") or r.get("code_value") or "").strip()
+        if val:
+            out.append(OptionOut(value=val, label=lbl))
     return out
 
 
-def _approved(col: Any):
-    return func.upper(func.coalesce(col, "")).in_(_APPROVED_CODES)
+def _domain_map(session: Session, domain: str) -> dict[str, str]:
+    dname = domain.replace("_", "").upper()
+    dnames = [dname]
+    if dname in ("SERVICEABLITY", "SERVICEABILITY"):
+        dnames = ["SERVICEABLITY", "SERVICEABILITY"]
 
+    in_clause = ", ".join(f":d_{i}" for i in range(len(dnames)))
+    params = {f"d_{i}": d for i, d in enumerate(dnames)}
 
-def _model_for_source(source: str) -> type[Any]:
-    if source == _SOURCE_UNIT:
-        return UnitMasterDetail
-    if source == _SOURCE_DEPOT:
-        return DepotMaster
-    if source == _SOURCE_OTH:
-        return OthMaster
-    raise HTTPException(status_code=400, detail=f"Unknown source_table '{source}'")
+    sql = f"""
+        SELECT code_value, label_name, label_short
+        FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') IN ({in_clause})
+    """
+    rows = fetch_all(session, sql, params)
+    out: dict[str, str] = {}
+    for r in rows:
+        code = str(r.get("code_value") or "").strip()
+        label = str(r.get("label_name") or r.get("code_value") or "").strip()
+        short = str(r.get("label_short") or "").strip()
+        if code and label:
+            out[code.upper()] = label
+        if short and label:
+            out[short.upper()] = label
+        if label:
+            out[label.upper()] = label
+
+    if dname in ("SERVICEABLITY", "SERVICEABILITY"):
+        fallbacks = {
+            "1": "Serviceable",
+            "0": "Unserviceable",
+            "A": "Serviceable",
+            "SR": "Serviceable",
+            "US": "Unserviceable",
+        }
+        for k, v in fallbacks.items():
+            if k not in out:
+                out[k] = v
+
+    return out
 
 
 def _orbat_name_map(session: Session, sus_nos: set[str]) -> dict[str, str]:
     if not sus_nos:
         return {}
-    upper = {s.upper() for s in sus_nos if s}
-    rows = session.execute(
-        select(OrbatUnitDetl.sus_no, OrbatUnitDetl.unit_name).where(
-            func.upper(OrbatUnitDetl.sus_no).in_(upper),
-            func.upper(OrbatUnitDetl.status) == "ACTIVE",
-        )
-    ).all()
+    in_clause = ", ".join(f":s_{i}" for i in range(len(sus_nos)))
+    params = {f"s_{i}": s.upper() for i, s in enumerate(sus_nos) if s}
+    rows = fetch_all(
+        session,
+        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause}) AND UPPER(status) = 'ACTIVE'",
+        params,
+    )
     return {
-        str(sus).strip().upper(): str(name).strip()
-        for sus, name in rows
-        if sus and name
+        str(r["sus_no"]).strip().upper(): str(r["unit_name"]).strip()
+        for r in rows
+        if r.get("sus_no") and r.get("unit_name")
     }
 
 
 def _nomen_for_census(session: Session, census_nos: set[str]) -> dict[str, str]:
     if not census_nos:
         return {}
-    upper = {c.upper() for c in census_nos if c}
-    rows = session.execute(
-        select(MlccsEquipmentMaster.census_no, MlccsEquipmentMaster.nomen).where(
-            func.upper(MlccsEquipmentMaster.census_no).in_(upper)
-        )
-    ).all()
+    in_clause = ", ".join(f":c_{i}" for i in range(len(census_nos)))
+    params = {f"c_{i}": c.upper() for i, c in enumerate(census_nos) if c}
+    rows = fetch_all(
+        session,
+        f"SELECT census_no, nomen FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) IN ({in_clause})",
+        params,
+    )
     return {
-        str(c).strip().upper(): str(n).strip()
-        for c, n in rows
-        if c and n
+        str(r["census_no"]).strip().upper(): str(r["nomen"]).strip()
+        for r in rows
+        if r.get("census_no") and r.get("nomen")
     }
 
 
 def _mlccs_prf_by_census(session: Session, census_nos: set[str]) -> dict[str, str]:
-    """Map CENSUS_NO → PRF_GROUP via MLCCS (authoritative for held equipment)."""
     if not census_nos:
         return {}
-    upper = {c.upper() for c in census_nos if c}
-    rows = session.execute(
-        select(MlccsEquipmentMaster.census_no, MlccsEquipmentMaster.prf_group).where(
-            func.upper(MlccsEquipmentMaster.census_no).in_(upper),
-            MlccsEquipmentMaster.prf_group.is_not(None),
-        )
-    ).all()
+    in_clause = ", ".join(f":c_{i}" for i in range(len(census_nos)))
+    params = {f"c_{i}": c.upper() for i, c in enumerate(census_nos) if c}
+    rows = fetch_all(
+        session,
+        f"SELECT census_no, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) IN ({in_clause}) AND prf_group IS NOT NULL",
+        params,
+    )
     out: dict[str, str] = {}
-    for census, group in rows:
-        if census and group:
-            out[str(census).strip().upper()] = str(group).strip()
+    for r in rows:
+        if r.get("census_no") and r.get("prf_group"):
+            out[str(r["census_no"]).strip().upper()] = str(r["prf_group"]).strip()
     return out
 
 
 def _prf_grp_mstr_label(session: Session, prf_code: str | None) -> str | None:
-    """Fallback when census is missing from MLCCS — numeric PRF_CODE → PRF_GRP."""
     if not prf_code or not str(prf_code).strip().isdigit():
         return None
-    row = session.scalar(
-        select(PrfGrpMstr.prf_grp).where(PrfGrpMstr.prf_code == int(str(prf_code).strip()))
+    row = fetch_one(
+        session,
+        "SELECT prf_grp FROM MMS_PRF_GRP_MSTR WHERE prf_code = :pcode AND ROWNUM = 1",
+        {"pcode": int(str(prf_code).strip())},
     )
-    return str(row).strip() if row else None
+    return str(row.get("prf_grp")).strip() if row and row.get("prf_grp") else None
 
 
 def _prf_group_for_census(
@@ -243,44 +262,33 @@ def _prf_group_for_census(
 def _collect_holding_census_rows(
     session: Session, sus: str
 ) -> list[tuple[str, str | None]]:
-    """Approved holding (census_no, prf_code) pairs for a TO_SUS_NO."""
     pairs: list[tuple[str, str | None]] = []
     seen: set[str] = set()
-    for model in (UnitMasterDetail, DepotMaster, OthMaster):
-        rows = session.execute(
-            select(model.census_no, model.prf_code).where(
-                func.upper(model.to_sus_no) == sus,
-                _approved(model.op_status),
-                model.census_no.is_not(None),
-            )
-        ).all()
-        for census, prf_code in rows:
-            if not census or not str(census).strip():
+    for table_name in _TABLE_MAP.values():
+        rows = fetch_all(
+            session,
+            f"SELECT census_no, prf_code FROM {table_name} WHERE UPPER(to_sus_no) = :sus AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A') AND census_no IS NOT NULL",
+            {"sus": sus},
+        )
+        for r in rows:
+            c = r.get("census_no")
+            if not c or not str(c).strip():
                 continue
-            key = str(census).strip().upper()
+            key = str(c).strip().upper()
             if key in seen:
                 continue
             seen.add(key)
-            pairs.append((key, (str(prf_code).strip() if prf_code else None)))
+            pairs.append((key, (str(r["prf_code"]).strip() if r.get("prf_code") else None)))
     return pairs
 
 
 def _census_nos_for_prf_group(session: Session, prf_group: str) -> set[str]:
-    rows = session.scalars(
-        select(MlccsEquipmentMaster.census_no).where(
-            func.upper(func.trim(MlccsEquipmentMaster.prf_group))
-            == prf_group.strip().upper(),
-            MlccsEquipmentMaster.census_no.is_not(None),
-        )
-    ).all()
-    return {str(c).strip().upper() for c in rows if c and str(c).strip()}
-
-
-def _holding_base(model: type[Any], sus: str) -> list[Any]:
-    return [
-        func.upper(model.to_sus_no) == sus,
-        _approved(model.op_status),
-    ]
+    rows = fetch_all(
+        session,
+        "SELECT census_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(prf_group)) = :grp AND census_no IS NOT NULL",
+        {"grp": prf_group.strip().upper()},
+    )
+    return {str(r["census_no"]).strip().upper() for r in rows if r.get("census_no")}
 
 
 @router.get("/status")
@@ -298,27 +306,16 @@ def search_holding_units(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[HoldingUnitOut]:
-    """Distinct TO_SUS_NO from approved holdings, named via ORBAT."""
-    parts = [
-        select(func.upper(func.trim(UnitMasterDetail.to_sus_no)).label("sus")).where(
-            UnitMasterDetail.to_sus_no.is_not(None),
-            _approved(UnitMasterDetail.op_status),
-        ),
-        select(func.upper(func.trim(DepotMaster.to_sus_no)).label("sus")).where(
-            DepotMaster.to_sus_no.is_not(None),
-            _approved(DepotMaster.op_status),
-        ),
-        select(func.upper(func.trim(OthMaster.to_sus_no)).label("sus")).where(
-            OthMaster.to_sus_no.is_not(None),
-            _approved(OthMaster.op_status),
-        ),
-    ]
-    sub = union(*parts).subquery()
-    sus_list = [
-        str(r[0]).strip()
-        for r in session.execute(select(sub.c.sus).order_by(sub.c.sus)).all()
-        if r[0]
-    ]
+    sql = """
+        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_UNIT_MSTR_DETL WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+        UNION
+        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_DEPOT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+        UNION
+        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_OTH_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+        ORDER BY sus
+    """
+    rows = fetch_all(session, sql)
+    sus_list = [str(r["sus"]).strip() for r in rows if r.get("sus")]
     names = _orbat_name_map(session, set(sus_list))
     term = q.strip().upper()
     out: list[HoldingUnitOut] = []
@@ -368,7 +365,6 @@ def list_census_items(
         group = _prf_group_for_census(session, c, prf_code, census_map)
         if group and group.strip().upper() == target:
             census.add(c)
-    # Also keep MLCCS census under this group that appear on holdings
     mlccs_census = _census_nos_for_prf_group(session, prf_group)
     census |= {c for c, _ in pairs if c in mlccs_census}
 
@@ -391,7 +387,6 @@ def list_holding_types(
 ) -> list[HoldingTypeOut]:
     sus = sus_no.strip().upper()
     census = census_no.strip().upper()
-    # Ensure selected census belongs to this unit + PRF group
     pairs = _collect_holding_census_rows(session, sus)
     census_map = _mlccs_prf_by_census(session, {c for c, _ in pairs})
     allowed = False
@@ -406,15 +401,14 @@ def list_holding_types(
         return []
 
     values: set[str] = set()
-    for model in (UnitMasterDetail, DepotMaster, OthMaster):
-        rows = session.scalars(
-            select(model.type_of_hldg).where(
-                *_holding_base(model, sus),
-                func.upper(func.trim(model.census_no)) == census,
-                model.type_of_hldg.is_not(None),
-            )
-        ).all()
-        for v in rows:
+    for table_name in _TABLE_MAP.values():
+        rows = fetch_all(
+            session,
+            f"SELECT type_of_hldg FROM {table_name} WHERE UPPER(to_sus_no) = :sus AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A') AND UPPER(TRIM(census_no)) = :census AND type_of_hldg IS NOT NULL",
+            {"sus": sus, "census": census},
+        )
+        for r in rows:
+            v = r.get("type_of_hldg")
             if v and str(v).strip():
                 values.add(str(v).strip())
 
@@ -430,25 +424,25 @@ def list_holding_types(
 
 def _row_to_out(
     source: str,
-    row: Any,
+    row: dict,
     *,
     unit_name: str | None,
     prf_group: str | None,
     hldg_labels: dict[str, str],
     svc_labels: dict[str, str],
 ) -> EqptRowOut:
-    hldg = (row.type_of_hldg or "").strip() or None
-    svc = (row.service_status or "").strip() or None
+    hldg = str(row.get("type_of_hldg") or "").strip() or None
+    svc = str(row.get("service_status") or "").strip() or None
     return EqptRowOut(
-        id=str(row.id),
+        id=str(row["id"]),
         source_table=source,
         source_label=_SOURCE_LABEL.get(source, source),
-        eqpt_regn_no=(row.eqpt_regn_no or None),
-        sus_no=(row.to_sus_no or None),
+        eqpt_regn_no=row.get("eqpt_regn_no"),
+        sus_no=row.get("to_sus_no"),
         unit_name=unit_name,
         prf_group=prf_group,
-        prf_code=(row.prf_code or None),
-        census_no=(row.census_no or None),
+        prf_code=row.get("prf_code"),
+        census_no=row.get("census_no"),
         type_of_hldg=hldg,
         type_of_hldg_label=hldg_labels.get(hldg.upper(), hldg) if hldg else None,
         service_status=svc,
@@ -467,7 +461,6 @@ def search_eqpt(
     hldg = body.type_of_hldg.strip().upper()
     prf_group = body.prf_group.strip()
 
-    # Validate census belongs to this unit under the selected PRF group.
     pairs = _collect_holding_census_rows(session, sus)
     census_map = _mlccs_prf_by_census(session, {c for c, _ in pairs})
     matched_group = None
@@ -487,23 +480,26 @@ def search_eqpt(
     regd = (body.regd_no or "").strip().upper()
     out: list[EqptRowOut] = []
 
-    for source, model in (
-        (_SOURCE_UNIT, UnitMasterDetail),
-        (_SOURCE_DEPOT, DepotMaster),
-        (_SOURCE_OTH, OthMaster),
-    ):
-        stmt = select(model).where(
-            *_holding_base(model, sus),
-            func.upper(func.trim(model.census_no)) == census,
-            func.upper(func.trim(model.type_of_hldg)) == hldg,
-        )
+    for source, table_name in _TABLE_MAP.items():
+        sql = f"""
+            SELECT * FROM {table_name}
+            WHERE UPPER(to_sus_no) = :sus
+            AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+            AND UPPER(TRIM(census_no)) = :census
+            AND UPPER(TRIM(type_of_hldg)) = :hldg
+        """
+        params: dict = {"sus": sus, "census": census, "hldg": hldg}
         if regd:
-            stmt = stmt.where(func.upper(model.eqpt_regn_no).like(f"%{regd}%"))
-        for row in session.scalars(stmt.order_by(model.eqpt_regn_no)).all():
+            sql += " AND UPPER(eqpt_regn_no) LIKE :regd"
+            params["regd"] = f"%{regd}%"
+
+        sql += " ORDER BY eqpt_regn_no"
+        rows = fetch_all(session, sql, params)
+        for r in rows:
             out.append(
                 _row_to_out(
                     source,
-                    row,
+                    r,
                     unit_name=unit_name,
                     prf_group=prf_group,
                     hldg_labels=hldg_labels,
@@ -520,32 +516,36 @@ def get_eqpt_detail(
     session: Session = Depends(get_db_session),
     _: Principal = Depends(require_unit_or_admin),
 ) -> EqptDetailOut:
-    model = _model_for_source(source_table.strip().lower())
-    row = session.get(model, id)
+    source = source_table.strip().lower()
+    table_name = _TABLE_MAP.get(source)
+    if not table_name:
+        raise HTTPException(status_code=400, detail=f"Unknown source_table '{source}'")
+
+    row = fetch_one(session, f"SELECT * FROM {table_name} WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": id, "rid_str": id})
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
 
-    sus = (row.to_sus_no or "").strip().upper()
+    sus = str(row.get("to_sus_no") or "").strip().upper()
     names = _orbat_name_map(session, {sus} if sus else set())
-    prf_group = _prf_group_for_census(session, row.census_no, row.prf_code)
+    prf_group = _prf_group_for_census(session, row.get("census_no"), row.get("prf_code"))
     hldg_labels = _domain_map(session, "TYPE_OF_HOLDING")
     svc_labels = _domain_map(session, "SERVICEABLITY")
     base = _row_to_out(
-        source_table.strip().lower(),
+        source,
         row,
         unit_name=names.get(sus),
         prf_group=prf_group,
         hldg_labels=hldg_labels,
         svc_labels=svc_labels,
     )
-    has_barrels = source_table.strip().lower() in (_SOURCE_UNIT, _SOURCE_DEPOT)
+    has_barrels = source in (_SOURCE_UNIT, _SOURCE_DEPOT)
     return EqptDetailOut(
         **base.model_dump(),
-        barrel1_detl=getattr(row, "barrel1_detl", None) if has_barrels else None,
-        barrel2_detl=getattr(row, "barrel2_detl", None) if has_barrels else None,
-        barrel3_detl=getattr(row, "barrel3_detl", None) if has_barrels else None,
-        barrel4_detl=getattr(row, "barrel4_detl", None) if has_barrels else None,
-        spl_remarks=row.spl_remarks,
+        barrel1_detl=row.get("barrel1_detl") if has_barrels else None,
+        barrel2_detl=row.get("barrel2_detl") if has_barrels else None,
+        barrel3_detl=row.get("barrel3_detl") if has_barrels else None,
+        barrel4_detl=row.get("barrel4_detl") if has_barrels else None,
+        spl_remarks=row.get("spl_remarks"),
         has_barrels=has_barrels,
     )
 
@@ -557,8 +557,11 @@ def update_eqpt(
     _: Principal = Depends(require_unit_or_admin),
 ) -> UpdateOut:
     source = body.source_table.strip().lower()
-    model = _model_for_source(source)
-    row = session.get(model, body.id)
+    table_name = _TABLE_MAP.get(source)
+    if not table_name:
+        raise HTTPException(status_code=400, detail=f"Unknown source_table '{source}'")
+
+    row = fetch_one(session, f"SELECT op_status FROM {table_name} WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": body.id, "rid_str": body.id})
     if row is None:
         raise HTTPException(status_code=404, detail="Equipment record not found")
 
@@ -566,31 +569,31 @@ def update_eqpt(
     if known and body.service_status.strip().upper() not in known:
         raise HTTPException(status_code=400, detail="Invalid Serviceability status")
 
-    # Only approved holdings may be updated here.
-    op = (row.op_status or "").strip().upper()
+    op = str(row.get("op_status") or "").strip().upper()
     if op not in _APPROVED_CODES:
         raise HTTPException(
             status_code=400,
             detail="Only approved holdings can be updated",
         )
 
-    row.service_status = body.service_status.strip().upper()[:10]
-    if body.spl_remarks is not None:
-        row.spl_remarks = body.spl_remarks.strip()[:200] or None
+    params: dict = {
+        "ssvc": body.service_status.strip().upper()[:10],
+        "spl_rem": body.spl_remarks.strip()[:200] if body.spl_remarks and body.spl_remarks.strip() else None,
+        "rid": body.id,
+        "rid_str": body.id,
+    }
+    update_sql = f"UPDATE {table_name} SET service_status = :ssvc, spl_remarks = :spl_rem"
 
     if source in (_SOURCE_UNIT, _SOURCE_DEPOT):
-        row.barrel1_detl = (
-            body.barrel1_detl.strip()[:150] if body.barrel1_detl and body.barrel1_detl.strip() else None
-        )
-        row.barrel2_detl = (
-            body.barrel2_detl.strip()[:150] if body.barrel2_detl and body.barrel2_detl.strip() else None
-        )
-        row.barrel3_detl = (
-            body.barrel3_detl.strip()[:150] if body.barrel3_detl and body.barrel3_detl.strip() else None
-        )
-        row.barrel4_detl = (
-            body.barrel4_detl.strip()[:150] if body.barrel4_detl and body.barrel4_detl.strip() else None
-        )
+        update_sql += ", barrel1_detl = :b1, barrel2_detl = :b2, barrel3_detl = :b3, barrel4_detl = :b4"
+        params.update({
+            "b1": body.barrel1_detl.strip()[:150] if body.barrel1_detl and body.barrel1_detl.strip() else None,
+            "b2": body.barrel2_detl.strip()[:150] if body.barrel2_detl and body.barrel2_detl.strip() else None,
+            "b3": body.barrel3_detl.strip()[:150] if body.barrel3_detl and body.barrel3_detl.strip() else None,
+            "b4": body.barrel4_detl.strip()[:150] if body.barrel4_detl and body.barrel4_detl.strip() else None,
+        })
 
-    session.commit()
+    update_sql += " WHERE id = :rid OR TO_CHAR(id) = :rid_str"
+    execute_sql(session, update_sql, params)
+
     return UpdateOut(id=body.id, source_table=source, updated=True)

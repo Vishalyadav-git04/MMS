@@ -1,31 +1,18 @@
-"""Add New Eqpt — Weapon → Unit Holding.
-
-Lookups + generate registration rows; persist by Type of Holding to
-MMS_UNIT_MSTR_DETL / MMS_DEPOT_MASTER / MMS_OTH_MASTER.
-"""
+"""Add New Eqpt — Weapon → Unit Holding using Native SQL."""
 
 from __future__ import annotations
 
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
-from app.models import (
-    DepotMaster,
-    DomainValue,
-    MlccsEquipmentMaster,
-    OrbatUnitDetl,
-    OthMaster,
-    UnitMasterDetail,
-)
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
 from app.utils.ids import next_int_id
 
 router = APIRouter(
@@ -50,7 +37,7 @@ class OptionOut(BaseModel):
 
 
 class OrbatUnitOut(BaseModel):
-    id: str
+    id: str | int
     unit_name: str
     sus_no: str
     form_code: str | None = None
@@ -123,7 +110,7 @@ class SubmitIn(BaseModel):
 
 
 class SubmitOut(BaseModel):
-    ids: list[str]
+    ids: list[str | int]
     count: int
     target_table: str
 
@@ -131,46 +118,50 @@ class SubmitOut(BaseModel):
 def _option_list(
     session: Session, domain: str, version_nos: tuple[str, ...] | None = None
 ) -> list[OptionOut]:
-    stmt = select(DomainValue).where(
-        func.replace(func.upper(DomainValue.domain_name), "_", "")
-        == domain.replace("_", "").upper()
-    )
+    sql = """
+        SELECT code_value, label_name
+        FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = :dname
+    """
+    params: dict = {"dname": domain.replace("_", "").upper()}
     if version_nos:
-        stmt = stmt.where(
-            func.trim(DomainValue.version_no).in_([v.strip() for v in version_nos])
-        )
-    stmt = stmt.order_by(
-        func.lpad(func.nvl(DomainValue.disp_order, "9999"), 10, "0"),
-        DomainValue.label_name,
-    )
-    rows = session.scalars(stmt).all()
+        in_clause = ", ".join(f":v_{i}" for i in range(len(version_nos)))
+        sql += f" AND TRIM(version_no) IN ({in_clause})"
+        for i, v in enumerate(version_nos):
+            params[f"v_{i}"] = v.strip()
+
+    sql += " ORDER BY LPAD(NVL(disp_order, '9999'), 10, '0'), label_name"
+    rows = fetch_all(session, sql, params)
     return [
-        OptionOut(value=r.code_value or "", label=r.label_name or r.code_value or "")
+        OptionOut(value=str(r.get("code_value") or ""), label=str(r.get("label_name") or r.get("code_value") or ""))
         for r in rows
-        if r.code_value
+        if r.get("code_value")
     ]
 
 
 def _domain_label(
     session: Session, domain: str, code: str, version_nos: tuple[str, ...] | None = None
 ) -> str | None:
-    stmt = select(DomainValue).where(
-        func.replace(func.upper(DomainValue.domain_name), "_", "")
-        == domain.replace("_", "").upper(),
-        func.upper(func.trim(DomainValue.code_value)) == code.strip().upper(),
-    )
+    sql = """
+        SELECT code_value, label_name
+        FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = :dname
+        AND UPPER(TRIM(code_value)) = :code
+    """
+    params: dict = {"dname": domain.replace("_", "").upper(), "code": code.strip().upper()}
     if version_nos:
-        stmt = stmt.where(
-            func.trim(DomainValue.version_no).in_([v.strip() for v in version_nos])
-        )
-    row = session.scalar(stmt)
+        in_clause = ", ".join(f":v_{i}" for i in range(len(version_nos)))
+        sql += f" AND TRIM(version_no) IN ({in_clause})"
+        for i, v in enumerate(version_nos):
+            params[f"v_{i}"] = v.strip()
+
+    row = fetch_one(session, sql, params)
     if row is None:
         return None
-    return (row.label_name or row.code_value or "").strip()
+    return str(row.get("label_name") or row.get("code_value") or "").strip()
 
 
 def _holding_bucket(session: Session, type_of_hldg_code: str) -> str:
-    """Return unit | oth | depot based on TYPE_OF_HOLDING label."""
     label = (_domain_label(session, "TYPE_OF_HOLDING", type_of_hldg_code) or "").upper()
     if label == _UNIT_HOLDING_LABEL:
         return "unit"
@@ -179,36 +170,38 @@ def _holding_bucket(session: Session, type_of_hldg_code: str) -> str:
     return "depot"
 
 
-def _seq_model(bucket: str) -> type[Any]:
+def _table_for_bucket(bucket: str) -> str:
     if bucket == "unit":
-        return UnitMasterDetail
+        return "MMS_UNIT_MSTR_DETL"
     if bucket == "oth":
-        return OthMaster
-    return DepotMaster
+        return "MMS_OTH_MASTER"
+    return "MMS_DEPOT_MASTER"
 
 
-def _orbat_by_sus(session: Session, sus_no: str) -> OrbatUnitDetl | None:
-    return session.scalar(
-        select(OrbatUnitDetl).where(
-            func.upper(OrbatUnitDetl.sus_no) == sus_no.strip().upper(),
-            func.upper(OrbatUnitDetl.status) == "ACTIVE",
-        )
+def _orbat_by_sus(session: Session, sus_no: str) -> dict | None:
+    return fetch_one(
+        session,
+        "SELECT id, unit_name, sus_no, form_code, status FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) = :sus AND UPPER(status) = 'ACTIVE'",
+        {"sus": sus_no.strip().upper()},
     )
 
 
 def _max_eqpt_regn_seq(
     session: Session,
-    model: type[Any],
+    table_name: str,
+    iv_date: date,
     pending: list[str],
 ) -> int:
-    """Highest 4-digit EQPT_REGN_NO tail matching T+5sus+6date+4seq; else 0."""
-    values = list(session.scalars(select(model.eqpt_regn_no)).all())
+    date_str = iv_date.strftime("%d%m%y")
+    pattern = re.compile(rf"^T\d{{5}}{date_str}(\d{{4}})$", re.IGNORECASE)
+    rows = fetch_all(session, f"SELECT eqpt_regn_no FROM {table_name} WHERE eqpt_regn_no IS NOT NULL")
+    values = [r["eqpt_regn_no"] for r in rows if r.get("eqpt_regn_no")]
     values.extend(pending)
     highest = 0
     for raw in values:
         if not raw:
             continue
-        m = _EQPT_REGN_RE.match(str(raw).strip())
+        m = pattern.match(str(raw).strip())
         if m:
             highest = max(highest, int(m.group(1)))
     return highest
@@ -216,13 +209,13 @@ def _max_eqpt_regn_seq(
 
 def _max_regn_seq(
     session: Session,
-    model: type[Any],
+    table_name: str,
     prf_code: str,
     pending: list[str],
 ) -> int:
-    """Highest 8-digit REGN_SEQ_NO for this PRF_CODE; else 0."""
     prefix = f"{prf_code.strip().upper()}N"
-    values = list(session.scalars(select(model.regn_seq_no)).all())
+    rows = fetch_all(session, f"SELECT regn_seq_no FROM {table_name} WHERE regn_seq_no IS NOT NULL")
+    values = [r["regn_seq_no"] for r in rows if r.get("regn_seq_no")]
     values.extend(pending)
     highest = 0
     for raw in values:
@@ -239,15 +232,15 @@ def _max_regn_seq(
 
 def _max_census_seq(
     session: Session,
-    model: type[Any],
+    table_name: str,
     pending: list[int],
 ) -> int:
-    if not hasattr(model, "census_seq_no"):
-        # Oth master has no census_seq_no — use 0 so generated rows start at 1 for display.
+    if table_name == "MMS_OTH_MASTER":
         return max(pending) if pending else 0
-    db_max = session.scalar(select(func.max(model.census_seq_no))) or 0
+    row = fetch_one(session, f"SELECT NVL(MAX(census_seq_no), 0) AS max_val FROM {table_name}")
+    db_max = int(row.get("max_val") if row else 0)
     pending_max = max(pending) if pending else 0
-    return max(int(db_max), pending_max)
+    return max(db_max, pending_max)
 
 
 def _parse_depres(raw: str | None) -> Decimal | None:
@@ -295,30 +288,25 @@ def search_orbat_units(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[OrbatUnitOut]:
-    stmt = (
-        select(OrbatUnitDetl)
-        .where(func.upper(OrbatUnitDetl.status) == "ACTIVE")
-        .order_by(OrbatUnitDetl.unit_name)
-    )
+    sql = "SELECT id, unit_name, sus_no, form_code, status FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(status) = 'ACTIVE'"
+    params: dict = {}
     term = q.strip().upper()
     if term:
         like = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                func.upper(OrbatUnitDetl.unit_name).like(like),
-                func.upper(OrbatUnitDetl.sus_no).like(like),
-                func.upper(func.coalesce(OrbatUnitDetl.form_code, "")).like(like),
-            )
-        )
+        sql += " AND (UPPER(unit_name) LIKE :term OR UPPER(sus_no) LIKE :term OR UPPER(COALESCE(form_code, '')) LIKE :term)"
+        params["term"] = like
+
+    sql += " ORDER BY unit_name"
+    rows = fetch_all(session, sql, params)[:40]
     return [
         OrbatUnitOut(
-            id=r.id,
-            unit_name=r.unit_name,
-            sus_no=r.sus_no,
-            form_code=r.form_code,
-            status=r.status,
+            id=str(r.get("id") or ""),
+            unit_name=str(r.get("unit_name") or ""),
+            sus_no=str(r.get("sus_no") or ""),
+            form_code=r.get("form_code"),
+            status=str(r.get("status") or "ACTIVE"),
         )
-        for r in session.scalars(stmt.limit(40)).all()
+        for r in rows
     ]
 
 
@@ -327,19 +315,19 @@ def search_prf_groups(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[PrfGroupOut]:
-    stmt = (
-        select(MlccsEquipmentMaster.prf_group)
-        .where(MlccsEquipmentMaster.prf_group.is_not(None))
-        .distinct()
-        .order_by(MlccsEquipmentMaster.prf_group)
-    )
+    sql = "SELECT DISTINCT prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE prf_group IS NOT NULL"
+    params: dict = {}
     term = q.strip().upper()
     if term:
-        stmt = stmt.where(func.upper(MlccsEquipmentMaster.prf_group).like(f"%{term}%"))
+        sql += " AND UPPER(prf_group) LIKE :term"
+        params["term"] = f"%{term}%"
+
+    sql += " ORDER BY prf_group"
+    rows = fetch_all(session, sql, params)[:50]
     return [
-        PrfGroupOut(prf_group=g)
-        for g in session.scalars(stmt.limit(50)).all()
-        if g and str(g).strip()
+        PrfGroupOut(prf_group=str(g.get("prf_group") or ""))
+        for g in rows
+        if g.get("prf_group") and str(g.get("prf_group")).strip()
     ]
 
 
@@ -349,34 +337,31 @@ def search_census_items(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[CensusItemOut]:
-    stmt = (
-        select(MlccsEquipmentMaster)
-        .where(
-            func.upper(func.trim(MlccsEquipmentMaster.prf_group))
-            == prf_group.strip().upper(),
-            MlccsEquipmentMaster.census_no.is_not(None),
-        )
-        .order_by(MlccsEquipmentMaster.census_no)
-    )
+    sql = """
+        SELECT census_no, nomen, prf_group, prf_code, material_no
+        FROM MMS_MLCCS_EQUIPMENT_MASTER
+        WHERE UPPER(TRIM(prf_group)) = :grp
+        AND census_no IS NOT NULL
+    """
+    params: dict = {"grp": prf_group.strip().upper()}
     term = q.strip().upper()
     if term:
         like = f"%{term}%"
-        stmt = stmt.where(
-            or_(
-                func.upper(MlccsEquipmentMaster.census_no).like(like),
-                func.upper(func.coalesce(MlccsEquipmentMaster.nomen, "")).like(like),
-            )
-        )
+        sql += " AND (UPPER(census_no) LIKE :term OR UPPER(COALESCE(nomen, '')) LIKE :term)"
+        params["term"] = like
+
+    sql += " ORDER BY census_no"
+    rows = fetch_all(session, sql, params)[:80]
     return [
         CensusItemOut(
-            census_no=r.census_no or "",
-            nomenclature=r.nomen,
-            prf_group=r.prf_group,
-            prf_code=r.prf_code,
-            material_no=r.material_no,
+            census_no=str(r.get("census_no") or ""),
+            nomenclature=r.get("nomen"),
+            prf_group=r.get("prf_group"),
+            prf_code=r.get("prf_code"),
+            material_no=r.get("material_no"),
         )
-        for r in session.scalars(stmt.limit(80)).all()
-        if r.census_no
+        for r in rows
+        if r.get("census_no")
     ]
 
 
@@ -398,13 +383,10 @@ def build_items(
     if to_unit is None:
         raise HTTPException(status_code=400, detail="To Unit not found in ORBAT")
 
-    mlccs = session.scalar(
-        select(MlccsEquipmentMaster).where(
-            func.upper(func.trim(MlccsEquipmentMaster.census_no))
-            == body.census_no.strip().upper(),
-            func.upper(func.trim(MlccsEquipmentMaster.prf_group))
-            == body.prf_group.strip().upper(),
-        )
+    mlccs = fetch_one(
+        session,
+        "SELECT id FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(census_no)) = :cno AND UPPER(TRIM(prf_group)) = :pgrp",
+        {"cno": body.census_no.strip().upper(), "pgrp": body.prf_group.strip().upper()},
     )
     if mlccs is None:
         raise HTTPException(
@@ -415,15 +397,18 @@ def build_items(
         raise HTTPException(status_code=400, detail="PRF Code is required")
 
     bucket = _holding_bucket(session, body.type_of_hldg)
-    model = _seq_model(bucket)
+    table_name = _table_for_bucket(bucket)
 
-    next_regn = _max_eqpt_regn_seq(session, model, body.pending_eqpt_regn_nos) + 1
+    next_regn = (
+        _max_eqpt_regn_seq(session, table_name, body.iv_date, body.pending_eqpt_regn_nos)
+        + 1
+    )
     next_seq = _max_regn_seq(
-        session, model, body.prf_code, body.pending_regn_seq_nos
+        session, table_name, body.prf_code, body.pending_regn_seq_nos
     ) + 1
     if next_seq < 1:
         next_seq = 1
-    next_census = _max_census_seq(session, model, body.pending_census_seq_nos) + 1
+    next_census = _max_census_seq(session, table_name, body.pending_census_seq_nos) + 1
 
     out: list[GeneratedItemOut] = []
     for i in range(body.issued_qty):
@@ -431,11 +416,11 @@ def build_items(
         regn_seq = _build_regn_seq(body.prf_code, next_seq + i)
         out.append(
             GeneratedItemOut(
-                issuing_depot_name=issuer.unit_name,
-                to_unit_name=to_unit.unit_name,
+                issuing_depot_name=str(issuer["unit_name"]),
+                to_unit_name=str(to_unit["unit_name"]),
                 prf_group=body.prf_group,
                 prf_code=body.prf_code.strip().upper(),
-                sus_no=to_unit.sus_no,
+                sus_no=str(to_unit["sus_no"]),
                 census_no=body.census_no.strip().upper(),
                 material_no=body.material_no.strip(),
                 eqpt_regn_no=regn_no,
@@ -475,28 +460,16 @@ def submit_items(
     depres = _parse_depres(body.depres_dur_year)
     upload_name = (body.upload_iv or "").strip()[:100] or None
 
-    if bucket == "oth":
-        return _submit_oth_master(
-            session,
-            body=body,
-            issuer=issuer,
-            to_unit=to_unit,
-            today=today,
-            now=now,
-            actor=actor,
-            upload_name=upload_name,
-        )
-
-    model: type[Any] = UnitMasterDetail if bucket == "unit" else DepotMaster
-    target_table = "MMS_UNIT_MSTR_DETL" if bucket == "unit" else "MMS_DEPOT_MASTER"
+    target_table = _table_for_bucket(bucket)
 
     ids: list[str] = []
     last_id: int | None = None
     for item in body.items:
-        existing = session.scalar(
-            select(model.id).where(
-                func.upper(model.eqpt_regn_no) == item.eqpt_regn_no.strip().upper()
-            )
+        rno = item.eqpt_regn_no.strip().upper()
+        existing = fetch_one(
+            session,
+            f"SELECT id FROM {target_table} WHERE UPPER(eqpt_regn_no) = :rno",
+            {"rno": rno},
         )
         if existing is not None:
             raise HTTPException(
@@ -504,124 +477,100 @@ def submit_items(
                 detail=f"Registration No '{item.eqpt_regn_no}' already exists",
             )
 
-        next_id = next_int_id(session, model, start_after=last_id)
+        next_id = next_int_id(session, target_table, start_after=last_id)
         last_id = next_id
         row_id = str(next_id)
-        session.add(
-            model(
-                id=row_id,
-                sus_no=to_unit.sus_no[:9],
-                census_seq_no=item.census_seq_no,
-                census_no=item.census_no.strip().upper()[:9],
-                type_of_hldg=body.type_of_hldg.strip().upper()[:15],
-                type_of_eqpt=body.type_of_eqpt.strip().upper()[:3],
-                eqpt_regn_no=item.eqpt_regn_no.strip().upper()[:25],
-                regn_seq_no=item.regn_seq_no.strip().upper()[:20],
-                from_sus_no=issuer.sus_no[:8],
-                from_form_code=(issuer.form_code or "")[:15] or None,
-                from_tr_date=today,
-                to_sus_no=to_unit.sus_no[:8],
-                to_form_code=(to_unit.form_code or "")[:15] or None,
-                to_tr_date=today,
-                barrel1_detl=None,
-                barrel2_detl=None,
-                barrel3_detl=None,
-                barrel4_detl=None,
-                service_status=_SERVICE_STATUS_DEFAULT,
-                spl_remarks=None,
-                remarks=None,
-                created_by=actor,
-                created_date=now,
-                upload_by=actor if upload_name else None,
-                upload_date=now if upload_name else None,
-                approved_by=None,
-                approved_date=None,
-                op_status=_OP_STATUS_PENDING,
-                tfr_status=_TFR_STATUS_PENDING,
-                iv_no=body.iv_no.strip()[:25],
-                iv_date=datetime.combine(body.iv_date, datetime.min.time()),
-                prf_code=item.prf_code.strip().upper()[:8],
-                depres_dur_year=depres,
-                upload_iv=upload_name,
-            )
-        )
+
+        if bucket == "oth":
+            params = {
+                "id": row_id,
+                "issued_from": str(issuer["sus_no"])[:10],
+                "iv_sus_no": str(to_unit["sus_no"])[:9],
+                "iv_no": body.iv_no.strip()[:50],
+                "iv_date": datetime.combine(body.iv_date, datetime.min.time()),
+                "prf_code": item.prf_code.strip().upper()[:8],
+                "census_no": item.census_no.strip().upper()[:9],
+                "type_of_hldg": body.type_of_hldg.strip().upper()[:3],
+                "type_of_eqpt": body.type_of_eqpt.strip().upper()[:2],
+                "eqpt_regn_no": item.eqpt_regn_no.strip().upper()[:25],
+                "regn_seq_no": item.regn_seq_no.strip().upper()[:20],
+                "from_sus_no": str(issuer["sus_no"])[:8],
+                "from_form_code": str(issuer.get("form_code") or "")[:10] or None,
+                "from_tr_date": today,
+                "to_sus_no": str(to_unit["sus_no"])[:8],
+                "to_form_code": str(to_unit.get("form_code") or "")[:10] or None,
+                "to_tr_date": today,
+                "service_status": _SERVICE_STATUS_DEFAULT,
+                "created_by": actor,
+                "created_date": now,
+                "upload_by": actor if upload_name else None,
+                "upload_date": now if upload_name else None,
+                "op_status": _OP_STATUS_PENDING,
+                "tfr_status": _TFR_STATUS_PENDING,
+                "upload_voucher": (upload_name[:50] if upload_name else None),
+            }
+            insert_sql = """
+                INSERT INTO MMS_OTH_MASTER (
+                    id, issued_from, iv_sus_no, iv_no, iv_date, prf_code, census_no,
+                    type_of_hldg, type_of_eqpt, eqpt_regn_no, regn_seq_no, from_sus_no,
+                    from_form_code, from_tr_date, to_sus_no, to_form_code, to_tr_date,
+                    service_status, created_by, created_date, upload_by, upload_date,
+                    op_status, tfr_status, upload_voucher
+                ) VALUES (
+                    :id, :issued_from, :iv_sus_no, :iv_no, :iv_date, :prf_code, :census_no,
+                    :type_of_hldg, :type_of_eqpt, :eqpt_regn_no, :regn_seq_no, :from_sus_no,
+                    :from_form_code, :from_tr_date, :to_sus_no, :to_form_code, :to_tr_date,
+                    :service_status, :created_by, :created_date, :upload_by, :upload_date,
+                    :op_status, :tfr_status, :upload_voucher
+                )
+            """
+            execute_sql(session, insert_sql, params)
+        else:
+            params = {
+                "id": row_id,
+                "sus_no": str(to_unit["sus_no"])[:9],
+                "census_seq_no": item.census_seq_no,
+                "census_no": item.census_no.strip().upper()[:9],
+                "type_of_hldg": body.type_of_hldg.strip().upper()[:15],
+                "type_of_eqpt": body.type_of_eqpt.strip().upper()[:3],
+                "eqpt_regn_no": item.eqpt_regn_no.strip().upper()[:25],
+                "regn_seq_no": item.regn_seq_no.strip().upper()[:20],
+                "from_sus_no": str(issuer["sus_no"])[:8],
+                "from_form_code": str(issuer.get("form_code") or "")[:15] or None,
+                "from_tr_date": today,
+                "to_sus_no": str(to_unit["sus_no"])[:8],
+                "to_form_code": str(to_unit.get("form_code") or "")[:15] or None,
+                "to_tr_date": today,
+                "service_status": _SERVICE_STATUS_DEFAULT,
+                "created_by": actor,
+                "created_date": now,
+                "upload_by": actor if upload_name else None,
+                "upload_date": now if upload_name else None,
+                "op_status": _OP_STATUS_PENDING,
+                "tfr_status": _TFR_STATUS_PENDING,
+                "iv_no": body.iv_no.strip()[:25],
+                "iv_date": datetime.combine(body.iv_date, datetime.min.time()),
+                "prf_code": item.prf_code.strip().upper()[:8],
+                "depres_dur_year": depres,
+                "upload_iv": upload_name,
+            }
+            insert_sql = f"""
+                INSERT INTO {target_table} (
+                    id, sus_no, census_seq_no, census_no, type_of_hldg, type_of_eqpt,
+                    eqpt_regn_no, regn_seq_no, from_sus_no, from_form_code, from_tr_date,
+                    to_sus_no, to_form_code, to_tr_date, service_status, created_by,
+                    created_date, upload_by, upload_date, op_status, tfr_status, iv_no,
+                    iv_date, prf_code, depres_dur_year, upload_iv
+                ) VALUES (
+                    :id, :sus_no, :census_seq_no, :census_no, :type_of_hldg, :type_of_eqpt,
+                    :eqpt_regn_no, :regn_seq_no, :from_sus_no, :from_form_code, :from_tr_date,
+                    :to_sus_no, :to_form_code, :to_tr_date, :service_status, :created_by,
+                    :created_date, :upload_by, :upload_date, :op_status, :tfr_status, :iv_no,
+                    :iv_date, :prf_code, :depres_dur_year, :upload_iv
+                )
+            """
+            execute_sql(session, insert_sql, params)
+
         ids.append(row_id)
 
     return SubmitOut(ids=ids, count=len(ids), target_table=target_table)
-
-
-def _submit_oth_master(
-    session: Session,
-    *,
-    body: SubmitIn,
-    issuer: OrbatUnitDetl,
-    to_unit: OrbatUnitDetl,
-    today: datetime,
-    now: datetime,
-    actor: str,
-    upload_name: str | None,
-) -> SubmitOut:
-    ids: list[str] = []
-    last_id: int | None = None
-    for item in body.items:
-        existing = session.scalar(
-            select(OthMaster.id).where(
-                func.upper(OthMaster.eqpt_regn_no)
-                == item.eqpt_regn_no.strip().upper()
-            )
-        )
-        if existing is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Registration No '{item.eqpt_regn_no}' already exists",
-            )
-
-        next_id = next_int_id(session, OthMaster, start_after=last_id)
-        last_id = next_id
-        row_id = str(next_id)
-        session.add(
-            OthMaster(
-                id=row_id,
-                stores_type=None,
-                sanction_auth=None,
-                govt_sanction_no=None,
-                auth_letter_no=None,
-                auth_date=None,
-                issued_from=issuer.sus_no[:10],
-                iv_sus_no=to_unit.sus_no[:9],
-                iv_no=body.iv_no.strip()[:50],
-                iv_date=datetime.combine(body.iv_date, datetime.min.time()),
-                loan_expiry_date=None,
-                prf_code=item.prf_code.strip().upper()[:8],
-                census_no=item.census_no.strip().upper()[:9],
-                type_of_hldg=body.type_of_hldg.strip().upper()[:3],
-                type_of_eqpt=body.type_of_eqpt.strip().upper()[:2],
-                qty=None,
-                eqpt_regn_no=item.eqpt_regn_no.strip().upper()[:25],
-                regn_seq_no=item.regn_seq_no.strip().upper()[:20],
-                from_sus_no=issuer.sus_no[:8],
-                from_form_code=(issuer.form_code or "")[:10] or None,
-                from_tr_date=today,
-                to_sus_no=to_unit.sus_no[:8],
-                to_form_code=(to_unit.form_code or "")[:10] or None,
-                to_tr_date=today,
-                service_status=_SERVICE_STATUS_DEFAULT,
-                spl_remarks=None,
-                remarks=None,
-                created_by=actor,
-                created_date=now,
-                upload_by=actor if upload_name else None,
-                upload_date=now if upload_name else None,
-                approved_by=None,
-                approved_date=None,
-                op_status=_OP_STATUS_PENDING,
-                tfr_status=_TFR_STATUS_PENDING,
-                upload_voucher=(upload_name[:50] if upload_name else None),
-                sector_expiry_date=None,
-                upload_auth_letter=None,
-                upload_picture=None,
-            )
-        )
-        ids.append(row_id)
-
-    return SubmitOut(ids=ids, count=len(ids), target_table="MMS_OTH_MASTER")

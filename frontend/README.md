@@ -24,7 +24,7 @@ npm run dev
 ```
 
 The frontend application will start on **http://localhost:3000**.
-All `/api` network calls are automatically proxied to the backend at `http://localhost:8000`.
+All API network calls are automatically proxied to the backend at `http://localhost:8000`.
 
 ---
 
@@ -34,11 +34,11 @@ Environment configurations are stored in `.env` files:
 
 - **Local Development** (`.env`):
   ```env
-  VITE_API_BASE_URL=http://localhost:8000/api/
+  VITE_API_BASE_URL=http://localhost:8000
   ```
 - **Staging Environment** (`.env.staging`):
   ```env
-  VITE_API_BASE_URL=http://131.3.54.120/api/
+  VITE_API_BASE_URL=http://131.3.54.120
   ```
 
 ---

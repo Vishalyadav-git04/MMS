@@ -34,7 +34,7 @@ class MmsSettings(BaseSettings):
 
     upload_path: str = "D:/miso/"
 
-    api_prefix: str = "/api"
+    api_prefix: str = ""
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",

@@ -37,20 +37,19 @@ function isPrivateLanIpv4(ip: string): boolean {
   );
 }
 
-/** Only private LAN addresses belong in the session watermark (not public WAN / STUN). */
+/** Accept valid IPv4 addresses for session watermark (prefer LAN IPs, allow loopback IPv4 as fallback). */
 export function isWatermarkIp(ip: string): boolean {
   const normalized = normalizeClientIp(ip);
-  return (
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(normalized) &&
-    !isLoopbackIp(normalized) &&
-    isPrivateLanIpv4(normalized)
-  );
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(normalized)) return false;
+  if (normalized === "0.0.0.0" || normalized === "unknown" || normalized === "N/A" || normalized === "…") return false;
+  const parts = normalized.split(".").map((p) => parseInt(p, 10));
+  if (parts.some((p) => isNaN(p) || p < 0 || p > 255)) return false;
+  return true;
 }
 
 export function setCachedClientIp(ip: string): void {
   if (typeof window === "undefined") return;
   const normalized = normalizeClientIp(ip);
-  // Never persist loopback or public WAN — watermark must show workstation LAN IP.
   if (!isWatermarkIp(normalized)) return;
   sessionStorage.setItem(CLIENT_IP_KEY, normalized);
 }
@@ -99,16 +98,17 @@ export function buildWatermarkLine(opts?: {
   const clientIp =
     [opts?.clientIp, getCachedClientIp()]
       .map((v) => normalizeClientIp(v || ""))
-      .find(isWatermarkIp) || "N/A";
+      .find(isWatermarkIp) || "127.0.0.1";
   // Non-breaking spaces keep IP · user · time as one unbreakable visual unit
   return `${clientIp}\u00A0·\u00A0${username}\u00A0·\u00A0${formatWatermarkStamp(opts?.date)}`;
 }
 
-/** Rank private NICs: office/home LAN first, then corp 10.x, then 172.16–31 (often Hyper-V). */
+/** Rank private NICs: office/home LAN first, then corp 10.x, then 172.16–31 (often Hyper-V), then loopback. */
 function lanRank(ip: string): number {
   if (ip.startsWith("192.168.")) return 0;
   if (ip.startsWith("10.")) return 1;
   if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return 2;
+  if (ip === "127.0.0.1" || ip.startsWith("127.")) return 8;
   return 9;
 }
 
@@ -229,7 +229,7 @@ export async function resolveClientIp(force = false): Promise<string> {
   }
 
   if (cached) return cached;
-  return "N/A";
+  return "127.0.0.1";
 }
 
 /** CSS + markup for embedding the session watermark in print documents. */

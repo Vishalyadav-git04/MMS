@@ -1,40 +1,21 @@
-"""View MLCCS — Weapon → MLCCS.
+"""View MLCCS — Weapon → MLCCS using Native SQL.
 
 Search / list / class-of-eqpt options against MMS_MLCCS_EQUIPMENT_MASTER.
 Mirrors frontend src/components/mlccs/ViewMlccs.tsx.
-
-Uses column-only selects + server-side OFFSET/LIMIT pagination so the
-screen can open quickly even when the master table is large.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db_session
-from app.models import MlccsEquipmentMaster
+from app.db.native_utils import fetch_all, fetch_one
 
 router = APIRouter(
     prefix="/mlccs",
     tags=["mlccs: view mlccs"],
-)
-
-# Columns required by the View MLCCS grid only (avoids SELECT *).
-_LIST_COLUMNS = (
-    MlccsEquipmentMaster.id,
-    MlccsEquipmentMaster.material_no,
-    MlccsEquipmentMaster.census_no,
-    MlccsEquipmentMaster.nomen,
-    MlccsEquipmentMaster.class_category,
-    MlccsEquipmentMaster.cat_part_no,
-    MlccsEquipmentMaster.au,
-    MlccsEquipmentMaster.op_status,
-    MlccsEquipmentMaster.item_status,
 )
 
 
@@ -54,7 +35,7 @@ class MlccsSearchRequest(BaseModel):
 
 
 class MlccsListItem(BaseModel):
-    id: str
+    id: str | int
     material_no: str | None = None
     census_no: str | None = None
     nomenclature: str | None = None
@@ -79,82 +60,75 @@ def mlccs_status() -> dict[str, str]:
 @router.get("/options")
 def mlccs_options(session: Session = Depends(get_db_session)) -> dict[str, list[dict[str, str]]]:
     """Class-of-eqpt (and related) dropdown values from the master table."""
-    values = session.scalars(
-        select(MlccsEquipmentMaster.class_category)
-        .where(MlccsEquipmentMaster.class_category.is_not(None))
-        .distinct()
-        .order_by(MlccsEquipmentMaster.class_category)
-    ).all()
+    sql = "SELECT DISTINCT class_category FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE class_category IS NOT NULL ORDER BY class_category"
+    rows = fetch_all(session, sql)
     class_of_eqpt = [
-        {"value": str(v), "label": str(v)} for v in values if str(v).strip()
+        {"value": str(r["class_category"]), "label": str(r["class_category"])}
+        for r in rows
+        if r.get("class_category") and str(r["class_category"]).strip()
     ]
     return {"class_of_eqpt": class_of_eqpt}
 
 
-def _like(col: Any, pattern: str) -> ColumnElement[bool]:
-    return func.upper(col).like(pattern)
+def _build_where_clause(body: MlccsSearchRequest) -> tuple[str, dict]:
+    sql_where = " WHERE 1=1"
+    params: dict = {}
 
-
-def _apply_filters(stmt: Select[Any], body: MlccsSearchRequest) -> Select[Any]:
     if body.class_of_eqpt and body.class_of_eqpt.strip():
-        stmt = stmt.where(
-            func.upper(MlccsEquipmentMaster.class_category)
-            == body.class_of_eqpt.strip().upper()
-        )
+        sql_where += " AND UPPER(class_category) = :ceqpt"
+        params["ceqpt"] = body.class_of_eqpt.strip().upper()
 
-    text = (body.text or "").strip()
-    if text:
-        q = f"%{text.upper()}%"
+    text_val = (body.text or "").strip()
+    if text_val:
+        q = f"%{text_val.upper()}%"
         field = (body.field or "Nomenclature").strip()
-        column_map: dict[str, Any] = {
-            "Nomenclature": MlccsEquipmentMaster.nomen,
-            "Census No": MlccsEquipmentMaster.census_no,
-            "Material No": MlccsEquipmentMaster.material_no,
-            "Cat Part No": MlccsEquipmentMaster.cat_part_no,
-        }
-        col = column_map.get(field)
-        if col is not None:
-            stmt = stmt.where(_like(col, q))
+        if field == "Census No":
+            sql_where += " AND UPPER(census_no) LIKE :qtext"
+        elif field == "Material No":
+            sql_where += " AND UPPER(material_no) LIKE :qtext"
+        elif field == "Cat Part No":
+            sql_where += " AND UPPER(cat_part_no) LIKE :qtext"
         else:
-            stmt = stmt.where(
-                or_(
-                    _like(MlccsEquipmentMaster.nomen, q),
-                    _like(MlccsEquipmentMaster.census_no, q),
-                    _like(MlccsEquipmentMaster.material_no, q),
-                    _like(MlccsEquipmentMaster.cat_part_no, q),
-                )
-            )
+            sql_where += " AND UPPER(nomen) LIKE :qtext"
+        params["qtext"] = q
 
     result_q = (body.result_q or "").strip()
     if result_q:
         rq = f"%{result_q.upper()}%"
-        stmt = stmt.where(
-            or_(
-                _like(MlccsEquipmentMaster.material_no, rq),
-                _like(MlccsEquipmentMaster.census_no, rq),
-                _like(MlccsEquipmentMaster.nomen, rq),
-                _like(MlccsEquipmentMaster.class_category, rq),
-                _like(MlccsEquipmentMaster.cat_part_no, rq),
-                _like(MlccsEquipmentMaster.au, rq),
-                _like(MlccsEquipmentMaster.op_status, rq),
-                _like(MlccsEquipmentMaster.item_status, rq),
-            )
-        )
+        sql_where += """ AND (
+            UPPER(material_no) LIKE :rq OR
+            UPPER(census_no) LIKE :rq OR
+            UPPER(nomen) LIKE :rq OR
+            UPPER(class_category) LIKE :rq OR
+            UPPER(cat_part_no) LIKE :rq OR
+            UPPER(au) LIKE :rq OR
+            UPPER(op_status) LIKE :rq OR
+            UPPER(item_status) LIKE :rq
+        )"""
+        params["rq"] = rq
 
-    return stmt
+    return sql_where, params
 
 
-def _row_to_item(row: Any) -> MlccsListItem:
-    return MlccsListItem(
-        id=row.id,
-        material_no=row.material_no,
-        census_no=row.census_no,
-        nomenclature=row.nomen,
-        class_of_eqpt=row.class_category,
-        cat_part_no=row.cat_part_no,
-        au=row.au,
-        status=row.op_status or row.item_status,
-    )
+def _get_opstatus_map(session: Session) -> dict[str, str]:
+    sql = """
+        SELECT code_value, label_name, label_short
+        FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') IN ('OPSTATUS', 'ITEMSTATUS')
+    """
+    rows = fetch_all(session, sql)
+    mapping: dict[str, str] = {}
+    for r in rows:
+        label = str(r.get("label_name") or r.get("code_value") or "").strip()
+        code = str(r.get("code_value") or "").strip()
+        short = str(r.get("label_short") or "").strip()
+        if code and label:
+            mapping[code.upper()] = label
+        if label:
+            mapping[label.upper()] = label
+        if short and label:
+            mapping[short.upper()] = label
+    return mapping
 
 
 @router.post("/search", response_model=MlccsSearchResponse)
@@ -162,30 +136,43 @@ def search_mlccs(
     body: MlccsSearchRequest,
     session: Session = Depends(get_db_session),
 ) -> MlccsSearchResponse:
-    """Paginated search of MMS_MLCCS_EQUIPMENT_MASTER for View MLCCS.
+    where_sql, params = _build_where_clause(body)
 
-    Empty text + no class filter returns the full table page-by-page
-    (used on screen open). Only grid columns are selected.
-    """
-    base = _apply_filters(select(*_LIST_COLUMNS), body)
-    count_stmt = _apply_filters(
-        select(func.count(MlccsEquipmentMaster.id)),
-        body,
-    )
-    total = int(session.scalar(count_stmt) or 0)
+    count_sql = f"SELECT COUNT(id) AS cnt FROM MMS_MLCCS_EQUIPMENT_MASTER{where_sql}"
+    total_row = fetch_one(session, count_sql, params)
+    total = int((total_row.get("cnt") if total_row else 0) or 0)
 
     offset = (body.page - 1) * body.page_size
-    stmt = (
-        base.order_by(
-            MlccsEquipmentMaster.census_no.asc(),
-            MlccsEquipmentMaster.nomen.asc(),
+    query_sql = f"""
+        SELECT id, material_no, census_no, nomen, class_category, cat_part_no, au, op_status, item_status
+        FROM MMS_MLCCS_EQUIPMENT_MASTER
+        {where_sql}
+        ORDER BY census_no ASC NULLS LAST, nomen ASC NULLS LAST
+        OFFSET :offset_val ROWS FETCH NEXT :limit_val ROWS ONLY
+    """
+    page_params = {**params, "offset_val": offset, "limit_val": body.page_size}
+    rows = fetch_all(session, query_sql, page_params)
+    opstatus_map = _get_opstatus_map(session)
+
+    items = []
+    for r in rows:
+        raw_status = str(r.get("op_status") or r.get("item_status") or "").strip()
+        mapped_status = opstatus_map.get(raw_status.upper(), raw_status) if raw_status else None
+        items.append(
+            MlccsListItem(
+                id=str(r["id"]),
+                material_no=r.get("material_no"),
+                census_no=r.get("census_no"),
+                nomenclature=r.get("nomen"),
+                class_of_eqpt=r.get("class_category"),
+                cat_part_no=r.get("cat_part_no"),
+                au=r.get("au"),
+                status=mapped_status,
+            )
         )
-        .offset(offset)
-        .limit(body.page_size)
-    )
-    rows = session.execute(stmt).all()
+
     return MlccsSearchResponse(
-        items=[_row_to_item(r) for r in rows],
+        items=items,
         total=total,
         page=body.page,
         page_size=body.page_size,

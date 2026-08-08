@@ -1,16 +1,24 @@
-"""Create MMS_ORBAT_UNIT_DETL and seed dummy ORBAT unit rows."""
+"""Create MMS_ORBAT_UNIT_DETL and seed dummy ORBAT unit rows using Native SQL."""
 
 from __future__ import annotations
 
 import logging
+from sqlalchemy import text
 
-from sqlalchemy import select
-
-from app.models import OrbatUnitDetl
+from app.db.native_utils import execute_sql, fetch_one
 
 logger = logging.getLogger("mms.orbat")
 
-# id, unit_name, sus_no, form_code, status
+_CREATE_ORBAT_DDL = """
+CREATE TABLE MMS_ORBAT_UNIT_DETL (
+    ID VARCHAR2(36) PRIMARY KEY,
+    UNIT_NAME VARCHAR2(255),
+    SUS_NO VARCHAR2(255),
+    FORM_CODE VARCHAR2(50),
+    STATUS VARCHAR2(50)
+)
+"""
+
 _ORBAT_SEED = (
     ("1", "1 Guards", "66070809", "OR01", "ACTIVE"),
     ("2", "2 Rajput", "44050607", "OR01", "ACTIVE"),
@@ -25,19 +33,20 @@ _ORBAT_SEED = (
 
 def ensure_orbat_unit_table(db) -> None:
     """Create MMS_ORBAT_UNIT_DETL if missing and seed dummy rows when empty."""
-    OrbatUnitDetl.__table__.create(bind=db.engine, checkfirst=True)
+    with db.engine.begin() as conn:
+        try:
+            conn.execute(text(_CREATE_ORBAT_DDL))
+        except Exception:
+            pass
 
     with db.session() as session:
-        if session.scalar(select(OrbatUnitDetl.id).limit(1)) is not None:
+        has_orbat = fetch_one(session, "SELECT id FROM MMS_ORBAT_UNIT_DETL WHERE ROWNUM = 1")
+        if has_orbat is not None:
             return
         for id_, name, sus, form_code, status in _ORBAT_SEED:
-            session.add(
-                OrbatUnitDetl(
-                    id=id_,
-                    unit_name=name,
-                    sus_no=sus,
-                    form_code=form_code,
-                    status=status,
-                )
+            execute_sql(
+                session,
+                "INSERT INTO MMS_ORBAT_UNIT_DETL (id, unit_name, sus_no, form_code, status) VALUES (:id, :name, :sus, :form, :status)",
+                {"id": id_, "name": name, "sus": sus, "form": form_code, "status": status},
             )
         logger.info("seeded %s ORBAT units", len(_ORBAT_SEED))

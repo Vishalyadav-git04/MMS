@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No";
 
 interface MlccsRow {
-  id: string;
+  id: number | string;
   materialNo: string;
   censusNo: string;
   nomenclature: string;
@@ -29,7 +29,7 @@ interface MlccsRow {
 }
 
 interface MlccsListItem {
-  id: string;
+  id: number | string;
   material_no?: string | null;
   census_no?: string | null;
   nomenclature?: string | null;

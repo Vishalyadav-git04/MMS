@@ -21,15 +21,15 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 
 interface EpDomainRow {
-  id: string;
-  domain_id: number;
+  id: number | string;
+  domain_id: number | string;
   eqpt_cat: string;
 }
 
 interface EpSubDomainRow {
-  id: string;
-  equipment_domain_id: string;
-  sub_domain_id: number;
+  id: number | string;
+  equipment_domain_id: number | string;
+  sub_domain_id: number | string;
   sub_domain_name: string;
   eqpt_cat?: string | null;
   created_by?: string | null;
@@ -144,7 +144,7 @@ export function SubDomainMaster() {
             <SelectContent className="max-h-72">
               <SelectItem value="__all__">-- ALL --</SelectItem>
               {domains.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
+                <SelectItem key={d.id} value={String(d.id)}>
                   {d.eqpt_cat}
                 </SelectItem>
               ))}

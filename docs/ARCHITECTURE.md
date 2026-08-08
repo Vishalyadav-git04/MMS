@@ -10,7 +10,7 @@ Material / Master List Management.
 | Backend | **FastAPI MMS service** under `backend/`, with `app/` as the package |
 | Shared lib | Auth, DB, and utils live inside `backend/app` (no separate core package) |
 | Database | Oracle via `python-oracledb` + SQLAlchemy 2 + Alembic; local FreeDB tables owned by **SYSTEM** (`MMS_*`) |
-| API | `/api/v1` on port **8001**; Vite proxies `/api/v1` → backend |
+| API | FastAPI service on port **8000**; Vite proxies API routes → backend |
 
 ## Layout
 
@@ -26,7 +26,7 @@ MMS/
 │   │       ├── transfer/
 │   │       └── ui/
 │   ├── package.json
-│   └── vite.config.ts        # proxies /api/v1 → :8001
+│   └── vite.config.ts        # proxies API routes → :8000
 ├── backend/
 │   ├── main.py
 │   ├── app/
