@@ -181,6 +181,8 @@
 }
 
 .mms-panel__foot {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -188,7 +190,8 @@
   gap: 8px;
   padding: 10px 16px;
   background-color: var(--surface-alt, #eff5fb);
-  border-top: 1px solid var(--line-soft, #dfe9f4);
+  border-top: 1px solid var(--line, #cddcec);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08), 0 -1px 3px rgba(0, 0, 0, 0.05);
 }
 
 /* Clear / secondary actions must contrast against the foot strip */
@@ -201,17 +204,42 @@
   color: var(--accent, #14568c);
 }
 
+/* Sleek thin custom scrollbar for suggestion dropdowns & popups */
+.mms-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.5) hsl(var(--muted) / 0.3);
+}
+
+.mms-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mms-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 9999px;
+}
+
+.mms-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.5);
+  border-radius: 9999px;
+}
+
+.mms-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
 /* Form section divider — uppercase label + 1px rule */
 .mms-section {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 4px 0 2px;
+  margin: 10px 0 4px;
 }
 
 .mms-section__title {
   flex: 0 0 auto;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -244,13 +272,13 @@
 .mms-form select,
 .mms-form [data-slot="select-trigger"],
 .mms-form button[role="combobox"] {
-  height: 36px !important;
-  min-height: 36px !important;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  padding-left: 10px;
-  padding-right: 10px;
-  font-size: 14.5px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 11px;
+  padding-right: 11px;
+  font-size: 15px !important;
   line-height: 1.2;
   border-radius: 8px;
   background-color: var(--surface, #ffffff);
@@ -261,7 +289,7 @@
 
 .mms-form input::placeholder,
 .mms-form textarea::placeholder {
-  font-size: 14px !important;
+  font-size: 14.5px !important;
   color: var(--ink-faint, #616d79);
 }
 
@@ -271,7 +299,7 @@
 
 .mms-form input[type="file"] {
   height: auto;
-  min-height: 32px;
+  min-height: 34px;
   padding-top: 4px;
   padding-bottom: 4px;
 }
@@ -280,7 +308,7 @@
   min-height: 56px;
   height: auto;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.35;
   resize: vertical;
   border-radius: 8px;
@@ -297,18 +325,18 @@
 /* Footer / primary actions — compact 32px */
 .mms-panel__foot button,
 .mms-form .mms-form-actions button {
-  height: 32px !important;
-  min-height: 32px !important;
-  padding-left: 14px !important;
-  padding-right: 14px !important;
-  font-size: 13px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  font-size: 13.5px !important;
   font-weight: 600;
   border-radius: 8px;
 }
 
 .mms-form button[data-size="icon"],
 .mms-panel__foot button[data-size="icon"] {
-  width: 32px !important;
+  width: 34px !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
@@ -344,7 +372,7 @@
 
 .mms-form-grid {
   display: grid;
-  gap: 8px 16px;
+  gap: 12px 20px;
 }
 
 /* Tables inside panels — denser rows, same header treatment */
@@ -455,8 +483,13 @@ textarea::placeholder {
 }
 
 @media (max-width: 960px) {
+  .mms-form-grid--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+}
 
-  .mms-form-grid--4,
+@media (max-width: 800px) {
   .mms-form-grid--3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px 12px;

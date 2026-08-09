@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, ApiError, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
@@ -51,41 +52,32 @@ interface ItemRow {
   censusSeqNo: number;
 }
 
-const emptyForm = {
-  ivNo: "",
-  ivDate: "",
-  issuingDepotSus: "",
-  toUnitName: "",
-  toUnitSus: "",
-  typeOfHolding: "",
-  typeOfEqpt: "",
-  prfSearch: "",
-  prfGroup: "",
-  prfCode: "",
-  censusNo: "",
-  materialNo: "",
-  issuedQty: "",
-  eqptMake: "",
-  eqptModel: "",
-  unitPrice: "",
-  depreciationRate: "",
-  lifeOfAsset: "",
-  uploadIv: "",
-};
+function getTodayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-/** Cleared after each Add Items — IV / units / holding / depreciation stay. */
-const ITEM_FIELDS = [
-  "prfSearch",
-  "prfGroup",
-  "prfCode",
-  "censusNo",
-  "materialNo",
-  "issuedQty",
-  "eqptMake",
-  "eqptModel",
-  "unitPrice",
-  "lifeOfAsset",
-] as const;
+function getEmptyForm() {
+  return {
+    ivNo: "",
+    ivDate: getTodayIso(),
+    issuingDepotSus: "",
+    toUnitName: "",
+    toUnitSus: "",
+    typeOfHolding: "",
+    typeOfEqpt: "",
+    prfGroup: "",
+    prfCode: "",
+    censusNo: "",
+    materialNo: "",
+    issuedQty: "",
+    eqptMake: "",
+    eqptModel: "",
+    unitPrice: "",
+    depreciationRate: "",
+    lifeOfAsset: "",
+    uploadIv: "",
+  };
+}
 
 function SuggestInput({
   value,
@@ -93,6 +85,8 @@ function SuggestInput({
   disabled,
   suggestions,
   renderItem,
+  maxHeightClass = "max-h-60",
+  matchGridWidth = false,
   onChange,
   onPick,
 }: {
@@ -101,54 +95,117 @@ function SuggestInput({
   disabled?: boolean;
   suggestions: string[];
   renderItem?: (s: string, idx: number) => ReactNode;
+  maxHeightClass?: string;
+  /** Anchor the dropdown to the full form-grid row instead of just this input,
+   *  so it fully covers the rows/labels beneath it (they have differently
+   *  sized labels, so covering just the input leaves neighbouring rows peeking out). */
+  matchGridWidth?: boolean;
   onChange: (v: string) => void;
   onPick: (idx: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<
+    { top: number; left: number; width: number; maxHeight: number } | null
+  >(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const blurTimer = useRef<number | null>(null);
 
+  const designMaxHeight = (() => {
+    const n = Number(maxHeightClass.match(/max-h-(\d+)/)?.[1]);
+    return Number.isFinite(n) && n > 0 ? n * 4 : 240;
+  })();
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const wideRect = matchGridWidth ? el.closest(".mms-form-grid")?.getBoundingClientRect() : null;
+    const top = r.bottom + 4;
+    const footer = el.closest(".mms-panel")?.querySelector(".mms-panel__foot");
+    const ceiling = footer ? footer.getBoundingClientRect().top : window.innerHeight;
+    setCoords({
+      top,
+      left: wideRect ? wideRect.left : r.left,
+      width: wideRect ? wideRect.width : r.width,
+      // Never exceed the design cap, but also never overrun the panel footer
+      // (or the viewport bottom if there's no footer in view).
+      maxHeight: Math.min(designMaxHeight, Math.max(40, ceiling - top - 8)),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
   return (
-    <div className="relative">
+    <div className="relative overflow-visible">
       <Input
+        ref={inputRef}
         placeholder={placeholder}
         value={value}
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
-          setOpen(true);
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          onChange(val);
+          setOpen(Boolean(val.trim()));
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => updateCoords()}
         onBlur={() => {
           blurTimer.current = window.setTimeout(() => setOpen(false), 150);
         }}
       />
-      {open && suggestions.length > 0 && (
-        <ul className="absolute z-30 mt-1 max-h-44 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
-          {suggestions.map((s, idx) => (
-            <li key={`${s}-${idx}`}>
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                  onPick(idx);
-                  setOpen(false);
-                }}
-              >
-                {renderItem ? renderItem(s, idx) : s}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {showList &&
+        createPortal(
+          <ul
+            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              maxHeight: coords.maxHeight,
+              zIndex: 100,
+            }}
+          >
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }
 
 export function AddNewEqpt() {
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(getEmptyForm);
   const [holdingOpts, setHoldingOpts] = useState<Option[]>([]);
   const [eqptOpts, setEqptOpts] = useState<Option[]>([]);
   const [depotOpts, setDepotOpts] = useState<OrbatUnit[]>([]);
@@ -160,10 +217,28 @@ export function AddNewEqpt() {
   const [ivFile, setIvFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const upd = <K extends keyof typeof emptyForm>(
+  const upd = <K extends keyof ReturnType<typeof getEmptyForm>>(
     k: K,
-    v: (typeof emptyForm)[K],
+    v: ReturnType<typeof getEmptyForm>[K],
   ) => setForm((prev) => ({ ...prev, [k]: v }));
+
+  const matchingPrfGroups = useMemo(() => {
+    const q = form.prfGroup.trim().toLowerCase();
+    if (!q) return prfOptions;
+    return prfOptions.filter((g) => g.toLowerCase().includes(q));
+  }, [prfOptions, form.prfGroup]);
+
+  const pickPrfGroup = (idx: number) => {
+    const chosen = matchingPrfGroups[idx];
+    if (!chosen) return;
+    setForm((prev) => ({
+      ...prev,
+      prfGroup: chosen,
+      censusNo: "",
+      prfCode: "",
+      materialNo: "",
+    }));
+  };
 
   useEffect(() => {
     let active = true;
@@ -228,32 +303,15 @@ export function AddNewEqpt() {
   }, [form.prfGroup]);
 
   const handleClear = () => {
-    setForm(emptyForm);
+    setForm(getEmptyForm());
     setIvFile(null);
     setCensusOptions([]);
     setToUnitHits([]);
     setToUnitField(null);
+    setItems([]);
     void api<{ prf_group: string }[]>("/unit-holding/add-new-eqpt/prf-groups")
       .then((rows) => setPrfOptions(rows.map((r) => r.prf_group).filter(Boolean)))
       .catch(() => setPrfOptions([]));
-  };
-
-  const handleCancel = () => {
-    handleClear();
-    setItems([]);
-  };
-
-  const handlePrfSearch = async () => {
-    try {
-      const rows = await api<{ prf_group: string }[]>(
-        `/unit-holding/add-new-eqpt/prf-groups?q=${encodeURIComponent(form.prfSearch.trim())}`,
-      );
-      const groups = rows.map((r) => r.prf_group).filter(Boolean);
-      setPrfOptions(groups);
-      if (!groups.length) toast.message("No PRF Group matched");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "PRF search failed");
-    }
   };
 
   const pickToUnit = (idx: number) => {
@@ -270,11 +328,13 @@ export function AddNewEqpt() {
 
   const pickCensus = (censusNo: string) => {
     const row = censusOptions.find((c) => c.census_no === censusNo);
+    if (!row) return;
     setForm((prev) => ({
       ...prev,
       censusNo,
-      prfCode: row?.prf_code?.trim() ?? prev.prfCode,
-      materialNo: row?.material_no?.trim() ?? "",
+      prfGroup: row.prf_group || prev.prfGroup,
+      prfCode: row.prf_code?.trim() ?? prev.prfCode,
+      materialNo: row.material_no?.trim() ?? "",
     }));
   };
 
@@ -294,7 +354,6 @@ export function AddNewEqpt() {
       !form.typeOfEqpt ||
       !form.prfGroup ||
       !form.censusNo ||
-      !form.materialNo.trim() ||
       !form.issuedQty.trim()
     ) {
       toast.error("Please fill all required fields");
@@ -358,12 +417,11 @@ export function AddNewEqpt() {
         })),
       ]);
 
-      setForm((prev) => {
-        const next = { ...prev };
-        for (const k of ITEM_FIELDS) next[k] = emptyForm[k];
-        return next;
-      });
+      setForm(getEmptyForm());
+      setIvFile(null);
       setCensusOptions([]);
+      setToUnitHits([]);
+      setToUnitField(null);
       toast.success(`${generated.length} registration(s) added to list`);
       // Scroll list into view after layout paints (body scroll is enabled).
       window.setTimeout(() => {
@@ -414,8 +472,8 @@ export function AddNewEqpt() {
       toast.error("Select a valid Type of Holding");
       return;
     }
-    if (items.some((i) => !i.materialNo.trim() || !i.eqptRegnNo.trim())) {
-      toast.error("Material No and Regn No are required for all list items");
+    if (items.some((i) => !i.eqptRegnNo.trim())) {
+      toast.error("Regn No is required for all list items");
       return;
     }
 
@@ -471,7 +529,7 @@ export function AddNewEqpt() {
   return (
     <FormPanel
       title="ADD DETAILS OF NEW EQPT"
-      fill={hasItems}
+      fill={false}
       footer={
         <>
           <Button type="button" size="sm" onClick={() => void handleAddItems()} disabled={busy}>
@@ -480,20 +538,12 @@ export function AddNewEqpt() {
           <Button type="button" size="sm" variant="secondary" onClick={handleClear} disabled={busy}>
             Clear
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            onClick={handleCancel}
-            disabled={busy}
-          >
-            Cancel
-          </Button>
         </>
       }
     >
       <div className="flex flex-col gap-1.5">
-        <FormGrid cols={4} className="shrink-0">
+        <FormGrid cols={3} className="shrink-0">
+          <FormSection title="1. Issue & Depot Particulars" />
           <FormRow label="IV No" required>
             <Input
               placeholder="Enter IV No..."
@@ -504,7 +554,7 @@ export function AddNewEqpt() {
           <FormRow label="IV Date" required>
             <DateInput value={form.ivDate} onChange={(v) => upd("ivDate", v)} />
           </FormRow>
-          <FormRow label="Issuing Depot" required className="sm:col-span-2">
+          <FormRow label="Issuing Depot" required>
             <Select
               value={form.issuingDepotSus || undefined}
               onValueChange={(v) => upd("issuingDepotSus", v)}
@@ -581,49 +631,24 @@ export function AddNewEqpt() {
             </Select>
           </FormRow>
 
-          <FormRow label="PRF Group" required className="sm:col-span-2">
-            <div className="flex min-w-0 gap-1">
-              <div className="flex min-w-0 flex-1 gap-1">
-                <Input
-                  placeholder="Search..."
-                  value={form.prfSearch}
-                  onChange={(e) => upd("prfSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7 shrink-0"
-                  onClick={() => void handlePrfSearch()}
-                >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="min-w-0 flex-[1.4]">
-                <Select
-                  value={form.prfGroup || undefined}
-                  onValueChange={(v) => {
-                    upd("prfGroup", v);
-                    upd("censusNo", "");
-                    upd("prfCode", "");
-                    upd("materialNo", "");
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="--Select PRF Group--" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {prfOptions.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          <FormSection title="2. Census & Equipment Details" />
+          <FormRow label="PRF Group" required className="sm:col-span-3">
+            <SuggestInput
+              placeholder="Search or select PRF Group..."
+              value={form.prfGroup}
+              suggestions={matchingPrfGroups}
+              maxHeightClass="max-h-72"
+              matchGridWidth
+              onChange={(v) => {
+                upd("prfGroup", v);
+                upd("censusNo", "");
+                upd("prfCode", "");
+                upd("materialNo", "");
+              }}
+              onPick={pickPrfGroup}
+            />
           </FormRow>
-          <FormRow label="Census No" required className="sm:col-span-2">
+          <FormRow label="Census No" required>
             <Select
               value={form.censusNo || undefined}
               onValueChange={pickCensus}
@@ -642,7 +667,7 @@ export function AddNewEqpt() {
               </SelectContent>
             </Select>
           </FormRow>
-          <FormRow label="Material No" required>
+          <FormRow label="Material No">
             <Input
               placeholder="Material No..."
               value={form.materialNo}

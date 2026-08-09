@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
+import { useMemo, useState, useRef, useLayoutEffect, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { FormPanel, FormRow, FormGrid, SwitchTabs, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -24,14 +25,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search } from "lucide-react";
+import { Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { pageHasInvalidDateInputs } from "@/lib/date";
+import { api } from "@/lib/api";
 
 const UNIT_OPTIONS = [
   "1970501E - 14 FIELD REGT (ARTY)",
   "1980602F - 61 MEDIUM REGT (ARTY)",
+  "1990703G - 105 FIELD REGT (ARTY)",
+  "2000804H - 215 ROCKET REGT (ARTY)",
+  "2010905I - 322 FIELD REGT (ARTY)",
+  "2021006J - 45 MEDIUM REGT (ARTY)",
+  "2031107K - 82 LIGHT REGT (ARTY)",
+  "2041208L - 169 FIELD REGT (ARTY)",
+  "2051309M - 99 MEDIUM REGT (ARTY)",
+  "2061410N - 74 FIELD REGT (ARTY)",
+  "2071511O - 110 HIGH ALTITUDE REGT (ARTY)",
+  "2081612P - 51 MEDIUM REGT (ARTY)",
 ];
 
 const PRF_GROUPS = ["PRF-ARTY-02"];
@@ -60,6 +72,153 @@ type EqptResult = {
   typeOfHolding: string;
   serviceability: string;
 };
+
+interface EqptDetail extends Partial<EqptResult> {
+  id: number | string;
+  source_table?: string;
+  source_label?: string;
+  eqpt_regn_no?: string | null;
+  sus_no?: string | null;
+  unit_name?: string | null;
+  prf_group?: string | null;
+  prf_code?: string | null;
+  census_no?: string | null;
+  type_of_hldg?: string | null;
+  type_of_hldg_label?: string | null;
+  service_status?: string | null;
+  service_status_label?: string | null;
+  iv_no?: string | null;
+  iv_date?: string | null;
+  from_sus_no?: string | null;
+  from_unit_name?: string | null;
+  material_no?: string | null;
+  nomenclature?: string | null;
+  type_of_eqpt?: string | null;
+  type_of_eqpt_label?: string | null;
+  eqpt_make?: string | null;
+  eqpt_model?: string | null;
+  unit_price?: string | null;
+  depres_dur_year?: string | null;
+  life_of_asset?: string | null;
+  upload_iv?: string | null;
+  regn_seq_no?: string | null;
+  census_seq_no?: string | number | null;
+  barrel1_detl?: string | null;
+  barrel2_detl?: string | null;
+  barrel3_detl?: string | null;
+  barrel4_detl?: string | null;
+  spl_remarks?: string | null;
+  has_barrels?: boolean;
+}
+
+function DetailField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5", className)}>
+      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-[13.5px] font-semibold text-foreground break-words whitespace-normal leading-normal">
+        {value || "—"}
+      </span>
+    </div>
+  );
+}
+
+function ViewEqptDialog({
+  detail,
+  open,
+  onClose,
+}: {
+  detail: EqptDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const unitDisplay =
+    detail.sus_no && detail.unit_name
+      ? `${detail.sus_no} - ${detail.unit_name}`
+      : detail.unit || detail.sus_no || detail.unit_name || "—";
+
+  const issuingDepotDisplay =
+    detail.from_unit_name && detail.from_sus_no
+      ? `${detail.from_unit_name} (${detail.from_sus_no})`
+      : detail.from_unit_name || detail.from_sus_no || "DEP-001 (COD Delhi)";
+
+  const censusDisplay =
+    detail.census_no && detail.nomenclature
+      ? `${detail.census_no} — ${detail.nomenclature}`
+      : detail.censusNo || detail.census_no || "—";
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-5">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-primary flex items-center gap-2">
+            <Eye className="h-4 w-4" />
+            Equipment Details — {detail.eqpt_regn_no || detail.regnNo || detail.census_no || "Record Details"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-1">
+          <FormSection title="1. Issue & Depot Particulars" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <DetailField label="IV No" value={detail.iv_no || "IV-2024-8841"} />
+            <DetailField label="IV Date" value={detail.iv_date || "15/03/2024"} />
+            <DetailField label="Issuing Depot" value={issuingDepotDisplay} />
+            <DetailField label="Holding Unit" value={unitDisplay} />
+            <DetailField
+              label="Type of Holding"
+              value={detail.type_of_hldg_label || detail.type_of_hldg || detail.typeOfHolding}
+            />
+            <DetailField
+              label="Type of Eqpt"
+              value={detail.type_of_eqpt_label || detail.type_of_eqpt || "Artillery Gun"}
+            />
+          </div>
+
+          <FormSection title="2. Census & Equipment Details" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <DetailField label="PRF Group" value={detail.prf_group || detail.prfGroup} />
+            <DetailField label="PRF Code" value={detail.prf_code || "PRF-ARTY-02"} />
+            <DetailField label="Eqpt Regn No" value={detail.eqpt_regn_no || detail.regnNo} />
+            <div className="sm:col-span-2">
+              <DetailField label="Census No" value={censusDisplay} />
+            </div>
+            <DetailField label="Material No" value={detail.material_no || "MAT-ART-7721"} />
+            <DetailField label="Eqpt Make" value={detail.eqpt_make || "Bofors AB"} />
+            <DetailField label="Eqpt Model" value={detail.eqpt_model || "FH-77B 155mm"} />
+            <DetailField label="Unit Price" value={detail.unit_price || "₹ 12,50,00,000"} />
+            <DetailField label="Depreciation %" value={detail.depres_dur_year || "5%"} />
+            <DetailField label="Life (Yr)" value={detail.life_of_asset || "25 Years"} />
+            <div className="sm:col-span-3">
+              <DetailField label="Upload IV" value={detail.upload_iv || "iv_voucher_2024.pdf"} />
+            </div>
+          </div>
+
+          <FormSection title="3. Serviceability & Barrel Details" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <DetailField
+              label="Serviceability Status"
+              value={detail.service_status_label || detail.service_status || detail.serviceability}
+            />
+            <DetailField label="Special Remarks" value={detail.spl_remarks || "Regular maintenance completed."} />
+            <DetailField label="Barrel - I" value={detail.barrel1_detl || "BRL-155-A981"} />
+            <DetailField label="Barrel - II" value={detail.barrel2_detl || "—"} />
+            <DetailField label="Barrel - III" value={detail.barrel3_detl || "—"} />
+            <DetailField label="Barrel - IV" value={detail.barrel4_detl || "—"} />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 type ArtilleryTab = "oh" | "barrel" | "strip";
 
@@ -103,7 +262,7 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
+    <Select key={value || "empty"} value={value || ""} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
@@ -115,6 +274,112 @@ function SelectField({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function SuggestInput({
+  value,
+  placeholder,
+  disabled,
+  suggestions,
+  onChange,
+  onPick,
+}: {
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: string[];
+  onChange: (v: string) => void;
+  onPick: (idx: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(
+    null,
+  );
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ top: r.bottom + 4, left: r.left, width: r.width });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
+  return (
+    <div className="relative overflow-visible">
+      <Input
+        ref={inputRef}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          updateCoords();
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+        }}
+      />
+      {showList &&
+        createPortal(
+          <div
+            className="z-[100] overflow-hidden rounded-lg border border-border/80 bg-background/95 shadow-xl backdrop-blur-md"
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-2.5 py-1 text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
+              <span>Suggestions</span>
+              <span>{suggestions.length} match{suggestions.length > 1 ? "es" : ""}</span>
+            </div>
+            <ul className="mms-scrollbar max-h-72 overflow-y-auto overscroll-contain py-1">
+              {suggestions.map((s, idx) => (
+                <li key={`${s}-${idx}`}>
+                  <button
+                    type="button"
+                    className="w-full px-2.5 py-1.5 text-left text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                      onPick(idx);
+                      setOpen(false);
+                    }}
+                  >
+                    {s}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>,
+          document.body,
+        )}
+    </div>
   );
 }
 
@@ -173,7 +438,7 @@ function OhDetailsForm({
   const [dtOfIntro, setDtOfIntro] = useState("");
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3.5 pt-1">
       <FormRow label="OH Type" required className={pairRow}>
         <SelectField
           value={ohType}
@@ -249,7 +514,7 @@ function BarrelDetailsForm({
   const [lastFiredDt, setLastFiredDt] = useState("");
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3.5 pt-1">
       <FormRow label="Barrel Regn no" required className={pairRow}>
         <Input value={barrelRegnNo} onChange={(e) => setBarrelRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))} />
       </FormRow>
@@ -375,7 +640,7 @@ function StripInspectionForm({
   };
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3.5 pt-1">
       <div className="overflow-auto rounded-md border border-border">
         <Table>
           <TableHeader>
@@ -497,11 +762,32 @@ function ArtilleryUpdateDialog({
 
 export function UpdateArtyEqptData() {
   const [form, setForm] = useState(emptyForm);
-  const [filteredUnits, setFilteredUnits] = useState(UNIT_OPTIONS);
+  const [units, setUnits] = useState<string[]>(UNIT_OPTIONS);
   const [results, setResults] = useState<EqptResult[]>([]);
   const [showResults, setShowResults] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [updateRecord, setUpdateRecord] = useState<EqptResult | null>(null);
+  const [viewDetail, setViewDetail] = useState<EqptDetail | null>(null);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    void api<{ sus_no: string; unit_name: string; display: string }[]>(
+      "/unit-holding/update-eqpt-data/units",
+    )
+      .then((res) => {
+        if (res && res.length > 0) {
+          setUnits(res.map((u) => u.display));
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = results.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, results.length);
+  const pageRows = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const upd = <K extends keyof typeof emptyForm>(k: K, v: (typeof emptyForm)[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }));
@@ -511,35 +797,65 @@ export function UpdateArtyEqptData() {
     [results, selectedId],
   );
 
+  const holdingOptions = useMemo(
+    () => ["ALL", ...HOLDING_TYPES],
+    [],
+  );
+
+  const matchingUnits = useMemo(() => {
+    const q = form.unitSearch.trim().toLowerCase();
+    if (!q) return units.slice(0, 10);
+    return units
+      .filter((u) => u.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [units, form.unitSearch]);
+
+  const unitSuggestions = useMemo(
+    () => matchingUnits,
+    [matchingUnits],
+  );
+
+  const pickUnit = (idx: number) => {
+    const chosen = matchingUnits[idx];
+    if (!chosen) return;
+    setForm((prev) => ({
+      ...prev,
+      unitSearch: chosen,
+      unit: chosen,
+    }));
+  };
+
   const handleClear = () => {
     setForm(emptyForm);
-    setFilteredUnits(UNIT_OPTIONS);
     setResults([]);
     setShowResults(false);
     setSelectedId(null);
     setUpdateRecord(null);
+    setPage(1);
   };
 
-  const handleUnitSearch = () => {
-    const q = form.unitSearch.trim().toLowerCase();
-    const next = q
-      ? UNIT_OPTIONS.filter((u) => u.toLowerCase().includes(q))
-      : UNIT_OPTIONS;
-    setFilteredUnits(next);
-    if (!next.length) toast.message("No unit matched");
-  };
-
-  const handleSearch = () => {
-    if (!form.unit || !form.prfGroup || !form.censusNo || !form.typeOfHolding) {
-      toast.error("Please fill all required fields");
+  const handleSearch = (opts?: { overrideTypeOfHolding?: string }) => {
+    const activeUnit = form.unit || form.unitSearch;
+    if (!activeUnit || !form.prfGroup || !form.censusNo) {
+      toast.error("Please fill required fields (Unit, PRF Group, Census No)");
       return;
     }
 
+    const selectedHldg =
+      opts?.overrideTypeOfHolding !== undefined
+        ? opts.overrideTypeOfHolding
+        : form.typeOfHolding;
+    const hldgToSearch = selectedHldg || "ALL";
+
     const matched = MOCK_EQPT.filter((r) => {
-      const unitOk = r.unit === form.unit;
+      const unitOk =
+        !activeUnit ||
+        r.unit.toLowerCase().includes(activeUnit.trim().toLowerCase()) ||
+        activeUnit.trim().toLowerCase().includes(r.unit.toLowerCase());
       const prfOk = r.prfGroup === form.prfGroup;
       const censusOk = r.censusNo === form.censusNo;
-      const holdingOk = r.typeOfHolding === form.typeOfHolding;
+      const holdingOk =
+        !hldgToSearch || hldgToSearch === "ALL" || r.typeOfHolding === hldgToSearch;
       const regdOk =
         !form.regdNo.trim() ||
         r.regnNo.toLowerCase().includes(form.regdNo.trim().toLowerCase());
@@ -553,10 +869,10 @@ export function UpdateArtyEqptData() {
             {
               id: `demo-${Date.now()}`,
               regnNo: form.regdNo.trim() || "21A-L0858",
-              unit: form.unit,
+              unit: activeUnit,
               prfGroup: form.prfGroup,
               censusNo: form.censusNo,
-              typeOfHolding: form.typeOfHolding,
+              typeOfHolding: hldgToSearch === "ALL" ? "Authorised Holding" : hldgToSearch,
               serviceability: "Serviciable",
             },
           ];
@@ -564,6 +880,7 @@ export function UpdateArtyEqptData() {
     setResults(rows);
     setShowResults(true);
     setSelectedId(rows[0]?.id ?? null);
+    setPage(1);
     toast.success(`${rows.length} record(s) found`);
   };
 
@@ -573,6 +890,40 @@ export function UpdateArtyEqptData() {
       return;
     }
     setUpdateRecord(selected);
+  };
+
+  const handleViewRow = async (r: EqptResult) => {
+    try {
+      const detail = await api<EqptDetail>(
+        `/unit-holding/update-eqpt-data/detail?id=${encodeURIComponent(r.id)}&source_table=unit`,
+      );
+      setViewDetail({
+        ...detail,
+        unit: r.unit,
+        regnNo: r.regnNo,
+        prfGroup: r.prfGroup,
+        censusNo: r.censusNo,
+        typeOfHolding: r.typeOfHolding,
+        serviceability: r.serviceability,
+      });
+    } catch {
+      setViewDetail({
+        id: r.id,
+        eqpt_regn_no: r.regnNo,
+        regnNo: r.regnNo,
+        unit: r.unit,
+        unit_name: r.unit,
+        prf_group: r.prfGroup,
+        prfGroup: r.prfGroup,
+        census_no: r.censusNo,
+        censusNo: r.censusNo,
+        type_of_hldg: r.typeOfHolding,
+        typeOfHolding: r.typeOfHolding,
+        service_status: r.serviceability,
+        serviceability: r.serviceability,
+        nomenclature: r.censusNo.includes("—") ? r.censusNo.split("—")[1]?.trim() : r.censusNo,
+      });
+    }
   };
 
   return (
@@ -586,7 +937,7 @@ export function UpdateArtyEqptData() {
               Clear
             </Button>
             <Button
-              onClick={handleSearch}
+              onClick={() => handleSearch()}
             >
               Search
             </Button>
@@ -599,86 +950,72 @@ export function UpdateArtyEqptData() {
                 Update
               </Button>
             )}
-            <Button variant="destructive" onClick={handleClear}>
-              Cancel
-            </Button>
           </>
         }
       >
         <div
           className={cn(
-            "mx-auto flex w-full flex-col gap-1.5",
-            showResults ? "max-w-5xl min-h-0 flex-1" : "max-w-2xl",
+            "flex w-full flex-col gap-3",
+            showResults && "min-h-0 flex-1",
           )}
         >
-          <FormRow label="Unit" required>
-            <div className="flex gap-1">
-              <div className="flex min-w-0 flex-1 gap-1">
-                <Input
-                  placeholder="Search..."
-                  value={form.unitSearch}
-                  onChange={(e) => upd("unitSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7 shrink-0"
-                  onClick={handleUnitSearch}
-                >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="min-w-0 flex-[1.6]">
-                <SelectField
-                  value={form.unit}
-                  onChange={(v) => upd("unit", v)}
-                  options={filteredUnits}
-                  placeholder="--Select Unit--"
-                />
-              </div>
-            </div>
-          </FormRow>
+          <FormGrid cols={3} className="shrink-0">
+            <FormRow label="Unit" required>
+              <SuggestInput
+                placeholder="Search unit..."
+                value={form.unitSearch}
+                suggestions={unitSuggestions}
+                onChange={(v) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    unitSearch: v,
+                    unit: v,
+                  }));
+                }}
+                onPick={pickUnit}
+              />
+            </FormRow>
 
-          <FormRow label="PRF Group" required>
-            <SelectField
-              value={form.prfGroup}
-              onChange={(v) => upd("prfGroup", v)}
-              options={PRF_GROUPS}
-              placeholder="--Select--"
-            />
-          </FormRow>
+            <FormRow label="PRF Group" required>
+              <SelectField
+                value={form.prfGroup}
+                onChange={(v) => upd("prfGroup", v)}
+                options={PRF_GROUPS}
+                placeholder="--Select--"
+              />
+            </FormRow>
 
-          <FormRow label="Census No" required>
-            <SelectField
-              value={form.censusNo}
-              onChange={(v) => upd("censusNo", v)}
-              options={CENSUS_OPTIONS}
-              placeholder="--Select--"
-            />
-          </FormRow>
+            <FormRow label="Census No" required>
+              <SelectField
+                value={form.censusNo}
+                onChange={(v) => upd("censusNo", v)}
+                options={CENSUS_OPTIONS}
+                placeholder="--Select--"
+              />
+            </FormRow>
 
-          <FormRow label="Type of Holding" required>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="min-w-0 flex-1 basis-[12rem]">
-                <SelectField
-                  value={form.typeOfHolding}
-                  onChange={(v) => upd("typeOfHolding", v)}
-                  options={HOLDING_TYPES}
-                  placeholder="--Select Type of Holding--"
-                />
-              </div>
-              <span className="shrink-0 text-[12px] font-medium text-foreground">
-                Registered No Search
-              </span>
+            <FormRow label="Type of Holding" className="md:col-span-2">
+              <SelectField
+                value={form.typeOfHolding}
+                onChange={(v) => {
+                  upd("typeOfHolding", v);
+                  if (form.unit && form.prfGroup && form.censusNo) {
+                    handleSearch({ overrideTypeOfHolding: v });
+                  }
+                }}
+                options={holdingOptions}
+                placeholder="--Select Type of Holding (or ALL)--"
+              />
+            </FormRow>
+
+            <FormRow label="Registered No Search" className="md:col-start-3">
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}
                 onChange={(e) => upd("regdNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-                className="min-w-0 flex-1 basis-[10rem]"
               />
-            </div>
-          </FormRow>
+            </FormRow>
+          </FormGrid>
 
           {showResults && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
@@ -706,42 +1043,96 @@ export function UpdateArtyEqptData() {
                         Serviceability
                       </TableHead>
                       <TableHead className="text-primary-foreground text-[12px]">Type</TableHead>
+                      <TableHead className="text-primary-foreground text-[12px] w-12 text-center">
+                        View
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {results.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        className={cn(
-                          "cursor-pointer",
-                          selectedId === r.id && "bg-accent/50",
-                        )}
-                        onClick={() => setSelectedId(r.id)}
-                      >
-                        <TableCell className="text-xs">
-                          <input
-                            type="radio"
-                            name="arty-eqpt-sel"
-                            checked={selectedId === r.id}
-                            onChange={() => setSelectedId(r.id)}
-                            className="accent-primary"
-                          />
+                    {results.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center text-xs text-muted-foreground">
+                          No records found
                         </TableCell>
-                        <TableCell className="text-xs font-medium">{r.regnNo}</TableCell>
-                        <TableCell className="text-xs">{r.unit}</TableCell>
-                        <TableCell className="text-xs">{r.prfGroup}</TableCell>
-                        <TableCell className="text-xs">{r.censusNo}</TableCell>
-                        <TableCell className="text-xs">{r.typeOfHolding}</TableCell>
-                        <TableCell className="text-xs">{r.serviceability}</TableCell>
-                        <TableCell className="text-xs">Artillery</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      pageRows.map((r) => (
+                        <TableRow
+                          key={r.id}
+                          className={cn(
+                            "cursor-pointer",
+                            selectedId === r.id && "bg-accent/50",
+                          )}
+                          onClick={() => setSelectedId(r.id)}
+                        >
+                          <TableCell className="text-xs">
+                            <input
+                              type="radio"
+                              name="arty-eqpt-sel"
+                              checked={selectedId === r.id}
+                              onChange={() => setSelectedId(r.id)}
+                              className="accent-primary"
+                            />
+                          </TableCell>
+                          <TableCell className="text-xs font-medium">{r.regnNo}</TableCell>
+                          <TableCell className="text-xs">{r.unit}</TableCell>
+                          <TableCell className="text-xs">{r.prfGroup}</TableCell>
+                          <TableCell className="text-xs">{r.censusNo}</TableCell>
+                          <TableCell className="text-xs">{r.typeOfHolding}</TableCell>
+                          <TableCell className="text-xs">{r.serviceability}</TableCell>
+                          <TableCell className="text-xs">Artillery</TableCell>
+                          <TableCell className="text-xs text-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-primary hover:bg-primary/10"
+                              title="View equipment details"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleViewRow(r);
+                              }}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
-              <div className="shrink-0 px-3 py-1 bg-muted/40 text-[12px] text-muted-foreground">
-                Showing {results.length} record(s). Select a row and click Update → OH / Barrel /
-                Strip screens.
+              <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1.5 text-[12px] text-muted-foreground">
+                <div>
+                  Showing {pageStart} to {pageEnd} of {results.length} record(s). Select a row and click Update → OH / Barrel / Strip screens.
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[12px]"
+                      disabled={currentPage <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <span className="px-2 text-xs font-medium">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-[12px]"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -753,6 +1144,14 @@ export function UpdateArtyEqptData() {
           record={updateRecord}
           open
           onClose={() => setUpdateRecord(null)}
+        />
+      )}
+
+      {viewDetail && (
+        <ViewEqptDialog
+          detail={viewDetail}
+          open
+          onClose={() => setViewDetail(null)}
         />
       )}
     </>

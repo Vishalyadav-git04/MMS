@@ -18,6 +18,8 @@ export function FormPanel({
   fill = false,
   /** Keep body from scrolling so children can manage their own scroll regions. */
   lockBodyScroll = false,
+  /** Allow absolute popups (e.g. suggest dropdowns) to float over panel boundaries & footer. */
+  overflowVisible = false,
   onBack: directOnBack,
 }: {
   title: string;
@@ -30,6 +32,7 @@ export function FormPanel({
   tabs?: ReactNode;
   fill?: boolean;
   lockBodyScroll?: boolean;
+  overflowVisible?: boolean;
   onBack?: () => void;
 }) {
   const screenCtx = React.useContext(FormScreenContext);
@@ -39,7 +42,8 @@ export function FormPanel({
     <div
       className={cn(
         /* Hug content when short; cap at slot height so long bodies scroll with footer pinned. */
-        "mms-panel mms-rise flex min-h-0 max-h-full w-full flex-col overflow-hidden",
+        "mms-panel mms-rise flex min-h-0 max-h-full w-full flex-col",
+        overflowVisible ? "overflow-visible" : "overflow-hidden",
         fill && "absolute inset-0",
       )}
     >
@@ -59,7 +63,9 @@ export function FormPanel({
              (avoids footer overlapping the results). Short forms still hug content because
              the panel height stays content-driven when under the max. */
           "mms-form mms-panel__body relative min-h-0 flex-1",
-          lockBodyScroll
+          overflowVisible
+            ? "overflow-visible"
+            : lockBodyScroll
             ? "flex flex-col overflow-hidden"
             : "overflow-y-auto overscroll-contain",
         )}
@@ -67,7 +73,7 @@ export function FormPanel({
         {children}
       </div>
       {(footer || handleBack) && (
-        <div className="mms-panel__foot shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)]">
+        <div className="mms-panel__foot shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] relative z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           {handleBack ? (
             <Button
               type="button"
@@ -198,7 +204,7 @@ export function FormScreen({
 }) {
   return (
     <FormScreenContext.Provider value={{ onBack }}>
-      <div className="mms-rise flex h-full min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+      <div className="mms-rise flex h-full min-h-0 flex-1 flex-col gap-1.5 overflow-visible">
         <PageHeader
           eyebrow={section}
           title={title}
@@ -207,7 +213,7 @@ export function FormScreen({
           action={null}
         />
         {/* Constrained slot: FormPanel body scrolls; footer stays pinned */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-visible">
           {children}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, FormSection, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
@@ -82,12 +82,20 @@ interface MlccsRecord {
 
 type OptionsMap = Record<string, { value: string; label: string }[]>;
 
+function getTodayIso(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 const emptyForm: FullForm = {
   cosSection: "",
   censusNo: "",
   nomenclature: "",
   authLetterNo: "",
-  date: "",
+  date: getTodayIso(),
   prfGroup: "",
   itemCode: "",
   catPartNo: "",
@@ -116,12 +124,12 @@ function recordToForm(r: MlccsRecord): FullForm {
     censusNo: r.census_no ?? "",
     nomenclature: r.nomenclature ?? "",
     authLetterNo: r.auth_letter_no ?? "",
-    date: r.auth_date ?? "",
+    date: r.auth_date || getTodayIso(),
     prfGroup: r.prf_group ?? "",
     itemCode: r.item_code ?? "",
     catPartNo: r.cat_part_no ?? "",
     accountingUnit: r.accounting_unit ?? "",
-    briefDescription: r.brief_description ?? r.nomenclature ?? "",
+    briefDescription: r.brief_description ?? "",
     itemStatus: r.item_status ?? "",
     itemCategory: r.item_category ?? "",
     classOfEqpt: r.class_of_eqpt ?? "",

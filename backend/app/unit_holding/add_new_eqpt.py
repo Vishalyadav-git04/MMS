@@ -80,7 +80,7 @@ class BuildItemsIn(BaseModel):
     prf_group: str = Field(..., min_length=1, max_length=150)
     prf_code: str = Field(..., min_length=1, max_length=8)
     census_no: str = Field(..., min_length=1, max_length=9)
-    material_no: str = Field(..., min_length=1, max_length=50)
+    material_no: str = Field("", max_length=50)
     issued_qty: int = Field(..., ge=1, le=9999)
     pending_eqpt_regn_nos: list[str] = Field(default_factory=list)
     pending_regn_seq_nos: list[str] = Field(default_factory=list)
@@ -323,7 +323,7 @@ def search_prf_groups(
         params["term"] = f"%{term}%"
 
     sql += " ORDER BY prf_group"
-    rows = fetch_all(session, sql, params)[:50]
+    rows = fetch_all(session, sql, params)
     return [
         PrfGroupOut(prf_group=str(g.get("prf_group") or ""))
         for g in rows
@@ -422,7 +422,7 @@ def build_items(
                 prf_code=body.prf_code.strip().upper(),
                 sus_no=str(to_unit["sus_no"]),
                 census_no=body.census_no.strip().upper(),
-                material_no=body.material_no.strip(),
+                material_no=(body.material_no or "").strip(),
                 eqpt_regn_no=regn_no,
                 regn_seq_no=regn_seq,
                 census_seq_no=next_census + i,

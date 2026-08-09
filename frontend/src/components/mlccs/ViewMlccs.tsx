@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FormPanel } from "@/components/FormPanel";
+import { FormPanel, FormSection } from "@/components/FormPanel";
 import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,14 +10,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Eye } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { isAdmin } from "@/lib/auth";
+import { isoToDmy } from "@/lib/date";
 import { buildPrintWatermarkParts, resolveClientIp } from "@/lib/session-watermark";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No";
+
+type OptionsMap = Record<string, { value: string; label: string }[]>;
 
 interface MlccsRow {
   id: string;
@@ -28,6 +38,63 @@ interface MlccsRow {
   catPartNo: string;
   au: string;
   status: string;
+}
+
+interface FullRecordDetails {
+  id?: number | string | null;
+  cos_section?: string | null;
+  census_no?: string | null;
+  nomenclature?: string | null;
+  auth_letter_no?: string | null;
+  auth_date?: string | null;
+  prf_group?: string | null;
+  item_code?: string | null;
+  cat_part_no?: string | null;
+  accounting_unit?: string | null;
+  brief_description?: string | null;
+  item_status?: string | null;
+  item_category?: string | null;
+  class_of_eqpt?: string | null;
+  country_of_origin?: string | null;
+  nodal_dte?: string | null;
+  eqpt_category?: string | null;
+  year_of_induction?: string | null;
+  digest_category?: string | null;
+  cost_rs?: string | null;
+  manufacturing_agency?: string | null;
+  ahsp_agency?: string | null;
+  nato_stock_no?: string | null;
+  def_catalogue_no?: string | null;
+  material_no?: string | null;
+  remarks?: string | null;
+}
+
+function resolveDomainLabel(
+  list: { value: string; label: string }[] | undefined,
+  val: string | null | undefined,
+): string {
+  if (!val) return "—";
+  const v = val.trim();
+  if (!v) return "—";
+  if (!list || list.length === 0) return v;
+  const match = list.find((o) => o.value.trim().toUpperCase() === v.toUpperCase());
+  if (match && match.label) return match.label;
+  const byLabel = list.find((o) => o.label.trim().toUpperCase() === v.toUpperCase());
+  if (byLabel && byLabel.label) return byLabel.label;
+  return v;
+}
+
+function DetailField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-[13.5px] font-semibold text-foreground truncate">
+        {value || "—"}
+      </span>
+    </div>
+  );
 }
 
 interface MlccsListItem {
@@ -231,6 +298,38 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
     censusNo: string;
     nomenclature: string;
   } | null>(null);
+
+  const [options, setOptions] = useState<OptionsMap>({});
+  const [viewRecord, setViewRecord] = useState<FullRecordDetails | null>(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  useEffect(() => {
+    api<OptionsMap>("/admin/capture-mlccs-details/options")
+      .then((opts) => setOptions(opts ?? {}))
+      .catch(() => undefined);
+  }, []);
+
+  const handleViewDetails = async (row: MlccsRow) => {
+    setViewModalOpen(true);
+    setLoadingDetails(true);
+    setViewRecord(null);
+    try {
+      const rec = await api<FullRecordDetails>("/admin/capture-mlccs-details/lookup", {
+        method: "POST",
+        body: JSON.stringify({
+          census_no: row.censusNo,
+          nomenclature: row.nomenclature || null,
+        }),
+      });
+      setViewRecord(rec);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Failed to load details");
+      setViewModalOpen(false);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   // Applied search criteria (updated on Search click / initial load)
   const [appliedText, setAppliedText] = useState("");
@@ -477,7 +576,7 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
         </>
       }
     >
-      <div className="flex flex-col gap-3 overflow-hidden p-3.5">
+      <div className="flex flex-col gap-3 p-3.5">
         <div className="shrink-0 rounded-[10px] border border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] p-3 shadow-xs">
           <div className="flex flex-wrap items-center gap-3">
             <Input
@@ -542,8 +641,8 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[var(--line,#cddcec)] bg-card shadow-xs">
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="rounded-[10px] border border-[var(--line,#cddcec)] bg-card shadow-xs overflow-hidden">
+          <div style={{ maxHeight: "calc(100vh - 380px)", minHeight: "300px", overflowY: "scroll", overscrollBehavior: "contain" }}>
             <table className="w-full caption-bottom border-collapse">
               <thead className="sticky top-0 z-10 border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)]">
                 <tr>
@@ -587,10 +686,30 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
                       <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.materialNo}</td>
                       <td className="whitespace-nowrap px-3.5 py-2 align-middle font-semibold">{row.censusNo}</td>
                       <td className="min-w-[220px] px-3.5 py-2 align-middle">{row.nomenclature}</td>
-                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.classOfEqpt}</td>
+                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">
+                        {resolveDomainLabel(options.class_of_eqpt, row.classOfEqpt)}
+                      </td>
                       <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.catPartNo}</td>
-                      <td className="px-3.5 py-2 align-middle">{row.au}</td>
-                      <td className="px-3.5 py-2 align-middle">{row.status}</td>
+                      <td className="px-3.5 py-2 align-middle">
+                        {resolveDomainLabel(options.accounting_unit, row.au)}
+                      </td>
+                      <td className="px-3.5 py-2 align-middle">
+                        <div className="flex items-center justify-between gap-2 min-w-[100px]">
+                          <span>{resolveDomainLabel(options.item_status, row.status)}</span>
+                          <button
+                            type="button"
+                            title="View Details"
+                            aria-label={`View details for ${row.censusNo}`}
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/20 text-primary hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleViewDetails(row);
+                            }}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -604,6 +723,90 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
               </tbody>
             </table>
           </div>
+
+          <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-5">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-primary flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  MLCCS Record Details — {viewRecord?.census_no || "Loading..."}
+                </DialogTitle>
+              </DialogHeader>
+
+              {loadingDetails ? (
+                <div className="py-12 text-center text-sm font-medium text-muted-foreground">
+                  Loading full record details...
+                </div>
+              ) : viewRecord ? (
+                <div className="space-y-4 pt-1">
+                  <FormSection title="1. Basic & Authorisation Particulars" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <DetailField label="COS Section" value={viewRecord.cos_section} />
+                    <DetailField label="Census No" value={viewRecord.census_no} />
+                    <DetailField label="Nomenclature" value={viewRecord.nomenclature} />
+                    <DetailField label="Auth/Letter No" value={viewRecord.auth_letter_no} />
+                    <DetailField label="Date" value={viewRecord.auth_date ? isoToDmy(viewRecord.auth_date) : ""} />
+                    <DetailField label="PRF Group" value={viewRecord.prf_group} />
+                    <DetailField label="Item Code" value={viewRecord.item_code} />
+                    <DetailField label="Cat/Part No" value={viewRecord.cat_part_no} />
+                  </div>
+
+                  <FormSection title="2. Classification & Domain References" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <DetailField
+                      label="Accounting Unit"
+                      value={resolveDomainLabel(options.accounting_unit, viewRecord.accounting_unit)}
+                    />
+                    <DetailField
+                      label="Item Status"
+                      value={resolveDomainLabel(options.item_status, viewRecord.item_status)}
+                    />
+                    <DetailField
+                      label="Item Category"
+                      value={resolveDomainLabel(options.item_category, viewRecord.item_category)}
+                    />
+                    <DetailField
+                      label="Class of Eqpt"
+                      value={resolveDomainLabel(options.class_of_eqpt, viewRecord.class_of_eqpt)}
+                    />
+                    <DetailField
+                      label="Country of Origin"
+                      value={resolveDomainLabel(options.country_of_origin, viewRecord.country_of_origin)}
+                    />
+                    <DetailField
+                      label="Nodal Dte"
+                      value={resolveDomainLabel(options.nodal_dte, viewRecord.nodal_dte)}
+                    />
+                    <DetailField
+                      label="Eqpt Category"
+                      value={resolveDomainLabel(options.eqpt_category, viewRecord.eqpt_category)}
+                    />
+                    <DetailField
+                      label="Digest Category"
+                      value={resolveDomainLabel(options.digest_category, viewRecord.digest_category)}
+                    />
+                  </div>
+
+                  <FormSection title="3. Financial, Technical & Agency Details" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <DetailField label="Year of Induction" value={viewRecord.year_of_induction} />
+                    <DetailField label="Cost (Rs.)" value={viewRecord.cost_rs} />
+                    <DetailField label="Manufacturing Agency" value={viewRecord.manufacturing_agency} />
+                    <DetailField label="AHSP Agency" value={viewRecord.ahsp_agency} />
+                    <DetailField label="NATO Stock No (NSN)" value={viewRecord.nato_stock_no} />
+                    <DetailField label="Def Catalogue No (DCAN)" value={viewRecord.def_catalogue_no} />
+                    <DetailField label="Material No" value={viewRecord.material_no} />
+                    <div className="sm:col-span-3">
+                      <DetailField label="Brief Description" value={viewRecord.brief_description} />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <DetailField label="Remarks" value={viewRecord.remarks} />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] px-3.5 py-2 font-medium text-[var(--ink-soft,#54606c)]">
             <div>
