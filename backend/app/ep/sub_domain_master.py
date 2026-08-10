@@ -52,9 +52,11 @@ def search_sub_domains(
     session: Session = Depends(get_db_session),
 ) -> list[EpSubDomainOut]:
     sql = """
-        SELECT s.id, s.equipment_domain_id, s.sub_domain_id, s.sub_domain_name, s.created_by, d.eqpt_cat
+        SELECT s.id, s.equipment_domain_id, s.sub_domain_id, s.sub_domain_name, s.created_by,
+               d.eqpt_cat
         FROM MMS_EP_SUB_DOMAIN s
-        LEFT JOIN MMS_EP_DOMAIN_MASTER d ON d.id = s.equipment_domain_id OR TO_CHAR(d.id) = TO_CHAR(s.equipment_domain_id)
+        LEFT JOIN MMS_EP_DOMAIN_MASTER d
+          ON (d.domain_id = s.equipment_domain_id OR TO_CHAR(d.domain_id) = TO_CHAR(s.equipment_domain_id))
         WHERE 1=1
     """
     params: dict = {}
@@ -86,7 +88,11 @@ def create_sub_domain(
             detail="EQPT CAT and Sub Domain Name are required",
         )
 
-    domain = get_by_id(session, "MMS_EP_DOMAIN_MASTER", domain_id)
+    domain = fetch_one(
+        session,
+        "SELECT * FROM MMS_EP_DOMAIN_MASTER WHERE domain_id = :did OR TO_CHAR(domain_id) = :did",
+        {"did": domain_id},
+    )
     if domain is None:
         raise HTTPException(status_code=400, detail="Invalid EQPT CAT selected")
 
@@ -101,9 +107,10 @@ def create_sub_domain(
     next_id = int((max_row.get("max_id") if max_row else 0) or 0) + 1
 
     now = datetime.now()
+    target_domain_id = str(domain.get("domain_id") if domain.get("domain_id") is not None else domain_id)
     row_data = {
         "id": str(next_id),
-        "equipment_domain_id": str(domain.get("id") or domain_id),
+        "equipment_domain_id": target_domain_id,
         "sub_domain_id": next_id,
         "sub_domain_name": name,
         "created_by": principal.username,

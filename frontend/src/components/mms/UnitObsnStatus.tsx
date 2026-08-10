@@ -87,9 +87,11 @@ export function UnitObsnStatus() {
     setResults([]);
     setShowResults(false);
     setTableQuery("");
+    setPageSize(10);
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (selectedStatus?: string) => {
+    const activeStatus = selectedStatus ?? status;
     setBusy(true);
     try {
       const rows = await api<ObsnRecord[]>("/admin/unit-obsn-status/search", {
@@ -97,7 +99,7 @@ export function UnitObsnStatus() {
         body: JSON.stringify({
           unit_name: unitName || null,
           period: period || null,
-          status,
+          status: activeStatus,
         }),
       });
       setResults(rows);
@@ -120,16 +122,19 @@ export function UnitObsnStatus() {
       footer={
         <>
           <Button
+            type="button"
             disabled={busy}
             onClick={() => void handleSearch()}
           >
             {busy ? "Searching…" : "Search"}
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={resetFilters}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={resetFilters}
+          >
             Clear
-          </Button>
-          <Button variant="destructive" disabled={busy} onClick={resetFilters}>
-            Cancel
           </Button>
         </>
       }
@@ -138,7 +143,7 @@ export function UnitObsnStatus() {
         className={
           showResults
             ? "flex h-full min-h-0 flex-col gap-2"
-            : "mx-auto w-full max-w-4xl space-y-1 pt-1"
+            : "w-full space-y-1 pt-1"
         }
       >
         <FormGrid cols={3}>
@@ -153,7 +158,10 @@ export function UnitObsnStatus() {
             <MonthInput value={period} onChange={setPeriod} />
           </FormRow>
           <FormRow label="Status">
-            <Select value={status} onValueChange={setStatus}>
+            <Select
+              value={status}
+              onValueChange={(val) => setStatus(val)}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

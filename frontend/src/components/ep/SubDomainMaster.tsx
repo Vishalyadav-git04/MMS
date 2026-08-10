@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FormPanel, FormRow } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +41,14 @@ export function SubDomainMaster() {
   const [subDomain, setSubDomain] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<EpSubDomainRow[]>([]);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = results.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, results.length);
+  const pageRows = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const loadDomains = () => {
     api<EpDomainRow[]>("/ep/domain-master/")
@@ -62,6 +70,7 @@ export function SubDomainMaster() {
     setEqptCatId("");
     setSubDomain("");
     setResults([]);
+    setPage(1);
   };
 
   const handleSave = async () => {
@@ -82,6 +91,7 @@ export function SubDomainMaster() {
       toast.success("Sub domain saved");
       setSubDomain("");
       setResults([]);
+      setPage(1);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Save failed");
     } finally {
@@ -89,11 +99,12 @@ export function SubDomainMaster() {
     }
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideEqptCatId?: string) => {
+    const selectedCatId = overrideEqptCatId !== undefined ? overrideEqptCatId : eqptCatId;
     setBusy(true);
     try {
       const params = new URLSearchParams();
-      if (eqptCatId) params.set("equipment_domain_id", eqptCatId);
+      if (selectedCatId) params.set("equipment_domain_id", selectedCatId);
       if (subDomain.trim())
         params.set(
           "sub_domain_name",
@@ -102,9 +113,11 @@ export function SubDomainMaster() {
       const q = params.toString() ? `?${params.toString()}` : "";
       const rows = await api<EpSubDomainRow[]>(`/ep/sub-domain-master/search${q}`);
       setResults(rows);
+      setPage(1);
       toast.success(`${rows.length} record(s) found`);
     } catch (e) {
       setResults([]);
+      setPage(1);
       toast.error(e instanceof ApiError ? e.message : "Search failed");
     } finally {
       setBusy(false);
@@ -128,62 +141,98 @@ export function SubDomainMaster() {
         </>
       }
     >
-      <div className="max-w-3xl mx-auto space-y-1.5">
-        <FormRow label="EQPT CAT(Domain Name)" required>
-          <Select
-            value={eqptCatId || "__all__"}
-            onValueChange={(v) => setEqptCatId(v === "__all__" ? "" : v)}
-            disabled={busy}
-            onOpenChange={(open) => {
-              if (open) loadDomains();
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="-- ALL --" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              <SelectItem value="__all__">-- ALL --</SelectItem>
-              {domains.map((d) => (
-                <SelectItem key={d.id} value={String(d.id)}>
-                  {d.eqpt_cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FormRow>
-        <FormRow label="Sub Domain Name" required>
-          <Input
-            value={subDomain}
-            onChange={(e) =>
-              setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
-            }
-            placeholder="Enter Sub Domain"
-            disabled={busy}
-          />
-        </FormRow>
+      <div className="w-full space-y-3">
+        <FormGrid style={{ gridTemplateColumns: "280px 1fr" }}>
+          <FormRow label="EQPT CAT" required>
+            <Select
+              value={eqptCatId || "__all__"}
+              onValueChange={(v) => {
+                const nextId = v === "__all__" ? "" : v;
+                setEqptCatId(nextId);
+              }}
+              disabled={busy}
+              onOpenChange={(open) => {
+                if (open) loadDomains();
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="-- ALL --" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="__all__">-- ALL --</SelectItem>
+                {domains.map((d) => (
+                  <SelectItem key={d.domain_id} value={String(d.domain_id)}>
+                    {d.eqpt_cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+          <FormRow label="Sub Domain Name" required>
+            <Input
+              value={subDomain}
+              onChange={(e) =>
+                setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
+              }
+              placeholder="Enter Sub Domain"
+              disabled={busy}
+              className="w-full"
+            />
+          </FormRow>
+        </FormGrid>
 
         {results.length > 0 && (
-          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-primary hover:bg-primary">
-                  <TableHead className="text-primary-foreground">ID</TableHead>
-                  <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
-                  <TableHead className="text-primary-foreground">Sub Domain ID</TableHead>
-                  <TableHead className="text-primary-foreground">Sub Domain Name</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {results.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="text-xs">{r.id}</TableCell>
-                    <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
-                    <TableCell className="text-xs">{r.sub_domain_id}</TableCell>
-                    <TableCell className="text-xs">{r.sub_domain_name}</TableCell>
+          <div className="rounded-md border border-border overflow-hidden bg-card">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-primary hover:bg-primary">
+                    <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
+                    <TableHead className="text-primary-foreground">Sub Domain ID</TableHead>
+                    <TableHead className="text-primary-foreground">Sub Domain Name</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {pageRows.map((r) => (
+                    <TableRow key={r.sub_domain_id ?? r.id}>
+                      <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
+                      <TableCell className="text-xs">{r.sub_domain_id}</TableCell>
+                      <TableCell className="text-xs">{r.sub_domain_name}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <div>
+                Showing {pageStart} to {pageEnd} of {results.length} record(s)
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7.5 px-3 text-xs rounded-md"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <span className="px-2 text-xs font-semibold text-foreground/80">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7.5 px-3 text-xs rounded-md"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,8 +40,10 @@ interface RegnRecord {
   eqpt_regn_no?: string | null;
   census_no?: string | null;
   prf_code?: string | null;
+  prf_group?: string | null;
   sus_no?: string | null;
   type_of_hldg?: string | null;
+  type_of_hldg_label?: string | null;
   type_of_eqpt?: string | null;
   service_status?: string | null;
   service_status_label?: string | null;
@@ -59,12 +61,15 @@ function rowKey(r: RegnRecord) {
   return `${r.source_table}:${r.id}`;
 }
 
+const PAGE_SIZE = 10;
+
 export function SearchRegnNo() {
   const [regnNo, setRegnNo] = useState("");
   const [censusNo, setCensusNo] = useState("");
   const [prfCode, setPrfCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<RegnRecord[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [serviceOpts, setServiceOpts] = useState<Option[]>([]);
   const [editRow, setEditRow] = useState<RegnRecord | null>(null);
   const [editRegnNo, setEditRegnNo] = useState("");
@@ -91,15 +96,15 @@ export function SearchRegnNo() {
         }),
       });
       setResults(rows);
+      setCurrentPage(1);
       const first = rows[0];
       if (first) {
-        setCensusNo(first.census_no || "");
-        setPrfCode(first.prf_code || "");
         lastLookupRef.current = (first.eqpt_regn_no || regnNo).trim().toUpperCase();
       }
       toast.success(`${rows.length} record(s) found`);
     } catch (e) {
       setResults([]);
+      setCurrentPage(1);
       toast.error(e instanceof ApiError ? e.message : "Search failed");
     } finally {
       setBusy(false);
@@ -171,15 +176,13 @@ export function SearchRegnNo() {
           method: "POST",
           body: JSON.stringify({
             regn_no: searchKey,
-            census_no: null,
-            prf_code: null,
+            census_no: censusNo.trim() || null,
+            prf_code: prfCode.trim() || null,
           }),
         });
         setResults(rows);
         const first = rows[0];
         if (first) {
-          setCensusNo(first.census_no || "");
-          setPrfCode(first.prf_code || "");
           lastLookupRef.current = searchKey.toUpperCase();
         }
       } catch {
@@ -194,6 +197,12 @@ export function SearchRegnNo() {
     }
   };
 
+  const totalPages = Math.ceil(results.length / PAGE_SIZE) || 1;
+  const paginatedResults = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return results.slice(start, start + PAGE_SIZE);
+  }, [results, currentPage]);
+
   return (
     <>
       <FormPanel
@@ -201,20 +210,25 @@ export function SearchRegnNo() {
         footer={
           <>
             <Button
+              type="button"
               disabled={busy}
-              className="bg-primary hover:bg-primary/90"
+              className="bg-primary hover:bg-primary/90 font-semibold"
               onClick={() => void handleSearch()}
             >
-              Search
+              {busy ? "Searching…" : "Search"}
             </Button>
             <Button
+              type="button"
               variant="secondary"
+              disabled={busy}
               onClick={() => {
                 setRegnNo("");
                 setCensusNo("");
                 setPrfCode("");
                 setResults([]);
+                setCurrentPage(1);
                 lastLookupRef.current = "";
+                toast.info("Search fields cleared");
               }}
             >
               Clear
@@ -222,8 +236,8 @@ export function SearchRegnNo() {
           </>
         }
       >
-        <div className="mx-auto max-w-5xl space-y-4 pt-2">
-          <FormRow label="Regn No" required>
+        <div className="flex flex-col gap-4 w-full pt-1">
+          <FormRow label="Regn No" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
             <Input
               placeholder="e.g. REGN-2000"
               value={regnNo}
@@ -236,21 +250,31 @@ export function SearchRegnNo() {
               }}
             />
           </FormRow>
-          <FormGrid>
-            <FormRow label="Census No">
+          <FormGrid cols={2} className="gap-x-6 gap-y-4">
+            <FormRow label="Census No" className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 placeholder="Census No"
                 value={censusNo}
-                disabled
-                tabIndex={-1}
+                onChange={(e) => setCensusNo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearch();
+                  }
+                }}
               />
             </FormRow>
-            <FormRow label="PRF Code">
+            <FormRow label="PRF Code" className="sm:grid-cols-[120px_minmax(0,1fr)]">
               <Input
                 placeholder="PRF Code"
                 value={prfCode}
-                disabled
-                tabIndex={-1}
+                onChange={(e) => setPrfCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearch();
+                  }
+                }}
               />
             </FormRow>
           </FormGrid>
@@ -262,7 +286,7 @@ export function SearchRegnNo() {
                   <TableRow>
                     <TableHead>Regn No</TableHead>
                     <TableHead>Census</TableHead>
-                    <TableHead>PRF</TableHead>
+                    <TableHead>PRF Group</TableHead>
                     <TableHead>SUS</TableHead>
                     <TableHead>Holding</TableHead>
                     <TableHead>Serviceability</TableHead>
@@ -270,15 +294,15 @@ export function SearchRegnNo() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.map((r) => (
+                  {paginatedResults.map((r) => (
                     <TableRow key={rowKey(r)}>
-                      <TableCell>{r.eqpt_regn_no}</TableCell>
-                      <TableCell>{r.census_no}</TableCell>
-                      <TableCell>{r.prf_code}</TableCell>
-                      <TableCell>{r.sus_no}</TableCell>
-                      <TableCell>{r.type_of_hldg}</TableCell>
+                      <TableCell>{r.eqpt_regn_no || "-"}</TableCell>
+                      <TableCell>{r.census_no || "-"}</TableCell>
+                      <TableCell>{r.prf_group || r.prf_code || "-"}</TableCell>
+                      <TableCell>{r.sus_no || "-"}</TableCell>
+                      <TableCell>{r.type_of_hldg_label || r.type_of_hldg || "-"}</TableCell>
                       <TableCell>
-                        {r.service_status_label ?? r.service_status ?? r.op_status}
+                        {r.service_status_label ?? r.service_status ?? r.op_status ?? "-"}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -295,6 +319,35 @@ export function SearchRegnNo() {
                   ))}
                 </TableBody>
               </Table>
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/20 text-xs">
+                <div className="text-muted-foreground">
+                  Showing {Math.min((currentPage - 1) * PAGE_SIZE + 1, results.length)} to{" "}
+                  {Math.min(currentPage * PAGE_SIZE, results.length)} of {results.length} records
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-muted-foreground">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -60,29 +60,29 @@ class TransferSubmitOut(BaseModel):
 def get_parent_units(
     session: Session = Depends(get_db_session),
 ) -> list[ParentUnitOut]:
-    sql = """
+    tx_sql = """
         SELECT DISTINCT to_sus_no
         FROM MMS_EP_TRANSACTION
         WHERE to_sus_no IS NOT NULL
         AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A', 'APPROVED')
     """
-    rows = fetch_all(session, sql)
-    distinct_suses = [str(r["to_sus_no"]).strip().upper() for r in rows if r.get("to_sus_no")]
-    if not distinct_suses:
-        return []
-
-    in_clause = ", ".join(f":s_{i}" for i in range(len(distinct_suses)))
-    params = {f"s_{i}": s for i, s in enumerate(distinct_suses)}
+    tx_rows = fetch_all(session, tx_sql)
+    tx_suses = [str(r["to_sus_no"]).strip().upper() for r in tx_rows if r.get("to_sus_no")]
 
     orbat_rows = fetch_all(
         session,
-        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause})",
-        params,
+        "SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL",
     )
-    orbat_map = {str(r["sus_no"]).strip().upper(): str(r["unit_name"]).strip() for r in orbat_rows if r.get("sus_no")}
+    orbat_map = {
+        str(r["sus_no"]).strip().upper(): str(r["unit_name"]).strip()
+        for r in orbat_rows
+        if r.get("sus_no")
+    }
+
+    all_suses = set(orbat_map.keys()).union(tx_suses)
 
     results: list[ParentUnitOut] = []
-    for sus in distinct_suses:
+    for sus in all_suses:
         name = orbat_map.get(sus, sus)
         display = f"{sus} - {name}" if name != sus else sus
         results.append(ParentUnitOut(sus_no=sus, unit_name=name, display=display))
@@ -114,11 +114,11 @@ def get_domains_for_parent(
 
     domains = fetch_all(
         session,
-        f"SELECT id, eqpt_cat FROM MMS_EP_DOMAIN_MASTER WHERE id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
+        f"SELECT id, domain_id, eqpt_cat FROM MMS_EP_DOMAIN_MASTER WHERE domain_id IN ({in_clause}) OR TO_CHAR(domain_id) IN ({in_clause}) OR id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
         params,
     )
     res = [
-        DomainOptionOut(id=str(d["id"]), eqpt_cat=str(d.get("eqpt_cat") or ""))
+        DomainOptionOut(id=str(d.get("domain_id") if d.get("domain_id") is not None else d["id"]), eqpt_cat=str(d.get("eqpt_cat") or ""))
         for d in domains
     ]
     res.sort(key=lambda x: x.eqpt_cat.lower())
@@ -152,11 +152,11 @@ def get_sub_domains_for_parent_domain(
 
     sub_domains = fetch_all(
         session,
-        f"SELECT id, sub_domain_name FROM MMS_EP_SUB_DOMAIN WHERE id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
+        f"SELECT id, sub_domain_id, sub_domain_name FROM MMS_EP_SUB_DOMAIN WHERE sub_domain_id IN ({in_clause}) OR TO_CHAR(sub_domain_id) IN ({in_clause}) OR id IN ({in_clause}) OR TO_CHAR(id) IN ({in_clause})",
         params,
     )
     res = [
-        SubDomainOptionOut(id=str(s["id"]), sub_domain_name=str(s.get("sub_domain_name") or ""))
+        SubDomainOptionOut(id=str(s.get("sub_domain_id") if s.get("sub_domain_id") is not None else s["id"]), sub_domain_name=str(s.get("sub_domain_name") or ""))
         for s in sub_domains
     ]
     res.sort(key=lambda x: x.sub_domain_name.lower())
@@ -176,7 +176,7 @@ def get_receiving_units(
         params["q"] = q
 
     sql += " ORDER BY unit_name"
-    rows = fetch_all(session, sql, params)[:100]
+    rows = fetch_all(session, sql, params)
 
     results: list[ReceivingUnitOut] = []
     for r in rows:

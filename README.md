@@ -72,7 +72,7 @@ To verify production readiness:
 npm run build
 ```
 
-This runs `vite build` inside `frontend/` to generate production output in `frontend/.output`.
+This runs `vite build` inside `frontend/` to generate production output in `frontend/dist`.
 
 ---
 

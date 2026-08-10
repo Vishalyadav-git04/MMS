@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -18,9 +19,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Eye, CheckCircle2, XCircle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { pageHasInvalidDateInputs } from "@/lib/date";
+import { isoToDmyDash, pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface HoldingUnit {
   id: number | string;
@@ -45,6 +54,28 @@ interface EpTxnRow {
   op_status?: string | null;
   op_status_label?: string | null;
   remarks?: string | null;
+  sanction_auth?: string | null;
+  upload_auth_letter?: string | null;
+  upload_voucher?: string | null;
+  created_by?: string | null;
+  created_date?: string | null;
+  approved_by?: string | null;
+  approved_date?: string | null;
+  domain_name?: string | null;
+  sub_domain_name?: string | null;
+}
+
+function DetailField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-[13.5px] font-semibold text-foreground truncate">
+        {value || "—"}
+      </span>
+    </div>
+  );
 }
 
 function SuggestInput({
@@ -52,6 +83,8 @@ function SuggestInput({
   placeholder,
   disabled,
   suggestions,
+  renderItem,
+  maxHeightClass = "max-h-44",
   onChange,
   onPick,
 }: {
@@ -59,48 +92,111 @@ function SuggestInput({
   placeholder: string;
   disabled?: boolean;
   suggestions: string[];
+  renderItem?: (s: string, idx: number) => ReactNode;
+  maxHeightClass?: string;
   onChange: (v: string) => void;
   onPick: (idx: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const blurTimer = useRef<number | null>(null);
 
+  const designMaxHeight = (() => {
+    const n = Number(maxHeightClass.match(/max-h-(\d+)/)?.[1]);
+    return Number.isFinite(n) && n > 0 ? n * 4 : 176;
+  })();
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const top = r.bottom + 4;
+    const footer = el.closest(".mms-panel")?.querySelector(".mms-panel__foot");
+    const ceiling = footer ? footer.getBoundingClientRect().top : window.innerHeight;
+    setCoords({
+      top,
+      left: r.left,
+      width: r.width,
+      maxHeight: Math.min(designMaxHeight, Math.max(40, ceiling - top - 8)),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
   return (
-    <div className="relative">
+    <div className="relative overflow-visible">
       <Input
+        ref={inputRef}
         placeholder={placeholder}
         value={value}
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
-          setOpen(true);
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          onChange(val);
+          setOpen(Boolean(val.trim()));
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(Boolean(value.trim()));
+          updateCoords();
+        }}
         onBlur={() => {
           blurTimer.current = window.setTimeout(() => setOpen(false), 150);
         }}
       />
-      {open && suggestions.length > 0 && (
-        <ul className="absolute z-30 mt-1 max-h-44 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
-          {suggestions.map((s, idx) => (
-            <li key={`${s}-${idx}`}>
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                  onPick(idx);
-                  setOpen(false);
-                }}
-              >
-                {s}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {showList &&
+        createPortal(
+          <ul
+            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              maxHeight: coords.maxHeight,
+              zIndex: 100,
+            }}
+          >
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }
@@ -148,9 +244,18 @@ export function SearchApproveEpStores() {
   });
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<EpTxnRow[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const [holdingUnits, setHoldingUnits] = useState<HoldingUnit[]>([]);
   const [queryField, setQueryField] = useState<"name" | "sus" | null>(null);
+  const [page, setPage] = useState(1);
+  const [viewRow, setViewRow] = useState<EpTxnRow | null>(null);
+  const pageSize = 10;
+
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = results.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, results.length);
+  const pageRows = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const upd = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm({ ...form, [k]: v });
@@ -184,19 +289,14 @@ export function SearchApproveEpStores() {
     setResults([]);
     setSelected(new Set());
     setHoldingUnits([]);
+    setPage(1);
+    setViewRow(null);
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideForm?: typeof form) => {
+    const targetForm = overrideForm || form;
     if (pageHasInvalidDateInputs()) {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
-      return;
-    }
-    if (!form.status) {
-      toast.error("Status is required");
-      return;
-    }
-    if (!form.susNo.trim() && !form.unitName.trim()) {
-      toast.error("Please enter or select SUS No or Unit's Name");
       return;
     }
     setBusy(true);
@@ -204,15 +304,16 @@ export function SearchApproveEpStores() {
       const rows = await api<EpTxnRow[]>("/ep/search-approve/search", {
         method: "POST",
         body: JSON.stringify({
-          sus_no: form.susNo.trim() || null,
-          unit_name: form.unitName.trim() || null,
-          status: form.status,
-          date_from: form.from || null,
-          date_to: form.to || null,
+          sus_no: targetForm.susNo.trim() || null,
+          unit_name: targetForm.unitName.trim() || null,
+          status: targetForm.status || "All",
+          date_from: targetForm.from || null,
+          date_to: targetForm.to || null,
         }),
       });
       setResults(rows);
       setSelected(new Set());
+      setPage(1);
       toast.success(`${rows.length} record(s) found`);
     } catch (e) {
       setResults([]);
@@ -241,22 +342,24 @@ export function SearchApproveEpStores() {
     setSelected(new Set(pendingSelectable.map((r) => r.id)));
   };
 
-  const handleApprove = async () => {
-    const ids = [...selected].filter((id) =>
-      results.some((r) => r.id === id && isPendingRow(r)),
-    );
-    if (!ids.length) {
-      toast.error("Select pending record(s) to approve");
-      return;
-    }
+  const handleSingleApprove = async (id: number | string) => {
+    const idsToProcess =
+      selected.size > 0 && selected.has(id) ? Array.from(selected) : [id];
     setBusy(true);
     try {
       const res = await api<{ count: number }>("/ep/search-approve/approve", {
         method: "POST",
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ ids: idsToProcess }),
       });
       toast.success(`${res.count} record(s) approved`);
-      await handleSearch();
+      setSelected(new Set());
+      setResults((prev) =>
+        prev.map((r) =>
+          idsToProcess.includes(r.id)
+            ? { ...r, op_status: "A", op_status_label: "Approved" }
+            : r,
+        ),
+      );
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Approve failed");
     } finally {
@@ -264,167 +367,315 @@ export function SearchApproveEpStores() {
     }
   };
 
-  return (
-    <FormPanel
-      title="SEARCH DETAILS OF EP STORES"
-      footer={
-        <>
-          <Button disabled={busy} onClick={() => void handleSearch()}>
-            Search
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={handleClear}>
-            Clear
-          </Button>
-          {results.some(isPendingRow) && (
-            <Button
-              disabled={busy || selected.size === 0}
-              onClick={() => void handleApprove()}
-            >
-              Approve Selected
-            </Button>
-          )}
-        </>
-      }
-    >
-      <div className="max-w-3xl mx-auto space-y-3">
-        <div className="space-y-1.5">
-          <FormGrid>
-            <FormRow label="SUS No" required>
-              <SuggestInput
-                value={form.susNo}
-                placeholder="Search..."
-                disabled={busy}
-                suggestions={
-                  queryField === "sus"
-                    ? holdingUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
-                    : []
-                }
-                onChange={(v) => {
-                  setQueryField("sus");
-                  setForm({ ...form, susNo: v, unitName: "" });
-                }}
-                onPick={(idx) => {
-                  const u = holdingUnits[idx];
-                  if (!u) return;
-                  setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
-                  setHoldingUnits([]);
-                  setQueryField(null);
-                }}
-              />
-            </FormRow>
-            <FormRow label="Unit's Name" required>
-              <SuggestInput
-                value={form.unitName}
-                placeholder="Search..."
-                disabled={busy}
-                suggestions={
-                  queryField === "name"
-                    ? holdingUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
-                    : []
-                }
-                onChange={(v) => {
-                  setQueryField("name");
-                  setForm({ ...form, unitName: v, susNo: "" });
-                }}
-                onPick={(idx) => {
-                  const u = holdingUnits[idx];
-                  if (!u) return;
-                  setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
-                  setHoldingUnits([]);
-                  setQueryField(null);
-                }}
-              />
-            </FormRow>
-            <FormRow label="From">
-              <DateInput
-                value={form.from}
-                disabled={busy}
-                onChange={(v) => upd("from", v)}
-              />
-            </FormRow>
-            <FormRow label="To">
-              <DateInput
-                value={form.to}
-                disabled={busy}
-                onChange={(v) => upd("to", v)}
-              />
-            </FormRow>
-            <FormRow label="Status" required>
-              <Select
-                value={form.status}
-                onValueChange={(v) => upd("status", v)}
-                disabled={busy}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select the Value--" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Approved">Approved</SelectItem>
-                  <SelectItem value="Rejected">Rejected</SelectItem>
-                  <SelectItem value="All">All</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormRow>
-          </FormGrid>
-        </div>
+  const handleSingleReject = async (id: number | string) => {
+    const idsToProcess =
+      selected.size > 0 && selected.has(id) ? Array.from(selected) : [id];
+    setBusy(true);
+    try {
+      const res = await api<{ count: number }>("/ep/search-approve/reject", {
+        method: "POST",
+        body: JSON.stringify({ ids: idsToProcess }),
+      });
+      toast.success(`${res.count} record(s) rejected`);
+      setSelected(new Set());
+      setResults((prev) =>
+        prev.map((r) =>
+          idsToProcess.includes(r.id)
+            ? { ...r, op_status: "R", op_status_label: "Rejected" }
+            : r,
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Reject failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-        {results.length > 0 && (
-          <div className="overflow-auto rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-primary hover:bg-primary">
-                  <TableHead className="w-10 text-primary-foreground">
-                    {pendingSelectable.length > 0 ? (
-                      <input
-                        type="checkbox"
-                        checked={
-                          pendingSelectable.length > 0 &&
-                          pendingSelectable.every((r) => selected.has(r.id))
-                        }
-                        onChange={(e) => toggleAllPending(e.target.checked)}
-                      />
-                    ) : null}
-                  </TableHead>
-                  <TableHead className="text-primary-foreground">ID</TableHead>
-                  <TableHead className="text-primary-foreground">SUS No</TableHead>
-                  <TableHead className="text-primary-foreground">Unit</TableHead>
-                  <TableHead className="text-primary-foreground">Census No</TableHead>
-                  <TableHead className="text-primary-foreground">IV No</TableHead>
-                  <TableHead className="text-primary-foreground">Qty</TableHead>
-                  <TableHead className="text-primary-foreground">Regn No</TableHead>
-                  <TableHead className="text-primary-foreground">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {results.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      {isPendingRow(r) ? (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(r.id)}
-                          onChange={(e) => toggleRow(r.id, e.target.checked)}
-                        />
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-xs">{r.id}</TableCell>
-                    <TableCell className="text-xs">{r.sus_no}</TableCell>
-                    <TableCell className="text-xs">{r.unit_name}</TableCell>
-                    <TableCell className="text-xs">{r.census_no}</TableCell>
-                    <TableCell className="text-xs">{r.iv_no}</TableCell>
-                    <TableCell className="text-xs">{r.qty}</TableCell>
-                    <TableCell className="text-xs">{r.eqpt_regn_no}</TableCell>
-                    <TableCell className="text-xs">
-                      {r.op_status_label ?? r.op_status}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+  return (
+    <>
+      <FormPanel
+        title="SEARCH DETAILS OF EP STORES"
+        overflowVisible
+        footer={
+          <>
+            <Button disabled={busy} onClick={() => void handleSearch()}>
+              Search
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={handleClear}>
+              Clear
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <FormGrid cols={3}>
+              <FormRow label="SUS No">
+                <SuggestInput
+                  value={form.susNo}
+                  placeholder="Search..."
+                  disabled={busy}
+                  suggestions={
+                    queryField === "sus"
+                      ? holdingUnits.map((u) => `${u.sus_no} — ${u.unit_name}`)
+                      : []
+                  }
+                  onChange={(v) => {
+                    setQueryField("sus");
+                    setForm({ ...form, susNo: v, unitName: "" });
+                  }}
+                  onPick={(idx) => {
+                    const u = holdingUnits[idx];
+                    if (!u) return;
+                    setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
+                    setHoldingUnits([]);
+                    setQueryField(null);
+                  }}
+                />
+              </FormRow>
+              <FormRow label="Unit's Name">
+                <SuggestInput
+                  value={form.unitName}
+                  placeholder="Search..."
+                  disabled={busy}
+                  suggestions={
+                    queryField === "name"
+                      ? holdingUnits.map((u) => `${u.unit_name} (${u.sus_no})`)
+                      : []
+                  }
+                  onChange={(v) => {
+                    setQueryField("name");
+                    setForm({ ...form, unitName: v, susNo: "" });
+                  }}
+                  onPick={(idx) => {
+                    const u = holdingUnits[idx];
+                    if (!u) return;
+                    setForm({ ...form, susNo: u.sus_no, unitName: u.unit_name });
+                    setHoldingUnits([]);
+                    setQueryField(null);
+                  }}
+                />
+              </FormRow>
+              <FormRow label="Status">
+                <Select
+                  value={form.status}
+                  onValueChange={(v) => {
+                    setForm({ ...form, status: v });
+                  }}
+                  disabled={busy}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="--Select the Value--" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="Approved">Approved</SelectItem>
+                    <SelectItem value="Rejected">Rejected</SelectItem>
+                    <SelectItem value="All">All</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormRow>
+              <FormRow label="From">
+                <DateInput
+                  value={form.from}
+                  disabled={busy}
+                  onChange={(v) => upd("from", v)}
+                />
+              </FormRow>
+              <FormRow label="To">
+                <DateInput
+                  value={form.to}
+                  disabled={busy}
+                  onChange={(v) => upd("to", v)}
+                />
+              </FormRow>
+            </FormGrid>
           </div>
-        )}
-      </div>
-    </FormPanel>
+
+          {results.length > 0 && (
+            <div className="overflow-hidden rounded-md border border-border">
+              <div className="overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-primary hover:bg-primary">
+                      <TableHead className="w-10 text-primary-foreground">
+                        {pendingSelectable.length > 0 ? (
+                          <input
+                            type="checkbox"
+                            checked={
+                              pendingSelectable.length > 0 &&
+                              pendingSelectable.every((r) => selected.has(r.id))
+                            }
+                            onChange={(e) => toggleAllPending(e.target.checked)}
+                          />
+                        ) : null}
+                      </TableHead>
+                      <TableHead className="text-primary-foreground">S.No</TableHead>
+                      <TableHead className="text-primary-foreground">SUS No</TableHead>
+                      <TableHead className="text-primary-foreground">Unit</TableHead>
+                      <TableHead className="text-primary-foreground">Census No</TableHead>
+                      <TableHead className="text-primary-foreground">IV No</TableHead>
+                      <TableHead className="text-primary-foreground">Qty</TableHead>
+                      <TableHead className="text-primary-foreground">Regn No</TableHead>
+                      <TableHead className="text-primary-foreground">Status</TableHead>
+                      <TableHead className="text-center text-primary-foreground">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pageRows.map((r, idx) => (
+                      <TableRow key={r.id}>
+                        <TableCell>
+                          {isPendingRow(r) ? (
+                            <input
+                              type="checkbox"
+                              checked={selected.has(r.id)}
+                              onChange={(e) => toggleRow(r.id, e.target.checked)}
+                            />
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {(currentPage - 1) * pageSize + idx + 1}
+                        </TableCell>
+                        <TableCell className="text-xs">{r.sus_no}</TableCell>
+                        <TableCell className="text-xs">{r.unit_name}</TableCell>
+                        <TableCell className="text-xs">{r.census_no}</TableCell>
+                        <TableCell className="text-xs">{r.iv_no}</TableCell>
+                        <TableCell className="text-xs">{r.qty}</TableCell>
+                        <TableCell className="text-xs">{r.eqpt_regn_no}</TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {r.op_status_label ?? r.op_status}
+                        </TableCell>
+                        <TableCell className="text-center align-middle">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              title="View Details"
+                              aria-label={`View details for ${r.id}`}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded text-accent hover:bg-accent/10 cursor-pointer"
+                              onClick={() => setViewRow(r)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            {r.op_status !== "A" && r.op_status !== "1" && (
+                              <button
+                                type="button"
+                                title="Approve"
+                                aria-label={`Approve ${r.id}`}
+                                disabled={busy}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded text-emerald-600 hover:bg-emerald-500/10 cursor-pointer disabled:opacity-50"
+                                onClick={() => void handleSingleApprove(r.id)}
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                              </button>
+                            )}
+                            {r.op_status !== "R" && r.op_status !== "2" && (
+                              <button
+                                type="button"
+                                title="Reject"
+                                aria-label={`Reject ${r.id}`}
+                                disabled={busy}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded text-destructive hover:bg-destructive/10 cursor-pointer disabled:opacity-50"
+                                onClick={() => void handleSingleReject(r.id)}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/40 px-3 py-1.5 text-[12px] text-muted-foreground">
+                <div>
+                  Showing {pageStart} to {pageEnd} of {results.length} record(s)
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-[12px]"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="px-2 text-xs font-medium">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-[12px]"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </FormPanel>
+
+      <Dialog
+        open={!!viewRow}
+        onOpenChange={(open) => {
+          if (!open) setViewRow(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-5">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-primary flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              Details of EP Stores — {viewRow?.census_no || viewRow?.eqpt_regn_no || (viewRow ? `Record #${viewRow.id}` : "")}
+            </DialogTitle>
+          </DialogHeader>
+
+          {viewRow && (
+            <div className="space-y-4 pt-1">
+              <FormSection title="1. Issue & Authority Details" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <DetailField label="Sanctioning Auth" value={viewRow.sanction_auth} />
+                <DetailField label="Auth Letter No" value={viewRow.auth_letter_no} />
+                <DetailField
+                  label="Auth Date"
+                  value={viewRow.auth_date ? isoToDmyDash(viewRow.auth_date) : viewRow.auth_date}
+                />
+                <DetailField label="Issuing SUS No" value={viewRow.issued_from || viewRow.from_sus_no} />
+                <DetailField label="Holding Unit Name" value={viewRow.unit_name} />
+                <DetailField label="Holding SUS No" value={viewRow.sus_no} />
+              </div>
+
+              <FormSection title="2. Census & Equipment Details" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <DetailField label="Eqpt Category" value={viewRow.domain_name} />
+                <DetailField label="Sub Domain / EP Census" value={viewRow.sub_domain_name} />
+                <DetailField label="Census No" value={viewRow.census_no} />
+                <DetailField label="Eqpt Regn No" value={viewRow.eqpt_regn_no} />
+                <DetailField label="IV No" value={viewRow.iv_no} />
+                <DetailField
+                  label="IV Date"
+                  value={viewRow.iv_date ? isoToDmyDash(viewRow.iv_date) : viewRow.iv_date}
+                />
+                <DetailField label="Issued Qty" value={viewRow.qty != null ? String(viewRow.qty) : null} />
+                <DetailField label="Serviceability" value={viewRow.service_status} />
+                <DetailField label="Status" value={viewRow.op_status_label || viewRow.op_status} />
+                <DetailField label="Upload Auth Letter" value={viewRow.upload_auth_letter} />
+                <DetailField label="Upload Voucher" value={viewRow.upload_voucher} />
+                <DetailField label="Remarks" value={viewRow.remarks} />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
+

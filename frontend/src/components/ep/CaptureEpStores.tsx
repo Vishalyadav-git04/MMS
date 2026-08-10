@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import {
 import { api, ApiError, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface DomainOption {
   code_value: string;
@@ -35,11 +37,13 @@ interface EquipRow {
 
 interface DomainRow {
   id: number | string;
+  domain_id?: number | string;
   eqpt_cat: string;
 }
 
 interface SubDomainRow {
   id: number | string;
+  sub_domain_id?: number | string;
   equipment_domain_id: number | string;
   sub_domain_name: string;
 }
@@ -95,6 +99,7 @@ function SuggestInput({
   disabled,
   suggestions,
   renderItem,
+  maxHeightClass = "max-h-44",
   onChange,
   onPick,
 }: {
@@ -103,48 +108,110 @@ function SuggestInput({
   disabled?: boolean;
   suggestions: string[];
   renderItem?: (s: string, idx: number) => ReactNode;
+  maxHeightClass?: string;
   onChange: (v: string) => void;
   onPick: (idx: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const blurTimer = useRef<number | null>(null);
 
+  const designMaxHeight = (() => {
+    const n = Number(maxHeightClass.match(/max-h-(\d+)/)?.[1]);
+    return Number.isFinite(n) && n > 0 ? n * 4 : 176;
+  })();
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const top = r.bottom + 4;
+    const footer = el.closest(".mms-panel")?.querySelector(".mms-panel__foot");
+    const ceiling = footer ? footer.getBoundingClientRect().top : window.innerHeight;
+    setCoords({
+      top,
+      left: r.left,
+      width: r.width,
+      maxHeight: Math.min(designMaxHeight, Math.max(40, ceiling - top - 8)),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
+
   return (
-    <div className="relative">
+    <div className="relative overflow-visible">
       <Input
+        ref={inputRef}
         placeholder={placeholder}
         value={value}
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
-          setOpen(true);
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          onChange(val);
+          setOpen(Boolean(val.trim()));
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(Boolean(value.trim()));
+          updateCoords();
+        }}
         onBlur={() => {
           blurTimer.current = window.setTimeout(() => setOpen(false), 150);
         }}
       />
-      {open && suggestions.length > 0 && (
-        <ul className="absolute z-30 mt-1 max-h-44 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
-          {suggestions.map((s, idx) => (
-            <li key={`${s}-${idx}`}>
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                  onPick(idx);
-                  setOpen(false);
-                }}
-              >
-                {renderItem ? renderItem(s, idx) : s}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {showList &&
+        createPortal(
+          <ul
+            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              maxHeight: coords.maxHeight,
+              zIndex: 100,
+            }}
+          >
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }
@@ -609,7 +676,7 @@ export function CaptureEpStores() {
               </SelectTrigger>
               <SelectContent>
                 {domains.map((d) => (
-                  <SelectItem key={d.id} value={String(d.id)}>
+                  <SelectItem key={d.id} value={String(d.domain_id ?? d.id)}>
                     {d.eqpt_cat}
                   </SelectItem>
                 ))}
@@ -627,7 +694,7 @@ export function CaptureEpStores() {
               </SelectTrigger>
               <SelectContent>
                 {subDomains.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
+                  <SelectItem key={s.id} value={String(s.sub_domain_id ?? s.id)}>
                     {s.sub_domain_name}
                   </SelectItem>
                 ))}

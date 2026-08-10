@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Pencil, Trash2 } from "lucide-react";
-import { FormPanel, FormRow, SwitchTabs } from "@/components/FormPanel";
+import { Pencil } from "lucide-react";
+import { FormPanel, FormRow, FormGrid, SwitchTabs } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -97,8 +97,6 @@ function uniquenessError(
   return null;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
-
 export function MmsDomainMaster() {
   const [mode, setMode] = useState<Mode>("add");
   const [busy, setBusy] = useState(false);
@@ -107,14 +105,13 @@ export function MmsDomainMaster() {
   const [results, setResults] = useState<DomainRow[]>([]);
   const [searched, setSearched] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 10;
   const [tableQuery, setTableQuery] = useState("");
 
   const [addForm, setAddForm] = useState(emptyAdd);
   const [searchDomain, setSearchDomain] = useState("");
   const [editRow, setEditRow] = useState<DomainRow | null>(null);
   const [editForm, setEditForm] = useState(emptyAdd);
-  const [deleteRow, setDeleteRow] = useState<DomainRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = tableQuery.trim().toLowerCase();
@@ -254,6 +251,7 @@ export function MmsDomainMaster() {
   const clearAdd = () => {
     setAddForm(emptyAdd);
     setDomainSuggestions([]);
+    toast.info("Form fields cleared");
   };
 
   const clearSearch = () => {
@@ -262,11 +260,29 @@ export function MmsDomainMaster() {
     setSearched(false);
     setTableQuery("");
     setPage(1);
+    toast.info("Search fields cleared");
   };
 
   const openEdit = (row: DomainRow) => {
     setEditRow(row);
     setEditForm(rowToForm(row));
+  };
+
+  const isEditModified = useMemo(() => {
+    if (!editRow) return false;
+    const initial = rowToForm(editRow);
+    return (
+      editForm.labelName !== initial.labelName ||
+      editForm.labelShort !== initial.labelShort ||
+      editForm.dispOrder !== initial.dispOrder
+    );
+  }, [editRow, editForm]);
+
+  const resetEditForm = () => {
+    if (editRow) {
+      setEditForm(rowToForm(editRow));
+      toast.info("Form changes cleared");
+    }
   };
 
   const handleUpdate = async () => {
@@ -293,7 +309,7 @@ export function MmsDomainMaster() {
       const siblings = await api<DomainRow[]>(
         `/admin/mms-domain-master/search?domain_name=${encodeURIComponent(domainNameUpper)}`,
       );
-      const localErr = uniquenessError(sanitizedForm, siblings, editRow.id);
+      const localErr = uniquenessError(sanitizedForm, siblings, String(editRow.id));
       if (localErr) {
         toast.error(localErr);
         return;
@@ -320,21 +336,7 @@ export function MmsDomainMaster() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteRow) return;
-    setBusy(true);
-    try {
-      await api(`/admin/mms-domain-master/${deleteRow.id}`, { method: "DELETE" });
-      setResults((prev) => prev.filter((r) => r.id !== deleteRow.id));
-      setDeleteRow(null);
-      refreshDomains();
-      toast.success("Domain value deleted");
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Delete failed");
-    } finally {
-      setBusy(false);
-    }
-  };
+
 
   return (
     <FormPanel
@@ -355,78 +357,74 @@ export function MmsDomainMaster() {
       footer={
         mode === "add" ? (
           <>
-            <Button disabled={busy} onClick={() => void handleSubmit()}>
+            <Button type="button" disabled={busy} onClick={() => void handleSubmit()}>
               {busy ? "Saving…" : "Submit"}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={clearAdd}>
+            <Button type="button" variant="secondary" disabled={busy} onClick={clearAdd}>
               Clear
-            </Button>
-            <Button variant="destructive" disabled={busy} onClick={clearAdd}>
-              Cancel
             </Button>
           </>
         ) : (
           <>
-            <Button disabled={busy} onClick={() => void handleSearch()}>
+            <Button type="button" disabled={busy} onClick={() => void handleSearch()}>
               {busy ? "Searching…" : "Search"}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={clearSearch}>
+            <Button type="button" variant="secondary" disabled={busy} onClick={clearSearch}>
               Clear
-            </Button>
-            <Button variant="destructive" disabled={busy} onClick={clearSearch}>
-              Cancel
             </Button>
           </>
         )
       }
     >
       {mode === "add" ? (
-        <div className="mx-auto w-full max-w-2xl space-y-1">
-          <FormRow label="Domain Name" required className="sm:grid-cols-[140px_minmax(0,1fr)]">
-            <SuggestInput
-              value={addForm.domainName}
-              placeholder="Please Enter Domain Name..."
-              suggestions={domainSuggestions}
-              onChange={(v) => setAddForm({ ...addForm, domainName: sanitizeText(v) })}
-              onPick={(idx) => {
-                setAddForm({ ...addForm, domainName: sanitizeText(domainSuggestions[idx] ?? "") });
-                setDomainSuggestions([]);
-              }}
-            />
-          </FormRow>
-          <FormRow label="Code Value" required className="sm:grid-cols-[140px_minmax(0,1fr)]">
-            <Input
-              placeholder="Please Enter Code Value..."
-              value={addForm.codeValue}
-              onChange={(e) => setAddForm({ ...addForm, codeValue: sanitizeText(e.target.value) })}
-            />
-          </FormRow>
-          <FormRow label="Label Name" required className="sm:grid-cols-[140px_minmax(0,1fr)]">
-            <Input
-              placeholder="Please Enter Label Name..."
-              value={addForm.labelName}
-              onChange={(e) => setAddForm({ ...addForm, labelName: sanitizeText(e.target.value) })}
-            />
-          </FormRow>
-          <FormRow label="Label Short" className="sm:grid-cols-[140px_minmax(0,1fr)]">
-            <Input
-              placeholder="Please Enter Label Short..."
-              value={addForm.labelShort}
-              maxLength={10}
-              onChange={(e) => setAddForm({ ...addForm, labelShort: sanitizeText(e.target.value) })}
-            />
-          </FormRow>
-          <FormRow label="Display Order" className="sm:grid-cols-[140px_minmax(0,1fr)]">
-            <Input
-              placeholder="Please Enter Display Order..."
-              value={addForm.dispOrder}
-              onChange={(e) => setAddForm({ ...addForm, dispOrder: sanitizeOrder(e.target.value) })}
-            />
-          </FormRow>
+        <div className="w-full">
+          <FormGrid cols={2} className="gap-x-6 gap-y-4">
+            <FormRow label="Domain Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <SuggestInput
+                value={addForm.domainName}
+                placeholder="Please Enter Domain Name..."
+                suggestions={domainSuggestions}
+                onChange={(v) => setAddForm({ ...addForm, domainName: sanitizeText(v) })}
+                onPick={(idx) => {
+                  setAddForm({ ...addForm, domainName: sanitizeText(domainSuggestions[idx] ?? "") });
+                  setDomainSuggestions([]);
+                }}
+              />
+            </FormRow>
+            <FormRow label="Code Value" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                placeholder="Please Enter Code Value..."
+                value={addForm.codeValue}
+                onChange={(e) => setAddForm({ ...addForm, codeValue: sanitizeText(e.target.value) })}
+              />
+            </FormRow>
+            <FormRow label="Label Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                placeholder="Please Enter Label Name..."
+                value={addForm.labelName}
+                onChange={(e) => setAddForm({ ...addForm, labelName: sanitizeText(e.target.value) })}
+              />
+            </FormRow>
+            <FormRow label="Label Short" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                placeholder="Please Enter Label Short..."
+                value={addForm.labelShort}
+                maxLength={10}
+                onChange={(e) => setAddForm({ ...addForm, labelShort: sanitizeText(e.target.value) })}
+              />
+            </FormRow>
+            <FormRow label="Display Order" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+              <Input
+                placeholder="Please Enter Display Order..."
+                value={addForm.dispOrder}
+                onChange={(e) => setAddForm({ ...addForm, dispOrder: sanitizeOrder(e.target.value) })}
+              />
+            </FormRow>
+          </FormGrid>
         </div>
       ) : (
-        <div className="mx-auto w-full max-w-3xl space-y-3">
-          <FormRow label="Domain Name" className="sm:grid-cols-[140px_minmax(0,1fr)]">
+        <div className="w-full space-y-3">
+          <FormRow label="Domain Name" className="sm:grid-cols-[120px_minmax(0,1fr)]">
             <Select
               value={searchDomain || "__all__"}
               onValueChange={(v) => setSearchDomain(v === "__all__" ? "" : v)}
@@ -447,32 +445,6 @@ export function MmsDomainMaster() {
 
           {searched && (
             <div className="overflow-hidden rounded-md border border-border">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/60 px-3 py-1.5 text-[12px]">
-                <div className="flex items-center gap-1.5">
-                  Show{" "}
-                  <select
-                    className="rounded border border-border bg-white px-1.5 py-0.5 text-[12px]"
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
-                  >
-                    {PAGE_SIZE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>{" "}
-                  entries
-                </div>
-                <div className="flex items-center gap-1.5">
-                  Search:{" "}
-                  <Input
-                    className="h-6 w-40 border-border bg-white"
-                    value={tableQuery}
-                    onChange={(e) => setTableQuery(sanitizeText(e.target.value))}
-                  />
-                </div>
-              </div>
-
               <div className="overflow-x-auto">
                 <table className="w-full caption-bottom border-collapse text-[14px]">
                   <thead>
@@ -510,30 +482,18 @@ export function MmsDomainMaster() {
                           <td className="px-2 py-1.5 align-middle">{r.label_short}</td>
                           <td className="px-2 py-1.5 align-middle">{r.disp_order}</td>
                           <td className="px-2 py-1.5 align-middle">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-7 gap-1 px-2 text-[12px]"
-                                disabled={busy}
-                                onClick={() => openEdit(r)}
-                              >
-                                <Pencil className="h-3 w-3" />
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                className="h-7 gap-1 px-2 text-[12px]"
-                                disabled={busy}
-                                onClick={() => setDeleteRow(r)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                Delete
-                              </Button>
-                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Edit"
+                              aria-label="Edit"
+                              disabled={busy}
+                              onClick={() => openEdit(r)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
                           </td>
                         </tr>
                       ))
@@ -557,35 +517,9 @@ export function MmsDomainMaster() {
                   >
                     Previous
                   </Button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter((n) => {
-                      if (totalPages <= 7) return true;
-                      if (n === 1 || n === totalPages) return true;
-                      return Math.abs(n - currentPage) <= 1;
-                    })
-                    .reduce<number[]>((acc, n, idx, arr) => {
-                      if (idx > 0 && n - arr[idx - 1]! > 1) acc.push(-n);
-                      acc.push(n);
-                      return acc;
-                    }, [])
-                    .map((n) =>
-                      n < 0 ? (
-                        <span key={`e${n}`} className="px-1">
-                          …
-                        </span>
-                      ) : (
-                        <Button
-                          key={n}
-                          type="button"
-                          variant={n === currentPage ? "default" : "outline"}
-                          size="sm"
-                          className="h-7 min-w-7 px-2 text-[12px]"
-                          onClick={() => setPage(n)}
-                        >
-                          {n}
-                        </Button>
-                      ),
-                    )}
+                  <span className="px-2 text-xs font-medium">
+                    Page {currentPage} of {totalPages}
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
@@ -609,75 +543,77 @@ export function MmsDomainMaster() {
           if (!open) setEditRow(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Edit Domain Value</DialogTitle>
             <DialogDescription>Update the selected MMS domain master record.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-1">
-            <FormRow label="Domain Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+          <div className="mms-form space-y-4 py-2">
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
+                Domain Name
+              </label>
               <Input
                 value={editForm.domainName}
-                onChange={(e) => setEditForm({ ...editForm, domainName: sanitizeText(e.target.value) })}
+                disabled
+                className="bg-muted text-muted-foreground cursor-not-allowed"
               />
-            </FormRow>
-            <FormRow label="Code Value" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            </div>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
+                Code Value
+              </label>
               <Input
                 value={editForm.codeValue}
-                onChange={(e) => setEditForm({ ...editForm, codeValue: sanitizeText(e.target.value) })}
+                disabled
+                className="bg-muted text-muted-foreground cursor-not-allowed"
               />
-            </FormRow>
-            <FormRow label="Label Name" required className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            </div>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
+                <span className="mr-0.5 text-[var(--danger,#b3261e)]">*</span>
+                Label Name
+              </label>
               <Input
                 value={editForm.labelName}
                 onChange={(e) => setEditForm({ ...editForm, labelName: sanitizeText(e.target.value) })}
               />
-            </FormRow>
-            <FormRow label="Label Short" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            </div>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
+                Label Short
+              </label>
               <Input
                 value={editForm.labelShort}
                 maxLength={10}
                 onChange={(e) => setEditForm({ ...editForm, labelShort: sanitizeText(e.target.value) })}
               />
-            </FormRow>
-            <FormRow label="Display Order" className="sm:grid-cols-[120px_minmax(0,1fr)]">
+            </div>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
+                Display Order
+              </label>
               <Input
                 value={editForm.dispOrder}
                 onChange={(e) => setEditForm({ ...editForm, dispOrder: sanitizeOrder(e.target.value) })}
               />
-            </FormRow>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="secondary" disabled={busy} onClick={() => setEditRow(null)}>
-              Cancel
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!isEditModified || busy}
+              onClick={resetEditForm}
+            >
+              Clear
             </Button>
-            <Button disabled={busy} onClick={() => void handleUpdate()}>
+            <Button
+              type="button"
+              disabled={!isEditModified || busy}
+              onClick={() => void handleUpdate()}
+            >
               {busy ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={deleteRow != null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteRow(null);
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Domain Value</DialogTitle>
-            <DialogDescription>
-              Delete <strong>{deleteRow?.domain_name}</strong> / code{" "}
-              <strong>{deleteRow?.code_value}</strong>? This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="secondary" disabled={busy} onClick={() => setDeleteRow(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={busy} onClick={() => void handleDelete()}>
-              {busy ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -24,4 +24,5 @@ backend/offline_packages/
 
 # Build / tooling
 dist/
+frontend/dist/
 *.log

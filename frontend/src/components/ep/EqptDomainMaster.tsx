@@ -24,10 +24,19 @@ export function EqptDomainMaster() {
   const [eqptCat, setEqptCat] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<EpDomainRow[]>([]);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = results.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, results.length);
+  const pageRows = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleClear = () => {
     setEqptCat("");
     setResults([]);
+    setPage(1);
   };
 
   const handleSave = async () => {
@@ -45,6 +54,7 @@ export function EqptDomainMaster() {
       toast.success("Domain saved");
       setEqptCat("");
       setResults([]);
+      setPage(1);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Save failed");
     } finally {
@@ -63,9 +73,11 @@ export function EqptDomainMaster() {
         q ? `/ep/domain-master/search${q}` : "/ep/domain-master/",
       );
       setResults(rows);
+      setPage(1);
       toast.success(`${rows.length} record(s) found`);
     } catch (e) {
       setResults([]);
+      setPage(1);
       toast.error(e instanceof ApiError ? e.message : "Search failed");
     } finally {
       setBusy(false);
@@ -89,7 +101,7 @@ export function EqptDomainMaster() {
         </>
       }
     >
-      <div className="max-w-3xl mx-auto space-y-3">
+      <div className="w-full space-y-3">
         <FormRow label="EQPT CAT" required>
           <Input
             value={eqptCat}
@@ -98,29 +110,60 @@ export function EqptDomainMaster() {
             }
             placeholder="Enter EQPT CAT"
             disabled={busy}
+            className="w-full"
           />
         </FormRow>
 
         {results.length > 0 && (
-          <div className="max-h-64 overflow-y-auto rounded-md border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-primary hover:bg-primary">
-                  <TableHead className="text-primary-foreground">ID</TableHead>
-                  <TableHead className="text-primary-foreground">Domain ID</TableHead>
-                  <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {results.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="text-xs">{r.id}</TableCell>
-                    <TableCell className="text-xs">{r.domain_id}</TableCell>
-                    <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
+          <div className="rounded-md border border-border overflow-hidden bg-card">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-primary hover:bg-primary">
+                    <TableHead className="text-primary-foreground">Domain ID</TableHead>
+                    <TableHead className="text-primary-foreground">EQPT CAT</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {pageRows.map((r) => (
+                    <TableRow key={r.domain_id ?? r.id}>
+                      <TableCell className="text-xs">{r.domain_id}</TableCell>
+                      <TableCell className="text-xs">{r.eqpt_cat}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <div>
+                Showing {pageStart} to {pageEnd} of {results.length} record(s)
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7.5 px-3 text-xs rounded-md"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <span className="px-2 text-xs font-semibold text-foreground/80">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7.5 px-3 text-xs rounded-md"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -442,12 +442,7 @@ export function ApproveNewEqpt() {
           <FormRow label="Status">
             <Select
               value={form.status || undefined}
-              onValueChange={(v) => {
-                upd("status", v);
-                if (form.from) {
-                  void handleSearch({ silent: false, overrideStatus: v });
-                }
-              }}
+              onValueChange={(v) => upd("status", v)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select the Value--" />

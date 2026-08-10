@@ -47,13 +47,13 @@ const DUMMY_NOTIFICATIONS = [
 
 export type ModuleId = "dashboard" | "weapon" | "it-asset";
 export type WeaponSub =
-  | "mlccs"
-  | "unit-holding"
-  | "reports"
   | "mms-admin"
-  | "ep-stores"
   | "generate-ro"
-  | "eqpt-transfer";
+  | "unit-holding"
+  | "mlccs"
+  | "eqpt-transfer"
+  | "ep-stores"
+  | "reports";
 
 const SECTIONS_BASE: SectionNavItem[] = [
   { id: "dashboard", label: "Dashboard" },
@@ -61,13 +61,13 @@ const SECTIONS_BASE: SectionNavItem[] = [
     id: "weapon",
     label: "Weapon",
     children: [
-      { id: "mlccs", label: "MLCCS" },
-      { id: "unit-holding", label: "Unit Holding" },
-      { id: "reports", label: "Reports" },
       { id: "mms-admin", label: "MMS Admin" },
-      { id: "ep-stores", label: "EP Stores" },
       { id: "generate-ro", label: "Generate RO" },
+      { id: "unit-holding", label: "Unit Holding" },
+      { id: "mlccs", label: "MLCCS" },
       { id: "eqpt-transfer", label: "EQPT Transfer/Deposit" },
+      { id: "ep-stores", label: "EP Stores" },
+      { id: "reports", label: "Reports" },
     ],
   },
   { id: "it-asset", label: "IT Asset" },

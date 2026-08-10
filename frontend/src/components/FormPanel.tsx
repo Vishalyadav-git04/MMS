@@ -133,10 +133,12 @@ export function FormGrid({
   children,
   cols = 2,
   className,
+  style,
 }: {
   children: ReactNode;
   cols?: 2 | 3 | 4;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
@@ -149,6 +151,7 @@ export function FormGrid({
             : "mms-form-grid--2",
         className,
       )}
+      style={style}
     >
       {children}
     </div>

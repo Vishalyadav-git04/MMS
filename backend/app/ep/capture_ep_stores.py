@@ -281,31 +281,47 @@ def submit_capture(
     session: Session = Depends(get_db_session),
     principal: Principal = Depends(get_principal),
 ) -> CaptureEpOut:
-    domain = get_by_id(session, "MMS_EP_DOMAIN_MASTER", body.domain_id)
+    domain = fetch_one(
+        session,
+        "SELECT * FROM MMS_EP_DOMAIN_MASTER WHERE domain_id = :did OR TO_CHAR(domain_id) = :did",
+        {"did": str(body.domain_id).strip()},
+    )
     if domain is None:
         raise HTTPException(status_code=400, detail="Invalid Eqpt Category/Domain")
 
-    sub = get_by_id(session, "MMS_EP_SUB_DOMAIN", body.sub_domain_id)
+    sub = fetch_one(
+        session,
+        "SELECT * FROM MMS_EP_SUB_DOMAIN WHERE sub_domain_id = :sdid OR TO_CHAR(sub_domain_id) = :sdid",
+        {"sdid": str(body.sub_domain_id).strip()},
+    )
     if sub is None:
         raise HTTPException(status_code=400, detail="Invalid EP Census/Sub Domain")
 
     sub_eq_domain = str(sub.get("equipment_domain_id") or "").strip()
-    dom_id = str(domain.get("id") or "").strip()
-    if sub_eq_domain != dom_id:
+    dom_domain_id = str(domain.get("domain_id") if domain.get("domain_id") is not None else "").strip()
+    dom_id = str(domain.get("id") if domain.get("id") is not None else "").strip()
+    if sub_eq_domain != dom_domain_id and sub_eq_domain != dom_id:
         raise HTTPException(
             status_code=400,
             detail="Sub Domain does not belong to the selected Domain",
         )
 
+    target_sub_id = str(sub.get("sub_domain_id") if sub.get("sub_domain_id") is not None else sub.get("id") or "").strip()
+
     census_row = fetch_one(
         session,
         """
         SELECT census_no FROM MMS_EP_MSTR
-        WHERE (domain_id = :did OR TO_CHAR(domain_id) = :did)
-        AND (sub_domain_id = :sid OR TO_CHAR(sub_domain_id) = :sid)
+        WHERE (domain_id = :did OR TO_CHAR(domain_id) = :did OR domain_id = :d_id OR TO_CHAR(domain_id) = :d_id)
+        AND (sub_domain_id = :sid OR TO_CHAR(sub_domain_id) = :sid OR sub_domain_id = :s_id OR TO_CHAR(sub_domain_id) = :s_id)
         ORDER BY census_no DESC
         """,
-        {"did": dom_id, "sid": str(sub.get("id") or "").strip()},
+        {
+            "did": dom_domain_id,
+            "d_id": dom_id,
+            "sid": target_sub_id,
+            "s_id": str(sub.get("id") or "").strip(),
+        },
     )
     census_no = census_row.get("census_no") if census_row else None
     if not census_no:
@@ -443,8 +459,8 @@ def submit_capture(
             "from_tr_date": now,
             "to_tr_date": now,
             "upload_auth_letter": (body.upload_auth_letter or "")[:255] or None,
-            "domain_id": dom_id,
-            "sub_domain_id": str(sub.get("id") or ""),
+            "domain_id": dom_domain_id or dom_id,
+            "sub_domain_id": target_sub_id or str(sub.get("id") or ""),
             "to_sus_no": body.sus_no.strip()[:255],
             "iv_sus_no": body.issue_sus_no.strip()[:255],
             "iv_no": body.iv_no.strip()[:255],

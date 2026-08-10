@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
-from app.db.native_utils import execute_sql, fetch_all, fetch_one
+from app.db.native_utils import execute_sql, fetch_all, fetch_one, get_opstatus_code_value
 
 router = APIRouter(
     prefix="/unit-holding/approve-new-eqpt",
@@ -33,8 +33,6 @@ _STATUS_LABEL: dict[str, str] = {
     "R": "Rejected",
 }
 
-_APPROVED_CODE = "1"
-_REJECTED_CODE = "2"
 _PENDING_CODES = frozenset({"0", "P"})
 
 _SOURCE_UNIT = "unit"
@@ -142,11 +140,11 @@ def _eqpt_type_label_map(session: Session) -> dict[str, str]:
     }
 
 
-def _orbat_names_map(session: Session, sus_nos: set[str]) -> dict[str, str]:
-    if not sus_nos:
+def _unit_map_by_suses(session: Session, sus_list: set[str]) -> dict[str, str]:
+    if not sus_list:
         return {}
-    in_clause = ", ".join(f":s_{i}" for i in range(len(sus_nos)))
-    params = {f"s_{i}": s.upper() for i, s in enumerate(sus_nos) if s}
+    in_clause = ", ".join(f":s_{i}" for i in range(len(sus_list)))
+    params = {f"s_{i}": s.strip().upper() for i, s in enumerate(sus_list) if s.strip()}
     rows = fetch_all(
         session,
         f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause}) AND UPPER(status) = 'ACTIVE'",
@@ -253,128 +251,127 @@ def _resolve_unit_optional(
 def search_new_eqpt(
     body: SearchIn,
     session: Session = Depends(get_db_session),
-    _: Principal = Depends(require_unit_or_admin),
 ) -> list[NewEqptOut]:
-    status_key = body.status.strip().lower()
-    if not status_key or status_key in ("all", "all status", "--select the value--"):
-        status_codes = ("0", "P", "1", "A", "2", "R")
-    elif status_key in _STATUS_CODES:
-        status_codes = _STATUS_CODES[status_key]
-    else:
+    st_key = body.status.strip().lower() if body.status else ""
+    if st_key and st_key not in _STATUS_CODES:
         raise HTTPException(
             status_code=400,
-            detail="Status must be Pending, Approved, or Rejected",
+            detail="Status must be Pending, Approved, Rejected, or empty for All",
         )
 
-    sus_input = body.sus_no.strip()
-    uname_input = body.unit_name.strip()
-    sus_filter = None
+    target_statuses: tuple[str, ...]
+    if st_key:
+        target_statuses = _STATUS_CODES[st_key]
+    else:
+        target_statuses = ("0", "1", "2", "P", "A", "R")
 
-    if sus_input or uname_input:
-        unit = _resolve_unit_optional(session, sus_input, uname_input)
-        if unit:
-            sus_filter = str(unit["sus_no"]).strip().upper()
-        elif sus_input:
-            sus_filter = sus_input.upper()
+    unit_found = _resolve_unit_optional(session, body.sus_no, body.unit_name)
+    filter_sus = ""
+    filter_unit_name = ""
+    if unit_found is not None:
+        filter_sus = str(unit_found.get("sus_no") or "").strip().upper()
+        filter_unit_name = str(unit_found.get("unit_name") or "").strip().upper()
+    elif body.sus_no.strip():
+        filter_sus = body.sus_no.strip().upper()
+    elif body.unit_name.strip():
+        filter_unit_name = body.unit_name.strip().upper()
 
-    date_from = datetime.combine(body.date_from, datetime.min.time())
-    date_to = (
-        datetime.combine(body.date_to, datetime.max.time())
-        if body.date_to is not None
-        else None
-    )
-
-    results: list[tuple[str, dict]] = []
-    st_clause = ", ".join(f":s_{i}" for i in range(len(status_codes)))
-    base_params: dict[str, Any] = {f"s_{i}": s for i, s in enumerate(status_codes)}
-    base_params["dfrom"] = date_from
-
-    sql_where = f"WHERE UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause}) AND iv_date >= :dfrom"
-    if sus_filter:
-        sql_where += " AND UPPER(to_sus_no) = :sus"
-        base_params["sus"] = sus_filter
-
-    if date_to is not None:
-        sql_where += " AND iv_date <= :dto"
-        base_params["dto"] = date_to
-
-    for source, table_name in _TABLE_MAP.items():
-        sql = f"""
-            SELECT * FROM {table_name}
-            {sql_where}
-            ORDER BY iv_date DESC
-        """
-        rows = fetch_all(session, sql, base_params)
-        for r in rows:
-            results.append((source, r))
-
-    def _sort_key(item: tuple[str, dict]):
-        row = item[1]
-        iv_dt = row.get("iv_date")
-        if isinstance(iv_dt, datetime):
-            dt_val = iv_dt
-        elif isinstance(iv_dt, date):
-            dt_val = datetime.combine(iv_dt, datetime.min.time())
-        else:
-            dt_val = datetime.min
-        raw_id = row.get("id")
-        try:
-            id_val = int(raw_id) if raw_id is not None else 0
-        except (ValueError, TypeError):
-            id_val = 0
-        return (dt_val, id_val)
-
-    results.sort(key=_sort_key, reverse=True)
-
-    census_nos = {
-        str(r.get("census_no")).strip()
-        for _, r in results
-        if r.get("census_no")
-    }
-    to_sus_nos = {
-        str(r.get("to_sus_no") or "").strip()
-        for _, r in results
-        if r.get("to_sus_no")
-    }
-    from_sus_nos = {
-        str(r.get("from_sus_no") or r.get("issued_from") or "").strip()
-        for _, r in results
-        if (r.get("from_sus_no") or r.get("issued_from"))
-    }
-    all_sus_nos = to_sus_nos | from_sus_nos
-
-    mlccs_map = _mlccs_details_for_census(session, census_nos)
-    unit_map = _orbat_names_map(session, all_sus_nos)
     hldg_labels = _holding_label_map(session)
     eqpt_labels = _eqpt_type_label_map(session)
 
+    raw_rows: list[dict[str, Any]] = []
+
+    st_clause = ", ".join(f":st_{i}" for i in range(len(target_statuses)))
+    base_params: dict[str, Any] = {
+        "dfrom": datetime.combine(body.date_from, datetime.min.time()),
+    }
+    for i, s in enumerate(target_statuses):
+        base_params[f"st_{i}"] = s.strip().upper()
+
+    if body.date_to is not None:
+        base_params["dto"] = datetime.combine(body.date_to, datetime.max.time())
+        sql_where = f"WHERE UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause}) AND iv_date BETWEEN :dfrom AND :dto"
+    else:
+        sql_where = f"WHERE UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause}) AND iv_date >= :dfrom"
+
+    sus_params = dict(base_params)
+    if filter_sus:
+        sus_params["fsus"] = filter_sus
+        sql_where_sus = sql_where + " AND (UPPER(to_sus_no) = :fsus OR UPPER(sus_no) = :fsus)"
+    elif filter_unit_name:
+        sus_params["funame"] = f"%{filter_unit_name}%"
+        sql_where_sus = sql_where + " AND (UPPER(to_sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame) OR UPPER(sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame))"
+    else:
+        sql_where_sus = sql_where
+
+    for src, tname in _TABLE_MAP.items():
+        sql = f"SELECT *, '{src}' AS source_table FROM {tname} {sql_where_sus}"
+        try:
+            r = fetch_all(session, sql, sus_params)
+            raw_rows.extend(r)
+        except Exception:
+            continue
+
+    raw_rows.sort(
+        key=lambda r: (
+            str(r.get("iv_date") or ""),
+            str(r.get("created_date") or ""),
+            str(r.get("id") or ""),
+        ),
+        reverse=True,
+    )
+
+    needed_suses: set[str] = set()
+    needed_census: set[str] = set()
+    for r in raw_rows:
+        to_s = str(r.get("to_sus_no") or r.get("sus_no") or "").strip()
+        from_s = str(r.get("from_sus_no") or r.get("issued_from") or "").strip()
+        if to_s:
+            needed_suses.add(to_s)
+        if from_s:
+            needed_suses.add(from_s)
+        cno = str(r.get("census_no") or "").strip()
+        if cno:
+            needed_census.add(cno)
+
+    unit_map = _unit_map_by_suses(session, needed_suses)
+    mlccs_map = _mlccs_details_for_census(session, needed_census)
+
     out: list[NewEqptOut] = []
-    for source, row in results:
-        census = str(row.get("census_no") or "").strip()
+    for row in raw_rows:
+        src = str(row.get("source_table") or "unit")
+        to_sus = str(row.get("to_sus_no") or row.get("sus_no") or "").strip()
+        from_sus = str(row.get("from_sus_no") or row.get("issued_from") or "").strip()
+        cno = str(row.get("census_no") or "").strip()
+        m_info = mlccs_map.get(cno.upper(), {})
+
+        hldg = str(row.get("type_of_hldg") or "").strip()
+        eqpt_type = str(row.get("type_of_eqpt") or "").strip()
         op = str(row.get("op_status") or "").strip().upper() or None
-        hldg = str(row.get("type_of_hldg") or "").strip() or None
-        eqpt_type = str(row.get("type_of_eqpt") or "").strip() or None
-        from_sus = str(row.get("from_sus_no") or row.get("issued_from") or "").strip() or None
-        holding_sus = str(row.get("to_sus_no") or "").strip()
 
-        mlccs_info = mlccs_map.get(census.upper(), {})
-        mat_no = str(row.get("material_no") or mlccs_info.get("material_no") or "").strip() or None
-        nomen = mlccs_info.get("nomen") or None
-        prf_grp = mlccs_info.get("prf_group") or None
-        pcode = str(row.get("prf_code") or mlccs_info.get("prf_code") or "").strip() or None
-
-        to_unit_name = unit_map.get(holding_sus.upper()) if holding_sus else None
+        pcode = (
+            row.get("prf_code")
+            or m_info.get("prf_code")
+            or None
+        )
+        prf_grp = (
+            row.get("prf_group")
+            or m_info.get("prf_group")
+            or None
+        )
+        nomen = m_info.get("nomen") or None
+        mat = row.get("material_no") or m_info.get("material_no") or None
 
         out.append(
             NewEqptOut(
-                id=str(row["id"]),
-                source_table=source,
+                id=str(row.get("id") or ""),
+                source_table=src,
                 iv_no=row.get("iv_no"),
                 iv_date=_fmt_date(row.get("iv_date")),
-                unit_name=to_unit_name,
-                sus_no=holding_sus or None,
-                material_no=mat_no,
-                census_no=census or None,
+                unit_name=(unit_map.get(to_sus.upper()) if to_sus else None),
+                sus_no=to_sus or None,
+                material_no=mat,
+                census_no=cno or None,
                 type_of_hldg=hldg,
                 type_of_hldg_label=(
                     hldg_labels.get(hldg.upper(), hldg) if hldg else None
@@ -419,6 +416,7 @@ def approve_new_eqpt(
     now = datetime.utcnow()
     actor = (principal.username or "system")[:25]
     approved: list[str] = []
+    approved_code = get_opstatus_code_value(session, "APPROVED", "1")
 
     for item in body.items:
         row_id = (item.get("id") or "").strip()
@@ -439,18 +437,13 @@ def approve_new_eqpt(
                 detail=f"Record '{row_id}' not found in {source}",
             )
         current = str(row.get("op_status") or "").strip().upper()
-        if current == _APPROVED_CODE or current == "A":
+        if current == approved_code.upper():
             continue
-        if current not in _PENDING_CODES and current not in ("", "2", "R"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Record '{row_id}' cannot be approved (status={current})",
-            )
 
         execute_sql(
             session,
             f"UPDATE {table_name} SET op_status = :st, approved_by = :app_by, approved_date = :app_dt WHERE id = :rid OR TO_CHAR(id) = :rid_str",
-            {"st": _APPROVED_CODE, "app_by": actor, "app_dt": now, "rid": row_id, "rid_str": row_id},
+            {"st": approved_code, "app_by": actor, "app_dt": now, "rid": row_id, "rid_str": row_id},
         )
         approved.append(f"{source}:{row_id}")
 
@@ -466,6 +459,7 @@ def reject_new_eqpt(
     now = datetime.utcnow()
     actor = (principal.username or "system")[:25]
     rejected: list[str] = []
+    rejected_code = get_opstatus_code_value(session, "REJECTED", "2")
 
     for item in body.items:
         row_id = (item.get("id") or "").strip()
@@ -482,9 +476,8 @@ def reject_new_eqpt(
         execute_sql(
             session,
             f"UPDATE {table_name} SET op_status = :st, approved_by = :app_by, approved_date = :app_dt WHERE id = :rid OR TO_CHAR(id) = :rid_str",
-            {"st": _REJECTED_CODE, "app_by": actor, "app_dt": now, "rid": row_id, "rid_str": row_id},
+            {"st": rejected_code, "app_by": actor, "app_dt": now, "rid": row_id, "rid_str": row_id},
         )
         rejected.append(f"{source}:{row_id}")
 
     return ApproveOut(approved_ids=rejected, count=len(rejected))
-

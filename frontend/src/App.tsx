@@ -1,4 +1,4 @@
-import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { AppLayout, type ModuleId, type WeaponSub } from "@/components/AppLayout";
 import { LoginScreen } from "@/components/LoginScreen";
@@ -45,7 +45,6 @@ import { useAuth } from "@/lib/auth-context";
 import { isAdmin } from "@/lib/auth";
 import { api } from "@/lib/api";
 import {
-  FileText,
   Link2,
   ClipboardList,
   Database,
@@ -72,24 +71,6 @@ import {
   ListChecks,
   Share2,
 } from "lucide-react";
-
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "MISO · Indian Army — Management Information System Organisation" },
-      {
-        name: "description",
-        content:
-          "MISO v5.0 — Indian Army Management Information System Organisation. Weapon, MLCCS, MMS Admin, Unit Holding, Reports and IT Asset management.",
-      },
-      { property: "og:title", content: "MISO · Indian Army" },
-      { property: "og:description", content: "Management Information System Organisation — Indian Army" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: Index,
-});
 
 const MMS_TILES = [
   { id: "link-eqpt-ue", label: "Link Eqpt with UE", icon: Link2, description: "Link census to item code" },
@@ -258,7 +239,7 @@ function parseLocation(pathname: string, search?: string) {
   }
 
   if (active === "weapon") {
-    activeSub = (parts[1] as WeaponSub) || "mlccs";
+    activeSub = (parts[1] as WeaponSub) || "mms-admin";
   }
 
   if (active === "weapon" && activeSub && parts.length > 2) {
@@ -285,7 +266,7 @@ function parseLocation(pathname: string, search?: string) {
   };
 }
 
-export function Index() {
+export default function App() {
   const { isAuthenticated, user, logout } = useAuth();
   const admin = isAdmin(user);
   const navigate = useNavigate();
@@ -303,7 +284,7 @@ export function Index() {
     activeReport,
   } = parseLocation(location.pathname, location.search);
 
-  const activeSub = !admin && parsedSub === "mms-admin" ? "mlccs" : parsedSub;
+  const activeSub = !admin && parsedSub === "mms-admin" ? "generate-ro" : parsedSub;
 
   const [showSplash, setShowSplash] = useState(false);
   const wasAuth = useRef(isAuthenticated);
@@ -314,7 +295,6 @@ export function Index() {
     return () => window.removeEventListener("mms:unauthorized", onUnauthorized);
   }, [logout]);
 
-  // Visual-only splash after a fresh login transition (not on session restore refresh).
   useEffect(() => {
     if (!wasAuth.current && isAuthenticated) setShowSplash(true);
     if (!isAuthenticated) setShowSplash(false);
@@ -323,13 +303,13 @@ export function Index() {
 
   const handleSelect = (m: ModuleId, sub?: WeaponSub) => {
     if (m === "dashboard") {
-      void navigate({ to: "/" });
+      navigate("/");
     } else if (m === "it-asset") {
-      void navigate({ to: "/it-asset" });
+      navigate("/it-asset");
     } else if (m === "weapon") {
-      const next = sub ?? "mlccs";
-      const targetSub = next === "mms-admin" && !admin ? "mlccs" : next;
-      void navigate({ to: `/weapon/${targetSub}` });
+      const next = sub ?? (admin ? "mms-admin" : "generate-ro");
+      const targetSub = next === "mms-admin" && !admin ? "generate-ro" : next;
+      navigate(`/weapon/${targetSub}`);
     }
   };
 
@@ -468,7 +448,7 @@ export function Index() {
             <SubModuleTiles
               tiles={MMS_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/mms-admin/${id}` })}
+              onSelect={(id) => navigate(`/weapon/mms-admin/${id}`)}
             />
           </div>
         )}
@@ -476,7 +456,7 @@ export function Index() {
           <FormScreen
             section="MMS Admin"
             title={activeTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/mms-admin" })}
+            onBack={() => navigate("/weapon/mms-admin")}
           >
             {activeMms === "link-eqpt-ue" && <LinkEqptUe />}
             {activeMms === "unit-obsn-status" && <UnitObsnStatus />}
@@ -493,7 +473,7 @@ export function Index() {
             <SubModuleTiles
               tiles={EP_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/ep-stores/${id}` })}
+              onSelect={(id) => navigate(`/weapon/ep-stores/${id}`)}
             />
           </div>
         )}
@@ -501,7 +481,7 @@ export function Index() {
           <FormScreen
             section="EP Stores"
             title={activeEpTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/ep-stores" })}
+            onBack={() => navigate("/weapon/ep-stores")}
           >
             {activeEp === "domain-master" && <EqptDomainMaster />}
             {activeEp === "sub-domain-master" && <SubDomainMaster />}
@@ -520,7 +500,7 @@ export function Index() {
             <SubModuleTiles
               tiles={RO_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/generate-ro/${id}` })}
+              onSelect={(id) => navigate(`/weapon/generate-ro/${id}`)}
             />
           </div>
         )}
@@ -528,7 +508,7 @@ export function Index() {
           <FormScreen
             section="Generate RO"
             title={activeRoTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/generate-ro" })}
+            onBack={() => navigate("/weapon/generate-ro")}
           >
             {activeRo === "drr-dir-upload" && <DrrDirUpload />}
             {activeRo === "generate-ro" && <GenerateRo />}
@@ -544,7 +524,7 @@ export function Index() {
             <SubModuleTiles
               tiles={MLCCS_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/mlccs/${id}` })}
+              onSelect={(id) => navigate(`/weapon/mlccs/${id}`)}
             />
           </div>
         )}
@@ -552,7 +532,7 @@ export function Index() {
           <FormScreen
             section="MLCCS"
             title={activeMlccsTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/mlccs" })}
+            onBack={() => navigate("/weapon/mlccs")}
           >
             {activeMlccs === "view-mlccs" && <ViewMlccs />}
           </FormScreen>
@@ -566,7 +546,7 @@ export function Index() {
             <SubModuleTiles
               tiles={TRANSFER_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/eqpt-transfer/${id}` })}
+              onSelect={(id) => navigate(`/weapon/eqpt-transfer/${id}`)}
             />
           </div>
         )}
@@ -574,7 +554,7 @@ export function Index() {
           <FormScreen
             section="EQPT Transfer/Deposit"
             title={activeTransferTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/eqpt-transfer" })}
+            onBack={() => navigate("/weapon/eqpt-transfer")}
           >
             {activeTransfer === "inter-unit" && <InterUnitTransfer />}
             {activeTransfer === "depot-to-depot" && <DepotToDepotTransfer />}
@@ -590,7 +570,7 @@ export function Index() {
             <SubModuleTiles
               tiles={HOLDING_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/unit-holding/${id}` })}
+              onSelect={(id) => navigate(`/weapon/unit-holding/${id}`)}
             />
           </div>
         )}
@@ -598,7 +578,7 @@ export function Index() {
           <FormScreen
             section="Unit Holding"
             title={activeHoldingTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/unit-holding" })}
+            onBack={() => navigate("/weapon/unit-holding")}
           >
             {activeHolding === "add-new-eqpt" && <AddNewEqpt />}
             {activeHolding === "approve-new-eqpt" && <ApproveNewEqpt />}
@@ -615,7 +595,7 @@ export function Index() {
             <SubModuleTiles
               tiles={REPORT_TILES}
               active=""
-              onSelect={(id) => void navigate({ to: `/weapon/reports/${id}` })}
+              onSelect={(id) => navigate(`/weapon/reports/${id}`)}
             />
           </div>
         )}
@@ -623,7 +603,7 @@ export function Index() {
           <FormScreen
             section="Reports"
             title={activeReportTile?.label ?? ""}
-            onBack={() => void navigate({ to: "/weapon/reports" })}
+            onBack={() => navigate("/weapon/reports")}
           >
             {activeReport === "all-india-holding" && <AllIndiaHolding />}
             {activeReport === "unit-wise-holding-data" && <UnitWiseHoldingData />}
@@ -652,7 +632,6 @@ export function Index() {
     </>
   );
 }
-
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (

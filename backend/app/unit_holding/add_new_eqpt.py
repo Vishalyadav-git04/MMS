@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
-from app.db.native_utils import execute_sql, fetch_all, fetch_one
+from app.db.native_utils import execute_sql, fetch_all, fetch_one, get_opstatus_code_value
 from app.utils.ids import next_int_id
 
 router = APIRouter(
@@ -20,7 +20,6 @@ router = APIRouter(
     tags=["unit-holding: add new eqpt"],
 )
 
-_OP_STATUS_PENDING = "0"
 _TFR_STATUS_PENDING = "PTFR"
 _SERVICE_STATUS_DEFAULT = "1"
 
@@ -461,6 +460,7 @@ def submit_items(
     upload_name = (body.upload_iv or "").strip()[:100] or None
 
     target_table = _table_for_bucket(bucket)
+    pending_op_status = get_opstatus_code_value(session, "PENDING", "0")
 
     ids: list[str] = []
     last_id: int | None = None
@@ -505,7 +505,7 @@ def submit_items(
                 "created_date": now,
                 "upload_by": actor if upload_name else None,
                 "upload_date": now if upload_name else None,
-                "op_status": _OP_STATUS_PENDING,
+                "op_status": pending_op_status,
                 "tfr_status": _TFR_STATUS_PENDING,
                 "upload_voucher": (upload_name[:50] if upload_name else None),
             }
@@ -546,7 +546,7 @@ def submit_items(
                 "created_date": now,
                 "upload_by": actor if upload_name else None,
                 "upload_date": now if upload_name else None,
-                "op_status": _OP_STATUS_PENDING,
+                "op_status": pending_op_status,
                 "tfr_status": _TFR_STATUS_PENDING,
                 "iv_no": body.iv_no.strip()[:25],
                 "iv_date": datetime.combine(body.iv_date, datetime.min.time()),

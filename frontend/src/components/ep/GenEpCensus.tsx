@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -74,12 +74,20 @@ interface FullForm {
   remarks: string;
 }
 
+const getTodayIso = (): string => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const emptyForm: FullForm = {
   subDomainId: "",
   subDomainName: "",
   censusNo: "",
   authLetterNo: "",
-  date: "",
+  date: getTodayIso(),
   catPartNo: "",
   accountingUnit: "",
   briefDescription: "",
@@ -89,7 +97,7 @@ const emptyForm: FullForm = {
   countryOfOrigin: "",
   nodalDte: "",
   eqptCategory: "",
-  yearOfInduction: "2026",
+  yearOfInduction: String(new Date().getFullYear()),
   digestCategory: "",
   cost: "",
   manufacturingAgency: "",
@@ -188,7 +196,7 @@ export function GenEpCensus() {
           domain_id: number | string;
         }>("/ep/gen-census/generate", {
           method: "POST",
-          body: JSON.stringify({ sub_domain_id: String(selected.id) }),
+          body: JSON.stringify({ sub_domain_id: String(selected.sub_domain_id ?? selected.id) }),
         }),
         api<CensusOptions>("/ep/gen-census/options"),
       ]);
@@ -197,6 +205,7 @@ export function GenEpCensus() {
         subDomainId: String(generated.sub_domain_id),
         subDomainName: generated.sub_domain_name,
         censusNo: generated.census_no,
+        date: getTodayIso(),
       });
       setOptions(fetchedOptions);
       setShowFull(true);
@@ -265,6 +274,16 @@ export function GenEpCensus() {
     }
   };
 
+  const handleClearForm = () => {
+    setForm({
+      ...emptyForm,
+      subDomainId: form.subDomainId,
+      subDomainName: form.subDomainName,
+      censusNo: form.censusNo,
+      date: getTodayIso(),
+    });
+  };
+
   if (showFull) {
     return (
       <MlccsEpForm
@@ -273,7 +292,7 @@ export function GenEpCensus() {
         options={options}
         busy={busy}
         onSave={() => void handleSave()}
-        onClear={handleClear}
+        onClear={handleClearForm}
         onCancel={() => setShowFull(false)}
       />
     );
@@ -290,13 +309,10 @@ export function GenEpCensus() {
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
             Clear
           </Button>
-          <Button variant="destructive" disabled={busy} onClick={handleClear}>
-            Cancel
-          </Button>
         </>
       }
     >
-      <div className="mx-auto max-w-3xl overflow-visible">
+      <div className="w-full overflow-visible">
         <FormRow label="Sub Domain Name" required>
           <div className="relative overflow-visible">
             <Input
@@ -388,26 +404,20 @@ function MlccsEpForm({
   return (
     <FormPanel
       title="Master List of Controlled and Census Stores (MLCCS) EP"
-      fill
       footer={
         <>
-          <Button variant="secondary" disabled={busy} onClick={onClear}>
-            Clear
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={onSave}
-          >
+          <Button disabled={busy} onClick={onSave}>
             Save
           </Button>
-          <Button variant="destructive" disabled={busy} onClick={onCancel}>
-            Cancel
+          <Button variant="secondary" disabled={busy} onClick={onClear}>
+            Clear
           </Button>
         </>
       }
     >
-      <div className="space-y-1.5 text-xs">
-        <FormGrid cols={4}>
+      <div className="space-y-2 pb-1">
+        <FormGrid cols={3}>
+          <FormSection title="1. Basic & Authorisation Particulars" />
           <FormRow label="Sub Domain Name" required>
             <Input value={form.subDomainName} disabled />
           </FormRow>
@@ -437,6 +447,8 @@ function MlccsEpForm({
               disabled={busy}
             />
           </FormRow>
+
+          <FormSection title="2. Classification & Domain References" />
           <FormRow label="Accounting Unit" required>
             <SelectField
               value={form.accountingUnit}
@@ -493,18 +505,20 @@ function MlccsEpForm({
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Year of Induction">
-            <Input
-              value={form.yearOfInduction}
-              onChange={(e) => upd("yearOfInduction", e.target.value)}
-              disabled={busy}
-            />
-          </FormRow>
           <FormRow label="Digest Category">
             <SelectField
               value={form.digestCategory}
               onChange={(v) => upd("digestCategory", v)}
               options={options.digest_category}
+              disabled={busy}
+            />
+          </FormRow>
+
+          <FormSection title="3. Financial, Technical & Agency Details" />
+          <FormRow label="Year of Induction">
+            <Input
+              value={form.yearOfInduction}
+              onChange={(e) => upd("yearOfInduction", e.target.value)}
               disabled={busy}
             />
           </FormRow>
@@ -548,18 +562,16 @@ function MlccsEpForm({
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Brief Description" required className="sm:col-span-2 lg:col-span-2">
-            <Textarea
-              rows={2}
+          <FormRow label="Brief Description" required className="mms-span-full">
+            <Input
               value={form.briefDescription}
               onChange={(e) => upd("briefDescription", e.target.value)}
-              placeholder="Enter Brief Description"
+              placeholder="Enter Description"
               disabled={busy}
             />
           </FormRow>
-          <FormRow label="Remarks" className="sm:col-span-2 lg:col-span-2">
-            <Textarea
-              rows={2}
+          <FormRow label="Remarks" className="mms-span-full">
+            <Input
               value={form.remarks}
               onChange={(e) => upd("remarks", e.target.value)}
               placeholder="Enter Remarks"

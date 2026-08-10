@@ -375,6 +375,26 @@
   gap: 12px 20px;
 }
 
+.mms-form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mms-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mms-form-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 768px) {
+  .mms-form-grid--2,
+  .mms-form-grid--3,
+  .mms-form-grid--4 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
 /* Tables inside panels — denser rows, same header treatment */
 .mms-panel table,
 .mms-form table {

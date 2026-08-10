@@ -100,3 +100,35 @@ def build_update_sql(
     combined_params = {**data, **where_params}
     sql = f"UPDATE {table_name} SET {set_str} WHERE {where_clause}"
     return sql, combined_params
+
+
+def get_opstatus_code_value(
+    session: Session,
+    label_or_name: str,
+    default_fallback: str,
+) -> str:
+    """Look up the code_value from MMS_DOMAIN_VALUES where domain_name is OPSTATUS
+    matching the given label_name or code_value (e.g. 'APPROVED', 'REJECTED', 'PENDING').
+    """
+    key = label_or_name.strip().upper()
+    sql = """
+        SELECT code_value FROM MMS_DOMAIN_VALUES
+        WHERE REPLACE(UPPER(domain_name), '_', '') = 'OPSTATUS'
+          AND (
+            UPPER(TRIM(label_name)) = :key
+            OR UPPER(TRIM(code_value)) = :key
+            OR UPPER(TRIM(label_name)) LIKE :like_key
+            OR UPPER(TRIM(code_value)) LIKE :like_key
+          )
+        ORDER BY CASE
+            WHEN UPPER(TRIM(label_name)) = :key THEN 1
+            WHEN UPPER(TRIM(code_value)) = :key THEN 2
+            WHEN UPPER(TRIM(label_name)) LIKE :like_key THEN 3
+            ELSE 4
+        END
+    """
+    row = fetch_one(session, sql, {"key": key, "like_key": f"%{key}%"})
+    if row and row.get("code_value"):
+        return str(row["code_value"]).strip()
+    return default_fallback
+

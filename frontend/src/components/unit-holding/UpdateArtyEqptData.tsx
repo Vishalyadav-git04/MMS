@@ -997,12 +997,7 @@ export function UpdateArtyEqptData() {
             <FormRow label="Type of Holding" className="md:col-span-2">
               <SelectField
                 value={form.typeOfHolding}
-                onChange={(v) => {
-                  upd("typeOfHolding", v);
-                  if (form.unit && form.prfGroup && form.censusNo) {
-                    handleSearch({ overrideTypeOfHolding: v });
-                  }
-                }}
+                onChange={(v) => upd("typeOfHolding", v)}
                 options={holdingOptions}
                 placeholder="--Select Type of Holding (or ALL)--"
               />

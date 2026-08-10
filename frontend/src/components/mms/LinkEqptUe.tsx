@@ -54,6 +54,7 @@ export function LinkEqptUe() {
   const [fetched, setFetched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [itemCode, setItemCode] = useState("");
+  const [initialItemCode, setInitialItemCode] = useState("");
   const [itemOptions, setItemOptions] = useState<ItemOption[]>([]);
   const [details, setDetails] = useState({
     catPartNo: "",
@@ -185,6 +186,7 @@ export function LinkEqptUe() {
     setNomSuggestions([]);
     setFetched(false);
     setItemCode("");
+    setInitialItemCode("");
     setItemOptions([]);
     setDetails({ catPartNo: "", prfGroup: "", cosSection: "" });
   };
@@ -210,7 +212,9 @@ export function LinkEqptUe() {
         prfGroup: rec.prf_group ?? "",
         cosSection: rec.cos_section ?? "",
       });
-      setItemCode(rec.item_code ?? "");
+      const fetchedCode = rec.item_code ?? "";
+      setItemCode(fetchedCode);
+      setInitialItemCode(fetchedCode);
       setFetched(true);
       setCensusSuggestions([]);
       setNomSuggestions([]);
@@ -245,11 +249,16 @@ export function LinkEqptUe() {
     }
   };
 
-  // Ensure current linked code appears in the list even if not under PRF
-  const selectOptions =
-    itemCode && !itemOptions.some((o) => o.value === itemCode)
-      ? [{ value: itemCode, label: itemCode }, ...itemOptions]
-      : itemOptions;
+  // Ensure current & initial linked code appear in the list even if not under PRF
+  const selectOptions = [...itemOptions];
+  if (initialItemCode && !selectOptions.some((o) => o.value === initialItemCode)) {
+    selectOptions.unshift({ value: initialItemCode, label: initialItemCode });
+  }
+  if (itemCode && !selectOptions.some((o) => o.value === itemCode)) {
+    selectOptions.unshift({ value: itemCode, label: itemCode });
+  }
+
+  const hasChanged = itemCode.trim() !== initialItemCode.trim();
 
   return (
     <FormPanel
@@ -264,34 +273,27 @@ export function LinkEqptUe() {
             >
               {busy ? "Fetching…" : "Fetch Details"}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={resetLookup}>
+            <Button
+              variant="secondary"
+              disabled={busy || (!censusNo.trim() && !nomenclature.trim())}
+              onClick={resetLookup}
+            >
               Clear
-            </Button>
-            <Button variant="destructive" disabled={busy} onClick={resetLookup}>
-              Cancel
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={() => void handleUpdate()} disabled={busy}>
+            <Button
+              onClick={() => void handleUpdate()}
+              disabled={busy || !hasChanged || !itemCode.trim()}
+              className="bg-primary hover:bg-primary/90"
+            >
               {busy ? "Updating…" : "Update"}
             </Button>
             <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => setItemCode("")}
-            >
-              Clear
-            </Button>
-            <Button
               variant="destructive"
-              disabled={busy}
-              onClick={() => {
-                setFetched(false);
-                setItemCode("");
-                setItemOptions([]);
-                setDetails({ catPartNo: "", prfGroup: "", cosSection: "" });
-              }}
+              disabled={busy || !hasChanged}
+              onClick={() => setItemCode(initialItemCode)}
             >
               Cancel
             </Button>
@@ -300,107 +302,109 @@ export function LinkEqptUe() {
       }
     >
       {!fetched ? (
-        <div className="mx-auto max-w-3xl space-y-4 overflow-visible pt-2">
-          <FormRow label="Census No" required>
-            <SuggestInput
-              value={censusNo}
-              placeholder="Search..."
-              suggestions={censusSuggestions.map((r) => r.census_no)}
-              renderItem={(s, idx) => {
-                const row = censusSuggestions[idx];
-                return (
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium">{s}</span>
-                    {row?.nomenclature && (
-                      <span className="text-xs text-muted-foreground truncate">
-                        {row.nomenclature}
-                      </span>
-                    )}
-                  </span>
-                );
-              }}
-              onChange={(v) => {
-                setNomSuggestions([]);
-                setCensusNo(v);
-                setNomenclature("");
-              }}
-              onPick={(idx) => {
-                const row = censusSuggestions[idx];
-                if (row) pickCensusSuggestion(row);
-              }}
-            />
-          </FormRow>
-          <FormRow label="Nomenclature" required>
-            <SuggestInput
-              value={nomenclature}
-              placeholder="Search..."
-              disabled={busy}
-              suggestions={nomSuggestions.map((r) => r.nomenclature ?? r.census_no)}
-              renderItem={(s, idx) => {
-                const row = nomSuggestions[idx];
-                return (
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium truncate">{s}</span>
-                    {row?.census_no && (
-                      <span className="text-xs text-muted-foreground">{row.census_no}</span>
-                    )}
-                  </span>
-                );
-              }}
-              onChange={(v) => {
-                setCensusSuggestions([]);
-                setNomenclature(v);
-                setCensusNo("");
-              }}
-              onPick={(idx) => {
-                const row = nomSuggestions[idx];
-                if (row) pickNomSuggestion(row);
-              }}
-            />
-          </FormRow>
+        <div className="w-full space-y-4 overflow-visible pt-2">
+          <FormGrid className="gap-y-4 gap-x-6" style={{ gridTemplateColumns: "1fr 1.8fr" }}>
+            <FormRow label="Census No" required>
+              <SuggestInput
+                value={censusNo}
+                placeholder="Search..."
+                suggestions={censusSuggestions.map((r) => r.census_no)}
+                renderItem={(s, idx) => {
+                  const row = censusSuggestions[idx];
+                  return (
+                    <span className="flex flex-col gap-0.5">
+                      <span className="font-medium">{s}</span>
+                      {row?.nomenclature && (
+                        <span className="text-xs text-muted-foreground truncate">
+                          {row.nomenclature}
+                        </span>
+                      )}
+                    </span>
+                  );
+                }}
+                onChange={(v) => {
+                  setNomSuggestions([]);
+                  setCensusNo(v);
+                  setNomenclature("");
+                }}
+                onPick={(idx) => {
+                  const row = censusSuggestions[idx];
+                  if (row) pickCensusSuggestion(row);
+                }}
+              />
+            </FormRow>
+            <FormRow label="Nomenclature" required>
+              <SuggestInput
+                value={nomenclature}
+                placeholder="Search..."
+                disabled={busy}
+                suggestions={nomSuggestions.map((r) => r.nomenclature ?? r.census_no)}
+                renderItem={(s, idx) => {
+                  const row = nomSuggestions[idx];
+                  return (
+                    <span className="flex flex-col gap-0.5">
+                      <span className="font-medium truncate">{s}</span>
+                      {row?.census_no && (
+                        <span className="text-xs text-muted-foreground">{row.census_no}</span>
+                      )}
+                    </span>
+                  );
+                }}
+                onChange={(v) => {
+                  setCensusSuggestions([]);
+                  setNomenclature(v);
+                  setCensusNo("");
+                }}
+                onPick={(idx) => {
+                  const row = nomSuggestions[idx];
+                  if (row) pickNomSuggestion(row);
+                }}
+              />
+            </FormRow>
+          </FormGrid>
         </div>
       ) : (
-        <div className="mx-auto max-w-3xl space-y-3 pt-2">
-          <FormGrid>
+        <div className="w-full space-y-4 pt-2">
+          <FormGrid className="gap-y-4 gap-x-6" style={{ gridTemplateColumns: "1fr 1.8fr" }}>
             <FormRow label="Census No" required>
               <Input value={censusNo} disabled />
+            </FormRow>
+            <FormRow label="Nomenclature" required>
+              <Input value={nomenclature} disabled />
             </FormRow>
             <FormRow label="Cat/Part No" required>
               <Input value={details.catPartNo} disabled />
             </FormRow>
+            <FormRow label="PRF Group" required>
+              <Input value={details.prfGroup} disabled />
+            </FormRow>
+            <FormRow label="Linked Item Code" required className="col-span-2">
+              <Select
+                value={itemCode || undefined}
+                onValueChange={setItemCode}
+                disabled={busy}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      !details.prfGroup
+                        ? "No PRF Group on record"
+                        : selectOptions.length
+                          ? "-- Select Item Code --"
+                          : "No item codes for this PRF"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormRow>
           </FormGrid>
-          <FormRow label="Nomenclature" required>
-            <Textarea rows={1} value={nomenclature} disabled />
-          </FormRow>
-          <FormRow label="PRF Group" required>
-            <Input value={details.prfGroup} disabled />
-          </FormRow>
-          <FormRow label="Linked Item Code" required>
-            <Select
-              value={itemCode || undefined}
-              onValueChange={setItemCode}
-              disabled={busy}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    !details.prfGroup
-                      ? "No PRF Group on record"
-                      : selectOptions.length
-                        ? "-- Select Item Code --"
-                        : "No item codes for this PRF"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {selectOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormRow>
         </div>
       )}
     </FormPanel>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Search } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { api, uploadFileApi } from "@/lib/api";
 import { pageHasInvalidDateInputs } from "@/lib/date";
 import { toast } from "sonner";
@@ -25,83 +26,136 @@ interface UnitOption {
 
 interface DomainOption {
   id: number | string;
+  domain_id?: number | string;
   eqpt_cat: string;
 }
 
 interface SubDomainOption {
   id: number | string;
+  sub_domain_id?: number | string;
   sub_domain_name: string;
 }
 
-function UnitLookup({
-  label,
-  search,
-  onSearchChange,
+function SuggestInput({
   value,
-  onValueChange,
-  options,
-  onSearch,
+  placeholder,
+  disabled,
+  suggestions,
+  renderItem,
+  maxHeightClass = "max-h-52",
+  onChange,
+  onPick,
 }: {
-  label: string;
-  search: string;
-  onSearchChange: (v: string) => void;
   value: string;
-  onValueChange: (v: string) => void;
-  options: UnitOption[];
-  onSearch: () => void;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: string[];
+  renderItem?: (s: string, idx: number) => ReactNode;
+  maxHeightClass?: string;
+  onChange: (v: string) => void;
+  onPick: (idx: number) => void;
 }) {
-  const filteredOptions = useMemo(() => {
-    const q = search.trim().toUpperCase();
-    if (!q) return options;
-    return options.filter(
-      (o) =>
-        o.sus_no.toUpperCase().includes(q) ||
-        o.unit_name.toUpperCase().includes(q) ||
-        o.display.toUpperCase().includes(q),
-    );
-  }, [options, search]);
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  const designMaxHeight = (() => {
+    const n = Number(maxHeightClass.match(/max-h-(\d+)/)?.[1]);
+    return Number.isFinite(n) && n > 0 ? n * 4 : 200;
+  })();
+
+  const updateCoords = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const top = r.bottom + 4;
+    const footer = el.closest(".mms-panel")?.querySelector(".mms-panel__foot");
+    const ceiling = footer ? footer.getBoundingClientRect().top : window.innerHeight;
+    setCoords({
+      top,
+      left: r.left,
+      width: r.width,
+      maxHeight: Math.min(designMaxHeight, Math.max(40, ceiling - top - 8)),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open || suggestions.length === 0) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
+    const onScroll = () => updateCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, suggestions]);
+
+  const showList = open && suggestions.length > 0 && coords;
 
   return (
-    <FormRow label={label} required>
-      <div className="flex gap-1">
-        <div className="flex min-w-0 flex-1 gap-1">
-          <Input
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onSearch();
-              }
+    <div className="relative overflow-visible">
+      <Input
+        ref={inputRef}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        autoComplete="off"
+        onChange={(e) => {
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          onChange(val);
+          setOpen(Boolean(val.trim()));
+        }}
+        onFocus={() => {
+          setOpen(Boolean(value.trim()));
+          updateCoords();
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+        }}
+      />
+      {showList &&
+        createPortal(
+          <ul
+            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              maxHeight: coords.maxHeight,
+              zIndex: 100,
             }}
-          />
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            className="h-7 w-7 shrink-0"
-            onClick={onSearch}
           >
-            <Search className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="min-w-0 flex-[1.4]">
-          <Select value={value} onValueChange={onValueChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="--Select Unit--" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {filteredOptions.map((o) => (
-                <SelectItem key={o.sus_no} value={o.sus_no}>
-                  {o.display}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-    </FormRow>
+            {suggestions.map((s, idx) => (
+              <li key={`${s}-${idx}`}>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (blurTimer.current) window.clearTimeout(blurTimer.current);
+                    onPick(idx);
+                    setOpen(false);
+                  }}
+                >
+                  {renderItem ? renderItem(s, idx) : s}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
+    </div>
   );
 }
 
@@ -209,13 +263,78 @@ export function EpIutTransfer() {
       .catch(() => toast.error("Failed to load EQPT Sub Domains"));
   }, [parentSusNo, domainId]);
 
-  const handleSearchReceivingUnits = () => {
-    api<UnitOption[]>(`/ep/iut/receiving-units?search=${encodeURIComponent(receivingSearch)}`)
-      .then((data) => {
-        setReceivingUnits(data);
-        toast.success(`Found ${data.length} receiving unit(s)`);
-      })
-      .catch(() => toast.error("Failed to search receiving units"));
+  const matchingParentUnits = useMemo(() => {
+    const q = parentSearch.trim().toLowerCase();
+    if (!q) return [];
+    return parentUnits
+      .filter(
+        (u) =>
+          u.sus_no.toLowerCase().includes(q) ||
+          u.unit_name.toLowerCase().includes(q) ||
+          u.display.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [parentUnits, parentSearch]);
+
+  const parentSuggestions = useMemo(
+    () => matchingParentUnits.map((u) => u.display),
+    [matchingParentUnits],
+  );
+
+  const pickParentUnit = (idx: number) => {
+    const chosen = matchingParentUnits[idx];
+    if (!chosen) return;
+    setParentSearch(chosen.display);
+    setParentSusNo(chosen.sus_no);
+  };
+
+  const handleParentSearchChange = (v: string) => {
+    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+    setParentSearch(cleaned);
+    const match = parentUnits.find(
+      (u) =>
+        u.display.toLowerCase() === cleaned.trim().toLowerCase() ||
+        u.sus_no.toLowerCase() === cleaned.trim().toLowerCase() ||
+        u.unit_name.toLowerCase() === cleaned.trim().toLowerCase(),
+    );
+    setParentSusNo(match ? match.sus_no : "");
+  };
+
+  const matchingReceivingUnits = useMemo(() => {
+    const q = receivingSearch.trim().toLowerCase();
+    if (!q) return [];
+    return receivingUnits
+      .filter(
+        (u) =>
+          u.sus_no.toLowerCase().includes(q) ||
+          u.unit_name.toLowerCase().includes(q) ||
+          u.display.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [receivingUnits, receivingSearch]);
+
+  const receivingSuggestions = useMemo(
+    () => matchingReceivingUnits.map((u) => u.display),
+    [matchingReceivingUnits],
+  );
+
+  const pickReceivingUnit = (idx: number) => {
+    const chosen = matchingReceivingUnits[idx];
+    if (!chosen) return;
+    setReceivingSearch(chosen.display);
+    setReceivingSusNo(chosen.sus_no);
+  };
+
+  const handleReceivingSearchChange = (v: string) => {
+    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+    setReceivingSearch(cleaned);
+    const match = receivingUnits.find(
+      (u) =>
+        u.display.toLowerCase() === cleaned.trim().toLowerCase() ||
+        u.sus_no.toLowerCase() === cleaned.trim().toLowerCase() ||
+        u.unit_name.toLowerCase() === cleaned.trim().toLowerCase(),
+    );
+    setReceivingSusNo(match ? match.sus_no : "");
   };
 
   const filteredAvailable = useMemo(() => {
@@ -376,6 +495,7 @@ export function EpIutTransfer() {
     <FormPanel
       title="EP IUT : INTER UNIT TRANSFER"
       fill={listLoaded}
+      overflowVisible
       footer={
         <>
           <Button type="button" onClick={handleGetRegn}>
@@ -394,17 +514,17 @@ export function EpIutTransfer() {
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="space-y-3">
         <FormSection title="Parent unit details" />
-        <UnitLookup
-          label="Parent Unit"
-          search={parentSearch}
-          onSearchChange={setParentSearch}
-          value={parentSusNo}
-          onValueChange={setParentSusNo}
-          options={parentUnits}
-          onSearch={() => toast.info("Filter Parent Units using search box")}
-        />
+        <FormRow label="Parent Unit" required>
+          <SuggestInput
+            placeholder="Search..."
+            value={parentSearch}
+            suggestions={parentSuggestions}
+            onChange={handleParentSearchChange}
+            onPick={pickParentUnit}
+          />
+        </FormRow>
         <FormGrid cols={2}>
           <FormRow label="EQPT Domain" required>
             <Select
@@ -420,7 +540,7 @@ export function EpIutTransfer() {
               </SelectTrigger>
               <SelectContent className="max-h-72">
                 {domains.map((d) => (
-                  <SelectItem key={d.id} value={String(d.id)}>
+                  <SelectItem key={d.id} value={String(d.domain_id ?? d.id)}>
                     {d.eqpt_cat}
                   </SelectItem>
                 ))}
@@ -441,7 +561,7 @@ export function EpIutTransfer() {
               </SelectTrigger>
               <SelectContent className="max-h-72">
                 {subDomains.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
+                  <SelectItem key={s.id} value={String(s.sub_domain_id ?? s.id)}>
                     {s.sub_domain_name}
                   </SelectItem>
                 ))}
@@ -468,15 +588,15 @@ export function EpIutTransfer() {
         </FormGrid>
 
         <FormSection title="Receiving unit details" />
-        <UnitLookup
-          label="Receiving Unit"
-          search={receivingSearch}
-          onSearchChange={setReceivingSearch}
-          value={receivingSusNo}
-          onValueChange={setReceivingSusNo}
-          options={receivingUnits}
-          onSearch={handleSearchReceivingUnits}
-        />
+        <FormRow label="Receiving Unit" required>
+          <SuggestInput
+            placeholder="Search..."
+            value={receivingSearch}
+            suggestions={receivingSuggestions}
+            onChange={handleReceivingSearchChange}
+            onPick={pickReceivingUnit}
+          />
+        </FormRow>
 
         {listLoaded && (
           <>

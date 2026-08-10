@@ -186,19 +186,27 @@ def generate_census(
     body: GenerateCensusIn,
     session: Session = Depends(get_db_session),
 ) -> GenerateCensusOut:
-    sub = get_by_id(session, "MMS_EP_SUB_DOMAIN", body.sub_domain_id)
+    sub = fetch_one(
+        session,
+        "SELECT * FROM MMS_EP_SUB_DOMAIN WHERE sub_domain_id = :sdid OR TO_CHAR(sub_domain_id) = :sdid OR id = :sdid OR TO_CHAR(id) = :sdid",
+        {"sdid": str(body.sub_domain_id).strip()},
+    )
     if sub is None:
         raise HTTPException(status_code=400, detail="Invalid Sub Domain selected")
 
-    domain = get_by_id(session, "MMS_EP_DOMAIN_MASTER", sub.get("equipment_domain_id"))
+    domain = fetch_one(
+        session,
+        "SELECT * FROM MMS_EP_DOMAIN_MASTER WHERE domain_id = :did OR TO_CHAR(domain_id) = :did OR id = :did OR TO_CHAR(id) = :did",
+        {"did": str(sub.get("equipment_domain_id")).strip()},
+    )
     if domain is None:
         raise HTTPException(status_code=400, detail="Sub Domain has no valid Domain")
 
     return GenerateCensusOut(
         census_no=_next_census_no(session, domain, sub),
-        sub_domain_id=str(sub.get("id")),
+        sub_domain_id=str(sub.get("sub_domain_id") if sub.get("sub_domain_id") is not None else sub.get("id")),
         sub_domain_name=str(sub.get("sub_domain_name")),
-        domain_id=str(sub.get("equipment_domain_id")),
+        domain_id=str(domain.get("domain_id") if domain.get("domain_id") is not None else (domain.get("id") or sub.get("equipment_domain_id"))),
     )
 
 
@@ -270,7 +278,7 @@ def save_census(
     insert_sql = """
         INSERT INTO MMS_EP_MSTR (
             id, domain_id, sub_domain_id, census_no, auth_letter_no, auth_date,
-            cat_part_no, brief_description, accounting_unit, item_status, item_category,
+            cat_part_no, brief_description, accounting_unit, item_stauts, item_category,
             class_of_equipment, nodal_directorate, digest_category, equipment_category,
             country, year_of_induction, cost, manufacturing_agency, ahsp_agency,
             nato_stock_no, defence_catalogue_no, status, remarks, created_by, created_date

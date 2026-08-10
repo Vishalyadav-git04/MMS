@@ -1,6 +1,6 @@
-# MMS Frontend — React / TanStack Start
+# MMS Frontend — React / Vite SPA
 
-The frontend web interface for the Material / Master List Management System (MMS), built with React 19, TanStack Start, Vite, and Tailwind CSS.
+The frontend web interface for the Material / Master List Management System (MMS), built with React 19, React Router (`react-router-dom`), Vite, and Tailwind CSS.
 
 ---
 
@@ -51,6 +51,8 @@ To test and build the production bundle:
 npm run build
 ```
 
+The production output is built into **`frontend/dist/`**.
+
 To preview the built production bundle:
 
 ```sh
@@ -63,25 +65,26 @@ npm run preview
 
 ```
 frontend/
+├── index.html          # HTML entry point
+├── dist/               # Production build output
 ├── .env                # Local environment configuration (VITE_API_BASE_URL)
 ├── .env.staging        # Staging environment configuration
 ├── package.json        # Dependencies and build scripts
 ├── vite.config.ts      # Vite dev server configuration (Port 3000, Proxy to :8000)
 ├── tsconfig.json       # TypeScript compiler settings
-├── public/             # Static assets and public resources
 └── src/
+    ├── App.tsx         # Main application component & router navigation
+    ├── main.tsx        # React client entry point
     ├── api/            # API client services and backend integrations
     ├── components/     # UI Components grouped by module screen:
-    │   ├── admin/      # Admin module (MLCCS Capture, Domain Master, Links, Unit Obsn)
+    │   ├── mms/        # MMS Admin module (MLCCS Capture, Domain Master, Links, Unit Obsn)
     │   ├── ep/         # EP Stores module (Domain Master, Gen Census, Capture EP, IUT)
     │   ├── mlccs/      # MLCCS View module
     │   ├── ro/         # Release Order (RO) module (Generate RO, Search RO, DRR Upload)
     │   ├── transfer/   # Transfer module (Inter Unit, Depot to Depot, Unit to Depot)
-    │   ├── unit_holding/# Unit Holding module (Add/Approve/Update Eqpt Data)
+    │   ├── unit-holding/# Unit Holding module (Add/Approve/Update Eqpt Data)
     │   ├── dashboard/  # Main Dashboard components
     │   └── ui/         # Reusable UI elements (Radix primitives, Buttons, Inputs, Dialogs)
-    ├── routes/         # TanStack file-based routing definitions
     ├── lib/            # Utility functions and shared helpers
-    ├── server.ts       # TanStack Start SSR entry point
     └── styles/         # Global CSS styles and Tailwind setup
 ```

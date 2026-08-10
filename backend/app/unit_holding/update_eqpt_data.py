@@ -517,7 +517,7 @@ def search_eqpt(
             sql += " AND UPPER(TRIM(type_of_hldg)) = :hldg"
             params["hldg"] = hldg
         if regd:
-            sql += " AND UPPER(eqpt_regn_no) LIKE :regd"
+            sql += " AND UPPER(TRIM(eqpt_regn_no)) LIKE :regd"
             params["regd"] = f"%{regd}%"
 
         sql += " ORDER BY eqpt_regn_no"
