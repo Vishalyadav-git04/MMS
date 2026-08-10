@@ -221,6 +221,9 @@ export function CaptureEpStores() {
   const [holding, setHolding] = useState(createEmptyHolding);
   const [authLetterFileObj, setAuthLetterFileObj] = useState<File | null>(null);
   const [voucherFileObj, setVoucherFileObj] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0);
+  const authLetterFileRef = useRef<HTMLInputElement | null>(null);
+  const voucherFileRef = useRef<HTMLInputElement | null>(null);
   const [equipRows, setEquipRows] = useState<EquipRow[]>([
     { regdNo: "", serviceability: "SR" },
   ]);
@@ -336,6 +339,9 @@ export function CaptureEpStores() {
     setHolding(createEmptyHolding());
     setAuthLetterFileObj(null);
     setVoucherFileObj(null);
+    if (authLetterFileRef.current) authLetterFileRef.current.value = "";
+    if (voucherFileRef.current) voucherFileRef.current.value = "";
+    setFileKey((k) => k + 1);
     setEquipRows([{ regdNo: "", serviceability: serviceOptions[0]?.code_value ?? "SR" }]);
     setIssuerUnits([]);
     setHoldingUnits([]);
@@ -588,6 +594,8 @@ export function CaptureEpStores() {
           </FormRow>
           <FormRow label="Upload Auth Letter">
             <Input
+              key={`auth-letter-${fileKey}`}
+              ref={authLetterFileRef}
               type="file"
               className="h-auto py-1"
               disabled={busy}
@@ -743,6 +751,8 @@ export function CaptureEpStores() {
           </FormRow>
           <FormRow label="Upload Voucher">
             <Input
+              key={`voucher-${fileKey}`}
+              ref={voucherFileRef}
               type="file"
               className="h-auto py-1"
               disabled={busy}

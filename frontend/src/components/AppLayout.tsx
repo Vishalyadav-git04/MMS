@@ -287,8 +287,8 @@ export function AppLayout({
             <div
               className={
                 formOpen
-                  ? "mms-content-inner flex h-full min-h-0 flex-col px-[12px] pb-3 pt-2 sm:px-[24px] sm:pb-4 sm:pt-3"
-                  : "mms-content-inner min-h-full px-[14px] pb-12 pt-[18px] sm:px-[34px] sm:pb-[60px] sm:pt-[26px]"
+                  ? "mms-content-inner flex h-full min-h-0 flex-col px-2 pb-3 pt-2 sm:px-3.5 sm:pb-4 sm:pt-3"
+                  : "mms-content-inner min-h-full px-2.5 pb-8 pt-3 sm:px-4 sm:pb-12 sm:pt-4"
               }
             >
               <motion.div

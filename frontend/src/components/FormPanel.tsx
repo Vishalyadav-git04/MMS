@@ -53,7 +53,7 @@ export function FormPanel({
         {extra ? <div className="mms-panel__extra">{extra}</div> : null}
       </div>
       {tabs && (
-        <div className="shrink-0 border-b border-[var(--line-soft,#dfe9f4)] bg-[var(--surface-alt,#eff5fb)] px-6 pt-2">
+        <div className="shrink-0 border-b border-[var(--line-soft,#dfe9f4)] bg-[var(--surface-alt,#eff5fb)] px-3.5 pt-2">
           {tabs}
         </div>
       )}
@@ -73,7 +73,7 @@ export function FormPanel({
         {children}
       </div>
       {(footer || handleBack) && (
-        <div className="mms-panel__foot shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] relative z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+        <div className="mms-panel__foot shrink-0 flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] relative z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           {handleBack ? (
             <Button
               type="button"

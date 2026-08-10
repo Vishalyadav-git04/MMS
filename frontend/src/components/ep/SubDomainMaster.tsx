@@ -149,6 +149,7 @@ export function SubDomainMaster() {
               onValueChange={(v) => {
                 const nextId = v === "__all__" ? "" : v;
                 setEqptCatId(nextId);
+                void handleSearch(nextId);
               }}
               disabled={busy}
               onOpenChange={(open) => {

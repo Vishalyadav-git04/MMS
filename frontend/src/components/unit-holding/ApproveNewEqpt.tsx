@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
-import { CheckCircle2, Eye, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, XCircle, FileText, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -71,7 +71,7 @@ interface NewEqptRow {
 
 type OptionsMap = Record<string, { value: string; label: string }[]>;
 
-function DetailField({ label, value }: { label: string; value?: string | null }) {
+function DetailField({ label, value }: { label: string; value?: ReactNode | string | null }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5">
       <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -80,6 +80,64 @@ function DetailField({ label, value }: { label: string; value?: string | null })
       <span className="text-[13.5px] font-semibold text-foreground truncate">
         {value || "—"}
       </span>
+    </div>
+  );
+}
+
+function FileDetailField({
+  label,
+  filename,
+  onPreview,
+}: {
+  label: string;
+  filename?: string | null;
+  onPreview: (filename: string, title: string) => void;
+}) {
+  if (!filename) {
+    return <DetailField label={label} value="—" />;
+  }
+
+  const fileUrl = `/upload/${encodeURIComponent(filename)}`;
+
+  return (
+    <div className="flex flex-col gap-0.5 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-primary">
+        {label}
+      </span>
+      <div className="flex items-center justify-between gap-1 mt-0.5">
+        <button
+          type="button"
+          onClick={() => onPreview(filename, label)}
+          className="flex items-center gap-1.5 min-w-0 text-left hover:underline group cursor-pointer"
+          title={`Click to view ${filename}`}
+        >
+          <FileText className="h-4 w-4 shrink-0 text-primary group-hover:scale-110 transition-transform" />
+          <span className="text-[13.5px] font-semibold text-primary truncate max-w-[140px]">
+            {filename}
+          </span>
+        </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-primary hover:bg-primary/20"
+            title="Preview Document"
+            onClick={() => onPreview(filename, label)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+          <a
+            href={fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open in new tab / Download"
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-primary hover:bg-primary/20 transition-colors"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
@@ -224,6 +282,7 @@ export function ApproveNewEqpt() {
 
   const [viewItem, setViewItem] = useState<NewEqptRow | null>(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ filename: string; title: string } | null>(null);
 
   const upd = <K extends keyof ReturnType<typeof emptyForm>>(
     k: K,
@@ -665,11 +724,47 @@ export function ApproveNewEqpt() {
                 <DetailField label="Depreciation %" value={viewItem.depres_dur_year} />
                 <DetailField label="Life (Yr)" value={viewItem.life_of_asset} />
                 <div className="sm:col-span-2">
-                  <DetailField label="Upload IV" value={viewItem.upload_iv} />
+                  <FileDetailField
+                    label="Upload IV"
+                    filename={viewItem.upload_iv}
+                    onPreview={(fn, title) => setPreviewDoc({ filename: fn, title })}
+                  />
                 </div>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewDoc} onOpenChange={(open) => !open && setPreviewDoc(null)}>
+        <DialogContent className="max-w-5xl h-[85vh] p-4 flex flex-col gap-3">
+          <DialogHeader className="flex flex-row items-center justify-between border-b pb-2">
+            <DialogTitle className="text-base font-bold text-primary flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              {previewDoc?.title}: {previewDoc?.filename}
+            </DialogTitle>
+            {previewDoc && (
+              <a
+                href={`/upload/${encodeURIComponent(previewDoc.filename)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline mr-6"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Open in New Tab
+              </a>
+            )}
+          </DialogHeader>
+
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-md overflow-hidden border border-border">
+            {previewDoc && (
+              <iframe
+                src={`/upload/${encodeURIComponent(previewDoc.filename)}`}
+                className="w-full h-full border-0"
+                title={previewDoc.filename}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </FormPanel>

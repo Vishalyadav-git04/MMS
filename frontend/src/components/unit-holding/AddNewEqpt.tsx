@@ -215,6 +215,8 @@ export function AddNewEqpt() {
   const [toUnitField, setToUnitField] = useState<"name" | "sus" | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [ivFile, setIvFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0);
+  const ivFileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   const upd = <K extends keyof ReturnType<typeof getEmptyForm>>(
@@ -305,6 +307,8 @@ export function AddNewEqpt() {
   const handleClear = () => {
     setForm(getEmptyForm());
     setIvFile(null);
+    if (ivFileRef.current) ivFileRef.current.value = "";
+    setFileKey((k) => k + 1);
     setCensusOptions([]);
     setToUnitHits([]);
     setToUnitField(null);
@@ -721,6 +725,8 @@ export function AddNewEqpt() {
           </FormRow>
           <FormRow label="Upload IV" className="sm:col-span-2">
             <Input
+              key={`iv-file-${fileKey}`}
+              ref={ivFileRef}
               type="file"
               className="h-auto py-0.5"
               onChange={(e) => {

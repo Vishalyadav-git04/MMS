@@ -281,6 +281,7 @@ export function GenEpCensus() {
       subDomainName: form.subDomainName,
       censusNo: form.censusNo,
       date: getTodayIso(),
+      yearOfInduction: String(new Date().getFullYear()),
     });
   };
 
