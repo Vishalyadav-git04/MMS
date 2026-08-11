@@ -738,7 +738,7 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
                   Loading full record details...
                 </div>
               ) : viewRecord ? (
-                <div className="space-y-4 pt-1">
+                <div className="flex flex-col gap-4 pt-1">
                   <FormSection title="1. Basic & Authorisation Particulars" />
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <DetailField label="COS Section" value={viewRecord.cos_section} />

@@ -128,20 +128,20 @@ export function AppLayout({
           <div className="flex items-center gap-3 min-w-0">
             <BrandEmblem size="sm" className="shrink-0 rounded-full" />
             <div className="hidden sm:block min-w-0">
-              <div className="text-[12.5px] font-bold uppercase tracking-[0.13em] text-primary">
+              <div className="text-[14px] font-bold uppercase tracking-[0.13em] text-primary">
                 Indian Army
               </div>
-              <div className="mms-brand__sub text-[13.5px] font-semibold text-foreground">
+              <div className="mms-brand__sub text-[15px] font-semibold text-foreground">
                 भारतीय सेना
               </div>
             </div>
           </div>
 
           <div className="text-center min-w-0">
-            <h1 className="truncate text-base sm:text-[18px] font-bold text-primary tracking-[-0.02em]">
+            <h1 className="truncate text-[17px] sm:text-[20px] font-bold text-primary tracking-[-0.02em]">
               MANAGEMENT INFORMATION SYSTEM ORGANISATION
             </h1>
-            <div className="mms-brand__sub text-[13.5px] text-muted-foreground tracking-wider">
+            <div className="mms-brand__sub text-[15px] text-muted-foreground tracking-wider">
               MISO · Version 5.0
             </div>
           </div>
@@ -201,7 +201,7 @@ export function AppLayout({
                 </ul>
               </PopoverContent>
             </Popover>
-            <div className="hidden md:block text-right text-[13.5px] tabular-nums leading-tight">
+            <div className="hidden md:block text-right text-[15px] tabular-nums leading-tight">
               <div className="font-medium text-foreground">
                 {new Date().toLocaleDateString("en-GB")}
               </div>
@@ -213,7 +213,7 @@ export function AppLayout({
               </div>
             </div>
             <div
-              className="hidden sm:flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-[13.5px] font-semibold uppercase tracking-wide text-foreground"
+              className="hidden sm:flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-[15px] font-semibold uppercase tracking-wide text-foreground"
               title={username}
             >
               {username}
@@ -221,7 +221,7 @@ export function AppLayout({
             <button
               type="button"
               onClick={logout}
-              className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-[13.5px] font-semibold text-destructive-foreground hover:opacity-90 cursor-pointer"
+              className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-[15px] font-semibold text-destructive-foreground hover:opacity-90 cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />
               Logout
@@ -229,7 +229,7 @@ export function AppLayout({
           </div>
         </div>
 
-        <div className="mms-breadcrumb px-4 py-1.5 text-[14.5px] font-semibold flex items-center gap-2">
+        <div className="mms-breadcrumb px-4 py-1.5 text-[16px] font-semibold flex items-center gap-2">
           <button
             type="button"
             onClick={() => onSelect("dashboard")}
@@ -242,11 +242,11 @@ export function AppLayout({
             const isLast = i === breadcrumb.length - 1;
             return (
               <span key={`${b.label}-${i}`} className="flex items-center gap-2">
-                {i > 0 && <span className="text-white/40">/</span>}
+                {i > 0 && <span className="text-[var(--ink-faint,#616d79)]">/</span>}
                 {isLast || !b.onClick ? (
                   <span
                     className={cn(
-                      isLast ? "font-semibold mms-breadcrumb__accent" : "text-white/80",
+                      isLast ? "font-semibold mms-breadcrumb__accent" : "text-[var(--ink-soft,#54606c)]",
                     )}
                   >
                     {b.label}
@@ -255,7 +255,7 @@ export function AppLayout({
                   <button
                     type="button"
                     onClick={b.onClick}
-                    className="text-white/80 hover:text-[#fbf0e4] hover:underline underline-offset-2"
+                    className="text-[var(--ink-soft,#54606c)] hover:text-[var(--accent,#14568c)] hover:underline underline-offset-2"
                   >
                     {b.label}
                   </button>
@@ -287,8 +287,8 @@ export function AppLayout({
             <div
               className={
                 formOpen
-                  ? "mms-content-inner flex h-full min-h-0 flex-col px-2 pb-3 pt-2 sm:px-3.5 sm:pb-4 sm:pt-3"
-                  : "mms-content-inner min-h-full px-2.5 pb-8 pt-3 sm:px-4 sm:pb-12 sm:pt-4"
+                  ? "mms-content-inner flex h-full min-h-0 flex-col px-[clamp(8px,1.3vw,28px)] pb-[clamp(12px,1.8vw,32px)] pt-[clamp(8px,1.1vw,24px)]"
+                  : "mms-content-inner min-h-full px-[clamp(10px,1.6vw,32px)] pb-[clamp(20px,3vw,64px)] pt-[clamp(10px,1.4vw,28px)]"
               }
             >
               <motion.div

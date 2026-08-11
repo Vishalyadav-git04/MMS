@@ -42,7 +42,7 @@ const emptyAdd = {
   dispOrder: "",
 };
 
-const sanitizeText = (val: string) => val.replace(/[^a-zA-Z0-9\s]/g, "");
+const sanitizeText = (val: string) => val.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
 const sanitizeOrder = (val: string) => val.replace(/[^0-9]/g, "");
 
 function rowToForm(row: DomainRow) {
@@ -357,7 +357,11 @@ export function MmsDomainMaster() {
       footer={
         mode === "add" ? (
           <>
-            <Button type="button" disabled={busy} onClick={() => void handleSubmit()}>
+            <Button
+              type="button"
+              disabled={busy || JSON.stringify(addForm) === JSON.stringify(emptyAdd)}
+              onClick={() => void handleSubmit()}
+            >
               {busy ? "Saving…" : "Submit"}
             </Button>
             <Button type="button" variant="secondary" disabled={busy} onClick={clearAdd}>
@@ -423,7 +427,7 @@ export function MmsDomainMaster() {
           </FormGrid>
         </div>
       ) : (
-        <div className="w-full space-y-3">
+        <div className="w-full flex flex-col gap-3">
           <FormRow label="Domain Name" className="sm:grid-cols-[120px_minmax(0,1fr)]">
             <Select
               value={searchDomain || "__all__"}
@@ -522,7 +526,7 @@ export function MmsDomainMaster() {
                   </span>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="default"
                     size="sm"
                     className="h-7 px-2 text-[12px]"
                     disabled={currentPage >= totalPages || filtered.length === 0}
@@ -548,7 +552,7 @@ export function MmsDomainMaster() {
             <DialogTitle>Edit Domain Value</DialogTitle>
             <DialogDescription>Update the selected MMS domain master record.</DialogDescription>
           </DialogHeader>
-          <div className="mms-form space-y-4 py-2">
+          <div className="mms-form flex flex-col gap-4 py-2">
             <div className="grid grid-cols-[120px_1fr] items-center gap-3">
               <label className="text-right text-[13.5px] font-semibold text-[var(--ink-soft,#54606c)]">
                 Domain Name
@@ -691,7 +695,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{
               position: "fixed",
               top: coords.top,
@@ -703,7 +707,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);

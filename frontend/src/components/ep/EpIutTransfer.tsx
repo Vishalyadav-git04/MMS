@@ -111,7 +111,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
           onChange(val);
           setOpen(Boolean(val.trim()));
         }}
@@ -126,7 +126,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            className={cn("overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", maxHeightClass)}
             style={{
               position: "fixed",
               top: coords.top,
@@ -140,7 +140,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -289,7 +289,7 @@ export function EpIutTransfer() {
   };
 
   const handleParentSearchChange = (v: string) => {
-    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
     setParentSearch(cleaned);
     const match = parentUnits.find(
       (u) =>
@@ -326,7 +326,7 @@ export function EpIutTransfer() {
   };
 
   const handleReceivingSearchChange = (v: string) => {
-    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+    const cleaned = v.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
     setReceivingSearch(cleaned);
     const match = receivingUnits.find(
       (u) =>
@@ -495,10 +495,20 @@ export function EpIutTransfer() {
     <FormPanel
       title="EP IUT : INTER UNIT TRANSFER"
       fill={listLoaded}
-      overflowVisible
       footer={
         <>
-          <Button type="button" onClick={handleGetRegn}>
+          <Button
+            type="button"
+            onClick={handleGetRegn}
+            disabled={
+              !parentSusNo ||
+              !domainId ||
+              !subDomainId ||
+              !rvNo.trim() ||
+              !rvDate ||
+              !receivingSusNo
+            }
+          >
             Get Regn List
           </Button>
           {listLoaded && (
@@ -514,7 +524,7 @@ export function EpIutTransfer() {
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         <FormSection title="Parent unit details" />
         <FormRow label="Parent Unit" required>
           <SuggestInput
@@ -572,7 +582,7 @@ export function EpIutTransfer() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="RV Date" required>
@@ -618,7 +628,7 @@ export function EpIutTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">

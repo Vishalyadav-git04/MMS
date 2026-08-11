@@ -195,7 +195,7 @@ function ViewEqptDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 pt-1">
+        <div className="flex flex-col gap-4 pt-1">
           <FormSection title="1. Issue & Depot Particulars" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <DetailField label="IV No" value={detail.iv_no} />
@@ -304,7 +304,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""));
           setOpen(true);
         }}
         onFocus={() => {
@@ -318,7 +318,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <div
-            className="z-[100] overflow-hidden rounded-lg border border-border/80 bg-background/95 shadow-xl backdrop-blur-md"
+            className="z-[100] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{
               position: "fixed",
               top: coords.top,
@@ -327,16 +327,12 @@ function SuggestInput({
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-2.5 py-1 text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
-              <span>Suggestions</span>
-              <span>{suggestions.length} match{suggestions.length > 1 ? "es" : ""}</span>
-            </div>
-            <ul className="mms-scrollbar max-h-72 overflow-y-auto overscroll-contain py-1">
+            <ul className="mms-scrollbar max-h-72 overflow-y-auto overscroll-contain">
               {suggestions.map((s, idx) => (
                 <li key={`${s}-${idx}`}>
                   <button
                     type="button"
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                    className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                     onClick={() => {
                       if (blurTimer.current) window.clearTimeout(blurTimer.current);
                       onPick(idx);
@@ -489,7 +485,7 @@ function ServiceabilityStateForm({
   };
 
   return (
-    <div className="space-y-3.5 pt-2 pb-1">
+    <div className="flex flex-col gap-3.5 pt-2 pb-1">
       <FormRow label="Eqpt Registration No." className={wideRow}>
         <Input
           value={detail.eqpt_regn_no || ""}
@@ -508,35 +504,35 @@ function ServiceabilityStateForm({
       <FormRow label="Barrel - I" className={wideRow}>
         <Input
           value={barrelI}
-          onChange={(e) => setBarrelI(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+          onChange={(e) => setBarrelI(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - II" className={wideRow}>
         <Input
           value={barrelII}
-          onChange={(e) => setBarrelII(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+          onChange={(e) => setBarrelII(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - III" className={wideRow}>
         <Input
           value={barrelIII}
-          onChange={(e) => setBarrelIII(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+          onChange={(e) => setBarrelIII(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Barrel - IV" className={wideRow}>
         <Input
           value={barrelIV}
-          onChange={(e) => setBarrelIV(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+          onChange={(e) => setBarrelIV(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           placeholder="null"
         />
       </FormRow>
       <FormRow label="Remarks" className={wideRow}>
         <Textarea
           value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
+          onChange={(e) => setRemarks(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           placeholder="null"
           className="min-h-[56px] text-xs"
         />
@@ -948,7 +944,7 @@ export function UpdateEqptData() {
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}
-                onChange={(e) => upd("regdNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+                onChange={(e) => upd("regdNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
             </FormRow>
           </FormGrid>
@@ -1071,7 +1067,7 @@ export function UpdateEqptData() {
                     </span>
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="default"
                       size="sm"
                       className="h-7 px-2 text-[12px]"
                       disabled={currentPage >= totalPages}

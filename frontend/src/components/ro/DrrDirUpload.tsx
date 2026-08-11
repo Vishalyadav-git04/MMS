@@ -41,7 +41,7 @@ export function DrrDirUpload() {
         <>
           <Button
             onClick={() => void handleSubmit()}
-            disabled={uploading}
+            disabled={uploading || !selectedFile}
           >
             {uploading ? "Uploading…" : "Submit"}
           </Button>

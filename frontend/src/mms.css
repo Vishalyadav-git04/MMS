@@ -33,6 +33,9 @@
   --ink-soft: #54606c;
   --ink-faint: #616d79;
 
+  /* Label colour — form field labels, placeholders, table headers, stat captions ("icy blue"). */
+  --label-color: #1d74b8;
+
   /* Glass tokens on module root so portals/overlays can resolve them (gotcha #1) */
   --aid-glass: rgba(255, 255, 255, 0.55);
   --aid-glass-strong: rgba(255, 255, 255, 0.74);
@@ -289,7 +292,8 @@
 
 .mms-form input::placeholder,
 .mms-form textarea::placeholder {
-  font-size: 14.5px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
   color: var(--ink-faint, #616d79);
 }
 
@@ -316,10 +320,10 @@
 
 .mms-form label,
 .mms-form .mms-form__label {
-  font-size: 13.5px !important;
-  font-weight: 600 !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
   line-height: 1.2;
-  color: var(--ink-soft, #54606c) !important;
+  color: var(--label-color, #1d74b8) !important;
 }
 
 /* Footer / primary actions — compact 32px */
@@ -365,9 +369,9 @@
 .mms-form-row>.mms-form__label {
   text-align: right;
   white-space: nowrap;
-  font-size: 13.5px !important;
-  font-weight: 600 !important;
-  color: var(--ink-soft, #54606c) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--label-color, #1d74b8) !important;
 }
 
 .mms-form-grid {
@@ -413,17 +417,17 @@
   height: auto !important;
   min-height: 38px;
   padding: 10px 12px !important;
-  font-size: 14.5px !important;
+  font-size: 15px !important;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--ink-soft, #54606c);
+  color: var(--label-color, #1d74b8);
   background-color: var(--surface-alt, #eff5fb) !important;
 }
 
 .mms-panel table th.text-primary-foreground,
 .mms-form table th.text-primary-foreground {
-  color: var(--ink-soft, #54606c) !important;
+  color: var(--label-color, #1d74b8) !important;
 }
 
 .mms-panel table td,
@@ -436,9 +440,9 @@
 /* Global Form Field Labels Across Standalone Panels */
 label,
 .mms-field label {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  color: var(--ink-soft, #54606c) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--label-color, #1d74b8) !important;
   line-height: 1.35 !important;
 }
 
@@ -454,7 +458,8 @@ input.mms-input,
 
 .mms-panel input::placeholder,
 textarea::placeholder {
-  font-size: 15.5px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
 }
 
 /* Global Select Triggers & Dropdown Option Values Across Standalone Panels */
@@ -711,13 +716,14 @@ textarea::placeholder {
 }
 
 .mms-breadcrumb {
-  background-color: var(--accent, #14568c);
-  background-image: linear-gradient(120deg, #14568c, #1d74b8);
-  color: #ffffff;
+  background-color: var(--surface-alt, #eff5fb);
+  background-image: none;
+  color: var(--ink-soft, #54606c);
+  border-bottom: 1px solid var(--line-soft, #dfe9f4);
 }
 
 .mms-breadcrumb__accent {
-  color: #fbf0e4;
+  color: var(--accent, #14568c);
 }
 
 /* ── Sidebar (existing structure, design-system colours) ── */

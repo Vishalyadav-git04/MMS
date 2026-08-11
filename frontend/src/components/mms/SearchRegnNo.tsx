@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FormPanel, FormRow, FormGrid } from "@/components/FormPanel";
+import { FormPanel, FormRow } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -74,6 +74,8 @@ export function SearchRegnNo() {
   const [editRow, setEditRow] = useState<RegnRecord | null>(null);
   const [editRegnNo, setEditRegnNo] = useState("");
   const [editServiceStatus, setEditServiceStatus] = useState("");
+  const [initialRegnNo, setInitialRegnNo] = useState("");
+  const [initialServiceStatus, setInitialServiceStatus] = useState("");
   const [updating, setUpdating] = useState(false);
   const lastLookupRef = useRef("");
 
@@ -124,14 +126,17 @@ export function SearchRegnNo() {
     );
     if (match) {
       setEditServiceStatus(match.value);
+      setInitialServiceStatus(match.value);
     } else if (editRow.service_status) {
       setEditServiceStatus(editRow.service_status);
+      setInitialServiceStatus(editRow.service_status);
     }
   }, [editRow, serviceOpts]);
 
   const openEdit = (row: RegnRecord) => {
     setEditRow(row);
     setEditRegnNo(row.eqpt_regn_no || "");
+    setInitialRegnNo(row.eqpt_regn_no || "");
     const rawVal = (row.service_status || "").trim().toUpperCase();
     const rawLbl = (row.service_status_label || "").trim().toUpperCase();
     const match = serviceOpts.find(
@@ -141,8 +146,13 @@ export function SearchRegnNo() {
         o.label.trim().toUpperCase() === rawLbl ||
         o.label.trim().toUpperCase() === rawVal,
     );
-    setEditServiceStatus(match ? match.value : row.service_status || "");
+    const initialStatus = match ? match.value : row.service_status || "";
+    setEditServiceStatus(initialStatus);
+    setInitialServiceStatus(initialStatus);
   };
+
+  const hasEditChanges =
+    editRegnNo.trim() !== initialRegnNo.trim() || editServiceStatus !== initialServiceStatus;
 
   const handleUpdate = async () => {
     if (!editRow) return;
@@ -241,7 +251,7 @@ export function SearchRegnNo() {
             <Input
               placeholder="e.g. REGN-2000"
               value={regnNo}
-              onChange={(e) => setRegnNo(e.target.value)}
+              onChange={(e) => setRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -250,34 +260,6 @@ export function SearchRegnNo() {
               }}
             />
           </FormRow>
-          <FormGrid cols={2} className="gap-x-6 gap-y-4">
-            <FormRow label="Census No" className="sm:grid-cols-[120px_minmax(0,1fr)]">
-              <Input
-                placeholder="Census No"
-                value={censusNo}
-                onChange={(e) => setCensusNo(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleSearch();
-                  }
-                }}
-              />
-            </FormRow>
-            <FormRow label="PRF Code" className="sm:grid-cols-[120px_minmax(0,1fr)]">
-              <Input
-                placeholder="PRF Code"
-                value={prfCode}
-                onChange={(e) => setPrfCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleSearch();
-                  }
-                }}
-              />
-            </FormRow>
-          </FormGrid>
 
           {results.length > 0 && (
             <div className="overflow-auto rounded-md border border-border">
@@ -308,11 +290,12 @@ export function SearchRegnNo() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 gap-1 px-2 text-xs"
+                          className="h-7 w-7 p-0"
                           onClick={() => openEdit(r)}
+                          aria-label="Update"
+                          title="Update"
                         >
                           <Pencil className="h-3 w-3" />
-                          Update
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -338,7 +321,7 @@ export function SearchRegnNo() {
                     Page {currentPage} of {totalPages}
                   </span>
                   <Button
-                    variant="outline"
+                    variant="default"
                     size="sm"
                     className="h-7 px-2 text-xs"
                     disabled={currentPage >= totalPages}
@@ -359,11 +342,11 @@ export function SearchRegnNo() {
           if (!open) setEditRow(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Update Regn No / Serviceability</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-1">
+          <div className="flex flex-col gap-4 py-1">
             <FormRow label="Census No">
               <Input
                 value={editRow?.census_no || ""}
@@ -375,7 +358,7 @@ export function SearchRegnNo() {
             <FormRow label="Regn No" required>
               <Input
                 value={editRegnNo}
-                onChange={(e) => setEditRegnNo(e.target.value)}
+                onChange={(e) => setEditRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 maxLength={25}
                 placeholder="Registration No"
               />
@@ -401,12 +384,15 @@ export function SearchRegnNo() {
           <DialogFooter>
             <Button
               variant="secondary"
-              disabled={updating}
-              onClick={() => setEditRow(null)}
+              disabled={updating || !hasEditChanges}
+              onClick={() => {
+                setEditRegnNo(initialRegnNo);
+                setEditServiceStatus(initialServiceStatus);
+              }}
             >
-              Cancel
+              Clear
             </Button>
-            <Button disabled={updating} onClick={() => void handleUpdate()}>
+            <Button disabled={updating || !hasEditChanges} onClick={() => void handleUpdate()}>
               {updating ? "Updating…" : "Update"}
             </Button>
           </DialogFooter>

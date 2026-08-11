@@ -168,7 +168,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
           onChange(val);
           setOpen(Boolean(val.trim()));
         }}
@@ -183,7 +183,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            className={cn("overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", maxHeightClass)}
             style={{
               position: "fixed",
               top: coords.top,
@@ -197,7 +197,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -483,7 +483,11 @@ export function CaptureEpStores() {
             Clear
           </Button>
           <Button
-            disabled={busy}
+            disabled={
+              busy ||
+              (JSON.stringify(issuer) === JSON.stringify(createEmptyIssuer()) &&
+                JSON.stringify(holding) === JSON.stringify(createEmptyHolding()))
+            }
             onClick={() => void handleSubmit()}
           >
             Submit
@@ -491,7 +495,7 @@ export function CaptureEpStores() {
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         <FormSection title="Issuer details" />
         <FormGrid>
           <FormRow label="Sanctioning Auth" required>
@@ -582,7 +586,7 @@ export function CaptureEpStores() {
               placeholder="Enter Auth Letter No..."
               value={issuer.authLetterNo}
               disabled={busy}
-              onChange={(e) => updIssuer("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => updIssuer("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="Date" required>
@@ -661,7 +665,7 @@ export function CaptureEpStores() {
               placeholder="Enter IV No..."
               value={holding.ivNo}
               disabled={busy}
-              onChange={(e) => updHolding("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => updHolding("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="IV Date" required>
@@ -771,7 +775,7 @@ export function CaptureEpStores() {
             placeholder="Enter Remarks..."
             value={holding.remarks}
             disabled={busy}
-            onChange={(e) => updHolding("remarks", e.target.value)}
+            onChange={(e) => updHolding("remarks", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           />
         </FormRow>
 
@@ -794,7 +798,7 @@ export function CaptureEpStores() {
                       disabled={busy || holding.regnNoAvl === "no"}
                       onChange={(e) => {
                         const next = [...equipRows];
-                        next[idx] = { ...next[idx], regdNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") };
+                        next[idx] = { ...next[idx], regdNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "") };
                         setEquipRows(next);
                       }}
                     />

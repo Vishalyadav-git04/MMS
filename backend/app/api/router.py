@@ -32,6 +32,7 @@ from app.unit_holding import add_new_eqpt
 from app.unit_holding import approve_new_eqpt
 from app.unit_holding import update_arty_eqpt_data
 from app.unit_holding import update_eqpt_data
+from app.unit_holding import monthly_census_return
 
 api_router = APIRouter()
 
@@ -65,4 +66,6 @@ protected.include_router(add_new_eqpt.router)
 protected.include_router(approve_new_eqpt.router)
 protected.include_router(update_eqpt_data.router)
 protected.include_router(update_arty_eqpt_data.router)
+protected.include_router(monthly_census_return.router)
 api_router.include_router(protected)
+

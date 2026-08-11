@@ -304,7 +304,7 @@ export function GenEpCensus() {
       title="Master List of Controlled and Census Stores (MLCCS) EP"
       footer={
         <>
-          <Button disabled={busy} onClick={() => void handleGenerate()}>
+          <Button disabled={busy || !selected} onClick={() => void handleGenerate()}>
             Generate Census No
           </Button>
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
@@ -323,7 +323,7 @@ export function GenEpCensus() {
               disabled={busy}
               autoComplete="off"
               onChange={(e) => {
-                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/]/g, "");
+                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, "");
                 setQuery(val);
                 setSelected(null);
                 setShowSuggestions(true);
@@ -344,7 +344,7 @@ export function GenEpCensus() {
               coords &&
               createPortal(
                 <ul
-                  className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+                  className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
                   style={{
                     position: "fixed",
                     top: coords.top,
@@ -356,7 +356,7 @@ export function GenEpCensus() {
                     <li key={row.id}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                        className="relative flex w-full cursor-default select-none items-center justify-between rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -402,12 +402,21 @@ function MlccsEpForm({
   const upd = <K extends keyof FullForm>(k: K, v: FullForm[K]) =>
     setForm({ ...form, [k]: v });
 
+  const requiredFilled =
+    form.authLetterNo.trim() &&
+    form.catPartNo.trim() &&
+    form.accountingUnit &&
+    form.briefDescription.trim() &&
+    form.itemStatus &&
+    form.itemCategory &&
+    form.classOfEqpt;
+
   return (
     <FormPanel
       title="Master List of Controlled and Census Stores (MLCCS) EP"
       footer={
         <>
-          <Button disabled={busy} onClick={onSave}>
+          <Button disabled={busy || !requiredFilled} onClick={onSave}>
             Save
           </Button>
           <Button variant="secondary" disabled={busy} onClick={onClear}>
@@ -416,7 +425,7 @@ function MlccsEpForm({
         </>
       }
     >
-      <div className="space-y-2 pb-1">
+      <div className="flex flex-col gap-2 pb-1">
         <FormGrid cols={3}>
           <FormSection title="1. Basic & Authorisation Particulars" />
           <FormRow label="Sub Domain Name" required>
@@ -428,7 +437,7 @@ function MlccsEpForm({
           <FormRow label="Auth/Letter No" required>
             <Input
               value={form.authLetterNo}
-              onChange={(e) => upd("authLetterNo", e.target.value)}
+              onChange={(e) => upd("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter Auth/Letter No"
               disabled={busy}
             />
@@ -443,7 +452,7 @@ function MlccsEpForm({
           <FormRow label="Cat/Part No" required>
             <Input
               value={form.catPartNo}
-              onChange={(e) => upd("catPartNo", e.target.value)}
+              onChange={(e) => upd("catPartNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter Cat/Part No"
               disabled={busy}
             />
@@ -485,7 +494,7 @@ function MlccsEpForm({
           <FormRow label="Country of Origin">
             <Input
               value={form.countryOfOrigin}
-              onChange={(e) => upd("countryOfOrigin", e.target.value)}
+              onChange={(e) => upd("countryOfOrigin", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Search..."
               disabled={busy}
             />
@@ -534,7 +543,7 @@ function MlccsEpForm({
           <FormRow label="Manufacturing Agency">
             <Input
               value={form.manufacturingAgency}
-              onChange={(e) => upd("manufacturingAgency", e.target.value)}
+              onChange={(e) => upd("manufacturingAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter Man. Agency"
               disabled={busy}
             />
@@ -542,7 +551,7 @@ function MlccsEpForm({
           <FormRow label="AHSP Agency">
             <Input
               value={form.ahspAgency}
-              onChange={(e) => upd("ahspAgency", e.target.value)}
+              onChange={(e) => upd("ahspAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter AHSP Agency"
               disabled={busy}
             />
@@ -550,7 +559,7 @@ function MlccsEpForm({
           <FormRow label="NATO Stock No (NSN)">
             <Input
               value={form.natoStockNo}
-              onChange={(e) => upd("natoStockNo", e.target.value)}
+              onChange={(e) => upd("natoStockNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter NSN"
               disabled={busy}
             />
@@ -558,7 +567,7 @@ function MlccsEpForm({
           <FormRow label="Def Catalogue No (DCAN)">
             <Input
               value={form.defCatalogueNo}
-              onChange={(e) => upd("defCatalogueNo", e.target.value)}
+              onChange={(e) => upd("defCatalogueNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter DCAN"
               disabled={busy}
             />
@@ -566,7 +575,7 @@ function MlccsEpForm({
           <FormRow label="Brief Description" required className="mms-span-full">
             <Input
               value={form.briefDescription}
-              onChange={(e) => upd("briefDescription", e.target.value)}
+              onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter Description"
               disabled={busy}
             />
@@ -574,7 +583,7 @@ function MlccsEpForm({
           <FormRow label="Remarks" className="mms-span-full">
             <Input
               value={form.remarks}
-              onChange={(e) => upd("remarks", e.target.value)}
+              onChange={(e) => upd("remarks", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               placeholder="Enter Remarks"
               disabled={busy}
             />

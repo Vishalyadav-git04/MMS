@@ -40,7 +40,7 @@ export function EqptDomainMaster() {
   };
 
   const handleSave = async () => {
-    const cat = eqptCat.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
+    const cat = eqptCat.trim().toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, "");
     if (!cat) {
       toast.error("EQPT CAT is required");
       return;
@@ -89,7 +89,7 @@ export function EqptDomainMaster() {
       title="EQPT DOMAIN MASTER"
       footer={
         <>
-          <Button disabled={busy} onClick={() => void handleSave()}>
+          <Button disabled={busy || !eqptCat.trim()} onClick={() => void handleSave()}>
             Save
           </Button>
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
@@ -101,12 +101,12 @@ export function EqptDomainMaster() {
         </>
       }
     >
-      <div className="w-full space-y-3">
+      <div className="w-full flex flex-col gap-3">
         <FormRow label="EQPT CAT" required>
           <Input
             value={eqptCat}
             onChange={(e) =>
-              setEqptCat(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
+              setEqptCat(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, ""))
             }
             placeholder="Enter EQPT CAT"
             disabled={busy}
@@ -154,7 +154,7 @@ export function EqptDomainMaster() {
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="sm"
                   className="h-7.5 px-3 text-xs rounded-md"
                   disabled={currentPage >= totalPages}

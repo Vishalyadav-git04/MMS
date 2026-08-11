@@ -278,6 +278,12 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
     return JSON.stringify(modForm) !== JSON.stringify(initialModForm);
   }, [modForm, initialModForm]);
 
+  const isAddFormDirty = useMemo(() => {
+    const { cosSection: _cos, censusNo: _census, ...rest } = addForm;
+    const { cosSection: _cos2, censusNo: _census2, ...emptyRest } = emptyForm;
+    return JSON.stringify(rest) !== JSON.stringify(emptyRest);
+  }, [addForm]);
+
   useEffect(() => {
     api<OptionsMap>("/admin/capture-mlccs-details/options")
       .then((opts) => {
@@ -584,6 +590,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
       <ActionButtons
         primaryLabel="Save"
         busy={busy}
+        disabledPrimary={!isAddFormDirty}
         onPrimary={() => void handleSave(addForm, false)}
         onClear={() => {
           setAddForm({
@@ -600,7 +607,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
       <>
         <Button
           size="sm"
-          disabled={busy}
+          disabled={busy || !addCos.trim() || !addNom.trim()}
           onClick={() => void handleGenerate()}
           className="bg-primary hover:bg-primary/90 font-semibold"
         >
@@ -726,7 +733,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
                     placeholder="Enter Nomenclature"
                     value={addNom}
                     disabled={busy}
-                    onChange={(e) => setAddNom(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+                    onChange={(e) => setAddNom(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                   />
                 </FormRow>
               </FormGrid>
@@ -760,7 +767,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
                   }}
                   onChange={(v) => {
                     setNomSuggestions([]);
-                    setModCensus(v.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
+                    setModCensus(v.replace(/[^a-zA-Z0-9\s\-/&]/g, ""));
                     setModNom("");
                   }}
                   onPick={(idx) => {
@@ -790,7 +797,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
                   }}
                   onChange={(v) => {
                     setCensusSuggestions([]);
-                    setModNom(v.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
+                    setModNom(v.replace(/[^a-zA-Z0-9\s\-/&]/g, ""));
                     setModCensus("");
                   }}
                   onPick={(idx) => {
@@ -809,7 +816,7 @@ export function CaptureMlccs({ initialMode, initialModify, onBack }: CaptureMlcc
 
 function MiniLookup({ fields }: { fields: ReactNode }) {
   return (
-    <div className="w-full space-y-4 overflow-visible pt-2 px-1">
+    <div className="w-full flex flex-col gap-4 overflow-visible pt-2 px-1">
       {fields}
     </div>
   );
@@ -886,7 +893,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{
               position: "fixed",
               top: coords.top,
@@ -898,7 +905,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -1015,7 +1022,7 @@ function FullEqptForm({
   }, [form.cosSection, form.prfGroup]);
 
   return (
-    <div className="space-y-2 pb-1">
+    <div className="flex flex-col gap-2 pb-1">
       <FormGrid cols={3}>
         <FormSection title="1. Basic & Authorisation Particulars" />
         <FormRow label="COS Section" required>
@@ -1027,14 +1034,14 @@ function FullEqptForm({
         <FormRow label="Nomenclature" required>
           <Input
             value={form.nomenclature}
-            onChange={(e) => upd("nomenclature", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("nomenclature", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Nomenclature"
           />
         </FormRow>
         <FormRow label="Auth/Letter No" required>
           <Input
             value={form.authLetterNo}
-            onChange={(e) => upd("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("authLetterNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Auth/Letter No"
           />
         </FormRow>
@@ -1069,7 +1076,7 @@ function FullEqptForm({
         <FormRow label="Cat/Part No" required>
           <Input
             value={form.catPartNo}
-            onChange={(e) => upd("catPartNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("catPartNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Cat/Part No"
           />
         </FormRow>
@@ -1106,7 +1113,7 @@ function FullEqptForm({
         <FormRow label="Country of Origin">
           <Input
             value={form.countryOfOrigin}
-            onChange={(e) => upd("countryOfOrigin", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("countryOfOrigin", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Search..."
           />
         </FormRow>
@@ -1136,7 +1143,7 @@ function FullEqptForm({
         <FormRow label="Year of Induction">
           <Input
             value={form.yearOfInduction}
-            onChange={(e) => upd("yearOfInduction", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("yearOfInduction", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           />
         </FormRow>
         <FormRow label="Cost (Rs.)">
@@ -1149,35 +1156,35 @@ function FullEqptForm({
         <FormRow label="Manufacturing Agency">
           <Input
             value={form.manufacturingAgency}
-            onChange={(e) => upd("manufacturingAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("manufacturingAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Man. Agency"
           />
         </FormRow>
         <FormRow label="AHSP Agency">
           <Input
             value={form.ahspAgency}
-            onChange={(e) => upd("ahspAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("ahspAgency", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter AHSP Agency"
           />
         </FormRow>
         <FormRow label="NATO Stock No (NSN)">
           <Input
             value={form.natoStockNo}
-            onChange={(e) => upd("natoStockNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("natoStockNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter NSN"
           />
         </FormRow>
         <FormRow label="Def Catalogue No (DCAN)">
           <Input
             value={form.defCatalogueNo}
-            onChange={(e) => upd("defCatalogueNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("defCatalogueNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter DCAN"
           />
         </FormRow>
         <FormRow label="Material No">
           <Input
             value={form.materialNo}
-            onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("materialNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Material No"
             maxLength={15}
           />
@@ -1185,14 +1192,14 @@ function FullEqptForm({
         <FormRow label="Brief Description" required className="mms-span-full">
           <Input
             value={form.briefDescription}
-            onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+            onChange={(e) => upd("briefDescription", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Description"
           />
         </FormRow>
         <FormRow label="Remarks" className="mms-span-full">
           <Input
             value={form.remarks}
-            onChange={(e) => upd("remarks", e.target.value)}
+            onChange={(e) => upd("remarks", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter Remarks"
           />
         </FormRow>

@@ -78,7 +78,7 @@ export function WpnsAndEqptStatus() {
         </>
       }
     >
-      <div className="w-full space-y-2 pt-1">
+      <div className="w-full flex flex-col gap-2 pt-1">
         <FormRow label="PRF Group" className="sm:grid-cols-[120px_minmax(0,1fr)]">
           <PrfGroupField
             search={prfSearch}

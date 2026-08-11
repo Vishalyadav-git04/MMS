@@ -102,6 +102,9 @@
   --input: #cddcec;
   --ring: #2ea8d5;
 
+  /* Label colour — form field labels, placeholders, table headers, stat captions ("icy blue"). */
+  --label-color: #1d74b8;
+
   /* Legacy aliases → design-system values (keep class names working) */
   --army-olive: #14568c;
   --army-gold: #a85711;
@@ -139,6 +142,7 @@
   --border: #cddcec;
   --input: #cddcec;
   --ring: #2ea8d5;
+  --label-color: #1d74b8;
   --sidebar: #0f3a5c;
   --sidebar-foreground: #f4f8fc;
   --sidebar-primary: #2ea8d5;

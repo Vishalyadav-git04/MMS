@@ -20,6 +20,7 @@ from app.auth_seed import ensure_users_table
 from app.db.session import Database
 from app.ep_lookup_seed import ensure_ep_lookup_tables
 from app.logging_setup import configure_logging
+from app.arty_detail_seed import ensure_arty_detail_tables
 from app.orbat_unit_seed import ensure_orbat_unit_table
 from app.settings import get_settings
 from app.utils.errors import MisoError
@@ -51,6 +52,10 @@ async def lifespan(app: FastAPI):
             ensure_orbat_unit_table(db)
         except Exception:
             logger.exception("failed to ensure MMS_ORBAT_UNIT_DETL / seed rows")
+        try:
+            ensure_arty_detail_tables(db)
+        except Exception:
+            logger.exception("failed to ensure MMS_OH_DETL / MMS_BARREL_DETL / MMS_STRIP_DETL")
     except Exception:
         # Allow API process to start for local UI work even if Oracle is down.
         # /health stays ok; /health/ready will report not ready.

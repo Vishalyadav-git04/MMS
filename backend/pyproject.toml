@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.2",
     "PyJWT>=2.8",
     "python-json-logger>=2.0",
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

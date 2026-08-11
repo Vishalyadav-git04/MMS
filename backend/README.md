@@ -66,7 +66,6 @@ python -m venv venv
 
 # Install runtime dependencies:
 pip install -r requirements.txt
-pip install -e .
 
 # Run MMS backend API on port 8000:
 python -m uvicorn main:app --reload --port 8000
@@ -111,6 +110,5 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install --no-index --find-links=offline_packages -r requirements.txt
-pip install --no-index --find-links=offline_packages -e .
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```

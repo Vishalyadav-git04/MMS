@@ -159,7 +159,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
           onChange(val);
           setOpen(Boolean(val.trim()));
         }}
@@ -171,7 +171,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            className={cn("overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", maxHeightClass)}
             style={{
               position: "fixed",
               top: coords.top,
@@ -185,7 +185,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -421,8 +421,22 @@ export function AddNewEqpt() {
         })),
       ]);
 
-      setForm(getEmptyForm());
-      setIvFile(null);
+      // Reset only the per-item fields (PRF Group, Census No, Material No, Qty, ...)
+      // so another item can be added under the same header. Header fields (IV No,
+      // IV Date, Issuing Depot, To Unit, Type of Holding/Eqpt, Upload IV) and the
+      // already-chosen IV file must stay intact — they apply to the whole batch and
+      // are re-validated when Submit is finally clicked.
+      setForm((prev) => ({
+        ...getEmptyForm(),
+        ivNo: prev.ivNo,
+        ivDate: prev.ivDate,
+        issuingDepotSus: prev.issuingDepotSus,
+        toUnitName: prev.toUnitName,
+        toUnitSus: prev.toUnitSus,
+        typeOfHolding: prev.typeOfHolding,
+        typeOfEqpt: prev.typeOfEqpt,
+        uploadIv: prev.uploadIv,
+      }));
       setCensusOptions([]);
       setToUnitHits([]);
       setToUnitField(null);
@@ -536,7 +550,12 @@ export function AddNewEqpt() {
       fill={false}
       footer={
         <>
-          <Button type="button" size="sm" onClick={() => void handleAddItems()} disabled={busy}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleAddItems()}
+            disabled={busy || JSON.stringify(form) === JSON.stringify(getEmptyForm())}
+          >
             Add Items in List
           </Button>
           <Button type="button" size="sm" variant="secondary" onClick={handleClear} disabled={busy}>
@@ -552,7 +571,7 @@ export function AddNewEqpt() {
             <Input
               placeholder="Enter IV No..."
               value={form.ivNo}
-              onChange={(e) => upd("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => upd("ivNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="IV Date" required>
@@ -691,14 +710,14 @@ export function AddNewEqpt() {
             <Input
               placeholder="Enter Make..."
               value={form.eqptMake}
-              onChange={(e) => upd("eqptMake", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => upd("eqptMake", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="Eqpt Model">
             <Input
               placeholder="Enter Model..."
               value={form.eqptModel}
-              onChange={(e) => upd("eqptModel", e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""))}
+              onChange={(e) => upd("eqptModel", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
           <FormRow label="Unit Price">
@@ -836,7 +855,7 @@ function ItemsList({
                     className="h-7 min-w-[150px] font-mono text-[13px]"
                     aria-label={`Regn No row ${idx + 1}`}
                     onChange={(e) =>
-                      onChange(row.id, { eqptRegnNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "") })
+                      onChange(row.id, { eqptRegnNo: e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "") })
                     }
                   />
                 </td>

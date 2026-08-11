@@ -104,18 +104,19 @@ def _next_census_no(
     prefix = f"EP{dom_num:02d}{sub_num:02d}"
     census_re = re.compile(rf"^{re.escape(prefix)}(\d{{4}})$", re.IGNORECASE)
 
+    # Match directly on the census_no prefix (e.g. "EP0403%") rather than the
+    # domain_id / sub_domain_id FK columns — those can be stored as NUMBER or
+    # VARCHAR2 depending on how the row was inserted, which made the FK-based
+    # lookup silently return zero rows and always restart the sequence at 0001.
+    # The prefix already encodes domain + sub domain, so this is unambiguous.
     sql = """
         SELECT census_no FROM MMS_EP_MSTR
-        WHERE (domain_id = :did OR TO_CHAR(domain_id) = :did)
-        AND (sub_domain_id = :sid OR TO_CHAR(sub_domain_id) = :sid)
+        WHERE UPPER(census_no) LIKE :prefix_pattern
     """
     rows = fetch_all(
         session,
         sql,
-        {
-            "did": str(sub_domain.get("equipment_domain_id")),
-            "sid": str(sub_domain.get("id")),
-        },
+        {"prefix_pattern": f"{prefix.upper()}%"},
     )
     max_sequence = 0
     for r in rows:

@@ -18,13 +18,16 @@ router = APIRouter(
     tags=["unit-holding: approve new eqpt"],
 )
 
-_STATUS_CODES: dict[str, tuple[str, ...]] = {
+# Fallback codes used only when MMS_DOMAIN_VALUES has no OPSTATUS entry for a
+# given label — mirrors the default_fallback values app.unit_holding.add_new_eqpt
+# uses via get_opstatus_code_value() when it writes op_status on insert.
+_STATUS_FALLBACK_CODES: dict[str, tuple[str, ...]] = {
     "pending": ("0", "P"),
     "approved": ("1", "A"),
     "rejected": ("2", "R"),
 }
 
-_STATUS_LABEL: dict[str, str] = {
+_STATUS_FALLBACK_LABEL: dict[str, str] = {
     "0": "Pending",
     "P": "Pending",
     "1": "Approved",
@@ -32,8 +35,6 @@ _STATUS_LABEL: dict[str, str] = {
     "2": "Rejected",
     "R": "Rejected",
 }
-
-_PENDING_CODES = frozenset({"0", "P"})
 
 _SOURCE_UNIT = "unit"
 _SOURCE_DEPOT = "depot"
@@ -58,7 +59,7 @@ class SearchIn(BaseModel):
     sus_no: str = Field("", max_length=50)
     unit_name: str = Field("", max_length=255)
     status: str = Field("", max_length=50)  # Pending | Approved | Rejected | empty for All
-    date_from: date
+    date_from: date | None = None
     date_to: date | None = None
 
 
@@ -110,10 +111,33 @@ def _fmt_date(value: Any) -> str | None:
     return str(value)
 
 
-def _status_label(code: str | None) -> str:
+def _opstatus_domain_map(session: Session) -> dict[str, str]:
+    """code_value(upper) -> label_name for the OPSTATUS domain, as configured in
+    MMS Admin > Domain Master. Empty if nothing has been configured there."""
+    rows = fetch_all(
+        session,
+        "SELECT code_value, label_name FROM MMS_DOMAIN_VALUES WHERE REPLACE(UPPER(domain_name), '_', '') = 'OPSTATUS'",
+    )
+    return {
+        str(r.get("code_value") or "").strip().upper(): str(r.get("label_name") or r.get("code_value") or "").strip()
+        for r in rows
+        if r.get("code_value")
+    }
+
+
+def _codes_for_status_label(domain_map: dict[str, str], label: str) -> tuple[str, ...]:
+    """All OPSTATUS codes configured with this label, as well as fallback codes."""
+    label_lower = label.lower()
+    fallback = _STATUS_FALLBACK_CODES.get(label_lower, ())
+    matches = [code for code, lbl in domain_map.items() if lbl.strip().upper() == label.upper()]
+    return tuple(sorted(set(matches + list(fallback))))
+
+
+def _status_label(domain_map: dict[str, str], code: str | None) -> str:
     if not code:
         return ""
-    return _STATUS_LABEL.get(code.strip().upper(), code)
+    key = code.strip().upper()
+    return domain_map.get(key) or _STATUS_FALLBACK_LABEL.get(key, code)
 
 
 def _holding_label_map(session: Session) -> dict[str, str]:
@@ -253,17 +277,30 @@ def search_new_eqpt(
     session: Session = Depends(get_db_session),
 ) -> list[NewEqptOut]:
     st_key = body.status.strip().lower() if body.status else ""
-    if st_key and st_key not in _STATUS_CODES:
+    if st_key and st_key not in _STATUS_FALLBACK_CODES and st_key != "all":
         raise HTTPException(
             status_code=400,
-            detail="Status must be Pending, Approved, Rejected, or empty for All",
+            detail="Status must be Pending, Approved, Rejected, All, or empty for All",
         )
 
+    opstatus_map = _opstatus_domain_map(session)
+
     target_statuses: tuple[str, ...]
-    if st_key:
-        target_statuses = _STATUS_CODES[st_key]
+    if st_key and st_key != "all":
+        target_statuses = _codes_for_status_label(opstatus_map, st_key.capitalize())
     else:
-        target_statuses = ("0", "1", "2", "P", "A", "R")
+        target_statuses = tuple(
+            sorted(
+                set(
+                    [
+                        *_codes_for_status_label(opstatus_map, "Pending"),
+                        *_codes_for_status_label(opstatus_map, "Approved"),
+                        *_codes_for_status_label(opstatus_map, "Rejected"),
+                        "0", "1", "2", "P", "A", "R"
+                    ]
+                )
+            )
+        )
 
     unit_found = _resolve_unit_optional(session, body.sus_no, body.unit_name)
     filter_sus = ""
@@ -282,33 +319,48 @@ def search_new_eqpt(
     raw_rows: list[dict[str, Any]] = []
 
     st_clause = ", ".join(f":st_{i}" for i in range(len(target_statuses)))
-    base_params: dict[str, Any] = {
-        "dfrom": datetime.combine(body.date_from, datetime.min.time()),
-    }
+    base_params: dict[str, Any] = {}
     for i, s in enumerate(target_statuses):
         base_params[f"st_{i}"] = s.strip().upper()
 
-    if body.date_to is not None:
+    where_parts: list[str] = [f"UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause})"]
+    if body.date_from is not None:
+        base_params["dfrom"] = datetime.combine(body.date_from, datetime.min.time())
+        if body.date_to is not None:
+            base_params["dto"] = datetime.combine(body.date_to, datetime.max.time())
+            where_parts.append("iv_date BETWEEN :dfrom AND :dto")
+        else:
+            where_parts.append("iv_date >= :dfrom")
+    elif body.date_to is not None:
         base_params["dto"] = datetime.combine(body.date_to, datetime.max.time())
-        sql_where = f"WHERE UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause}) AND iv_date BETWEEN :dfrom AND :dto"
-    else:
-        sql_where = f"WHERE UPPER(TRIM(COALESCE(op_status, ''))) IN ({st_clause}) AND iv_date >= :dfrom"
+        where_parts.append("iv_date <= :dto")
 
-    sus_params = dict(base_params)
-    if filter_sus:
-        sus_params["fsus"] = filter_sus
-        sql_where_sus = sql_where + " AND (UPPER(to_sus_no) = :fsus OR UPPER(sus_no) = :fsus)"
-    elif filter_unit_name:
-        sus_params["funame"] = f"%{filter_unit_name}%"
-        sql_where_sus = sql_where + " AND (UPPER(to_sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame) OR UPPER(sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame))"
-    else:
-        sql_where_sus = sql_where
+    sql_where_base = "WHERE " + " AND ".join(where_parts)
 
     for src, tname in _TABLE_MAP.items():
-        sql = f"SELECT *, '{src}' AS source_table FROM {tname} {sql_where_sus}"
+        sus_params = dict(base_params)
+        if filter_sus:
+            sus_params["fsus"] = filter_sus
+            if src == _SOURCE_OTH:
+                sql_where = sql_where_base + " AND (UPPER(to_sus_no) = :fsus OR UPPER(COALESCE(iv_sus_no, '')) = :fsus)"
+            else:
+                sql_where = sql_where_base + " AND (UPPER(to_sus_no) = :fsus OR UPPER(COALESCE(sus_no, '')) = :fsus)"
+        elif filter_unit_name:
+            sus_params["funame"] = f"%{filter_unit_name}%"
+            if src == _SOURCE_OTH:
+                sql_where = sql_where_base + " AND (UPPER(to_sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame) OR UPPER(COALESCE(iv_sus_no, '')) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame))"
+            else:
+                sql_where = sql_where_base + " AND (UPPER(to_sus_no) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame) OR UPPER(COALESCE(sus_no, '')) IN (SELECT UPPER(sus_no) FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(unit_name) LIKE :funame))"
+        else:
+            sql_where = sql_where_base
+
+        sql = f"SELECT t.* FROM {tname} t {sql_where}"
         try:
             r = fetch_all(session, sql, sus_params)
-            raw_rows.extend(r)
+            for row in r:
+                row_copy = dict(row)
+                row_copy["source_table"] = src
+                raw_rows.append(row_copy)
         except Exception:
             continue
 
@@ -324,7 +376,7 @@ def search_new_eqpt(
     needed_suses: set[str] = set()
     needed_census: set[str] = set()
     for r in raw_rows:
-        to_s = str(r.get("to_sus_no") or r.get("sus_no") or "").strip()
+        to_s = str(r.get("to_sus_no") or r.get("sus_no") or r.get("iv_sus_no") or "").strip()
         from_s = str(r.get("from_sus_no") or r.get("issued_from") or "").strip()
         if to_s:
             needed_suses.add(to_s)
@@ -340,7 +392,7 @@ def search_new_eqpt(
     out: list[NewEqptOut] = []
     for row in raw_rows:
         src = str(row.get("source_table") or "unit")
-        to_sus = str(row.get("to_sus_no") or row.get("sus_no") or "").strip()
+        to_sus = str(row.get("to_sus_no") or row.get("sus_no") or row.get("iv_sus_no") or "").strip()
         from_sus = str(row.get("from_sus_no") or row.get("issued_from") or "").strip()
         cno = str(row.get("census_no") or "").strip()
         m_info = mlccs_map.get(cno.upper(), {})
@@ -376,7 +428,7 @@ def search_new_eqpt(
                 type_of_hldg_label=(
                     hldg_labels.get(hldg.upper(), hldg) if hldg else None
                 ),
-                status=_status_label(op),
+                status=_status_label(opstatus_map, op),
                 op_status=op,
                 eqpt_regn_no=row.get("eqpt_regn_no"),
                 regn_seq_no=row.get("regn_seq_no"),

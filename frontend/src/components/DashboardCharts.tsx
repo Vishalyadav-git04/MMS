@@ -447,7 +447,7 @@ export function DashboardCharts({ mlccs, ep, mms, loadingEp }: Props) {
   const activeEnlarged = getChartDetails(enlargedChart);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="grid gap-4 lg:grid-cols-3">
         <ChartPanel
           title="MLCCS Distribution"

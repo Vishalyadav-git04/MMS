@@ -211,7 +211,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, "");
+          const val = e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, "");
           onChange(val);
           setOpen(Boolean(val.trim()));
         }}
@@ -226,7 +226,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className={cn("overflow-y-auto rounded-md border border-border bg-background shadow-lg", maxHeightClass)}
+            className={cn("overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md", maxHeightClass)}
             style={{
               position: "fixed",
               top: coords.top,
@@ -240,7 +240,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted cursor-pointer"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);
@@ -455,7 +455,7 @@ export function SearchApproveEpStores() {
     <>
       <FormPanel
         title="SEARCH DETAILS OF EP STORES"
-        overflowVisible
+        overflowVisible={results.length === 0}
         footer={
           <>
             <Button disabled={busy} onClick={() => void handleSearch()}>
@@ -467,7 +467,7 @@ export function SearchApproveEpStores() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <div className="space-y-1.5">
             <FormGrid cols={3}>
               <FormRow label="SUS No">
@@ -668,7 +668,7 @@ export function SearchApproveEpStores() {
                   </span>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="default"
                     size="sm"
                     className="h-7 px-2 text-[12px]"
                     disabled={currentPage >= totalPages}
@@ -698,7 +698,7 @@ export function SearchApproveEpStores() {
           </DialogHeader>
 
           {viewRow && (
-            <div className="space-y-4 pt-1">
+            <div className="flex flex-col gap-4 pt-1">
               <FormSection title="1. Issue & Authority Details" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <DetailField label="Sanctioning Auth" value={viewRow.sanction_auth} />

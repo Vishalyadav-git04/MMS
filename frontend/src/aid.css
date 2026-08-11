@@ -548,9 +548,17 @@
   }
 }
 
+/*
+ * Fluid content container: side margin/padding is intentionally handled by
+ * AppLayout's clamp()-based padding classes, not by a fixed max-width here,
+ * so the gutter that looks right on a laptop stays the same *proportion* of
+ * the viewport on larger monitors instead of jumping to a big empty margin
+ * once the old fixed 1560px cap was exceeded. The max-width below is only a
+ * safety ceiling for ultra-wide/4K displays.
+ */
 .mms-content-inner {
   width: 100%;
-  max-width: 1560px;
+  max-width: 2400px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -694,8 +702,8 @@
 .mms-splash__stage {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
-  color: #54606c;
+  font-weight: 700;
+  color: var(--label-color, #1d74b8);
 }
 
 .mms-splash__track {
@@ -1046,7 +1054,7 @@ button.mms-stat {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--accent, #14568c);
+  color: var(--label-color, #1d74b8);
   opacity: 0;
   transform: translateY(3px);
   transition:

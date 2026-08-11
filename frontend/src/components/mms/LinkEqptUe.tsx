@@ -268,7 +268,7 @@ export function LinkEqptUe() {
           <>
             <Button
               onClick={() => void handleFetch()}
-              disabled={busy}
+              disabled={busy || !censusNo.trim()}
               className="bg-primary hover:bg-primary/90"
             >
               {busy ? "Fetching…" : "Fetch Details"}
@@ -302,7 +302,7 @@ export function LinkEqptUe() {
       }
     >
       {!fetched ? (
-        <div className="w-full space-y-4 overflow-visible pt-2">
+        <div className="w-full flex flex-col gap-4 overflow-visible pt-2">
           <FormGrid className="gap-y-4 gap-x-6" style={{ gridTemplateColumns: "1fr 1.8fr" }}>
             <FormRow label="Census No" required>
               <SuggestInput
@@ -364,7 +364,7 @@ export function LinkEqptUe() {
           </FormGrid>
         </div>
       ) : (
-        <div className="w-full space-y-4 pt-2">
+        <div className="w-full flex flex-col gap-4 pt-2">
           <FormGrid className="gap-y-4 gap-x-6" style={{ gridTemplateColumns: "1fr 1.8fr" }}>
             <FormRow label="Census No" required>
               <Input value={censusNo} disabled />
@@ -482,7 +482,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <ul
-            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border border-border bg-background shadow-md"
+            className="z-[100] max-h-48 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{
               position: "fixed",
               top: coords.top,
@@ -494,7 +494,7 @@ function SuggestInput({
               <li key={`${s}-${idx}`}>
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                  className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     if (blurTimer.current) window.clearTimeout(blurTimer.current);

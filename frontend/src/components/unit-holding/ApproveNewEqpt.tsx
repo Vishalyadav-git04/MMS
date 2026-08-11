@@ -154,9 +154,9 @@ function emptyForm() {
   return {
     susNo: "",
     unitName: "",
-    from: "2026-07-01",
+    from: "2026-01-01",
     to: todayIso(),
-    status: "",
+    status: "All",
   };
 }
 
@@ -219,7 +219,7 @@ function SuggestInput({
         disabled={disabled}
         autoComplete="off"
         onChange={(e) => {
-          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/]/g, ""));
+          onChange(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""));
           setOpen(true);
         }}
         onFocus={() => {
@@ -233,7 +233,7 @@ function SuggestInput({
       {showList &&
         createPortal(
           <div
-            className="z-[100] overflow-hidden rounded-lg border border-border/80 bg-background/95 shadow-xl backdrop-blur-md"
+            className="z-[100] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
             style={{
               position: "fixed",
               top: coords.top,
@@ -242,16 +242,12 @@ function SuggestInput({
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            <div className="flex items-center justify-between border-b border-border/50 bg-muted/40 px-2.5 py-1 text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
-              <span>Suggestions</span>
-              <span>{suggestions.length} match{suggestions.length > 1 ? "es" : ""}</span>
-            </div>
-            <ul className="mms-scrollbar max-h-72 overflow-y-auto overscroll-contain py-1">
+            <ul className="mms-scrollbar max-h-72 overflow-y-auto overscroll-contain">
               {suggestions.map((s, idx) => (
                 <li key={`${s}-${idx}`}>
                   <button
                     type="button"
-                    className="w-full px-2.5 py-1.5 text-left text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                    className="relative flex w-full cursor-default select-none items-center rounded-[8px] px-3 py-2 text-left text-[15.5px] outline-none hover:bg-[var(--accent-soft,#e8f2fa)] hover:text-[var(--accent,#14568c)]"
                     onClick={() => {
                       if (blurTimer.current) window.clearTimeout(blurTimer.current);
                       onPick(idx);
@@ -332,8 +328,8 @@ export function ApproveNewEqpt() {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
       return;
     }
-    if (!form.from) {
-      toast.error("From date is required");
+    if (!form.susNo.trim() || !form.unitName.trim()) {
+      toast.error("SUS No and Unit's Name are required");
       return;
     }
     const statusVal = opts?.overrideStatus !== undefined ? opts.overrideStatus : form.status;
@@ -346,7 +342,7 @@ export function ApproveNewEqpt() {
           sus_no: form.susNo.trim(),
           unit_name: form.unitName.trim(),
           status: statusVal,
-          date_from: form.from,
+          date_from: form.from || null,
           date_to: form.to || null,
         }),
       });
@@ -466,9 +462,9 @@ export function ApproveNewEqpt() {
         </>
       }
     >
-      <div className="w-full space-y-3">
+      <div className="w-full flex flex-col gap-3">
         <FormGrid cols={3}>
-          <FormRow label="SUS No">
+          <FormRow label="SUS No" required>
             <SuggestInput
               placeholder="Search..."
               value={form.susNo}
@@ -483,7 +479,7 @@ export function ApproveNewEqpt() {
               }}
             />
           </FormRow>
-          <FormRow label="Unit's Name">
+          <FormRow label="Unit's Name" required>
             <SuggestInput
               placeholder="Search..."
               value={form.unitName}
@@ -500,13 +496,17 @@ export function ApproveNewEqpt() {
           </FormRow>
           <FormRow label="Status">
             <Select
-              value={form.status || undefined}
-              onValueChange={(v) => upd("status", v)}
+              value={form.status || "All"}
+              onValueChange={(v) => {
+                upd("status", v);
+                void handleSearch({ overrideStatus: v });
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="--Select the Value--" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="All">All</SelectItem>
                 <SelectItem value="Pending">Pending</SelectItem>
                 <SelectItem value="Approved">Approved</SelectItem>
                 <SelectItem value="Rejected">Rejected</SelectItem>
@@ -651,7 +651,7 @@ export function ApproveNewEqpt() {
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="sm"
                   className="h-7 px-2 text-[12px]"
                   disabled={currentPage >= totalPages}
@@ -675,7 +675,7 @@ export function ApproveNewEqpt() {
           </DialogHeader>
 
           {viewItem && (
-            <div className="space-y-4 pt-1">
+            <div className="flex flex-col gap-4 pt-1">
               <FormSection title="1. Issue & Depot Particulars" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <DetailField label="IV No" value={viewItem.iv_no} />

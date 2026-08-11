@@ -74,7 +74,7 @@ export function SubDomainMaster() {
   };
 
   const handleSave = async () => {
-    const name = subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, "");
+    const name = subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, "");
     if (!eqptCatId || !name) {
       toast.error("EQPT CAT and Sub Domain Name are required");
       return;
@@ -108,7 +108,7 @@ export function SubDomainMaster() {
       if (subDomain.trim())
         params.set(
           "sub_domain_name",
-          subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, ""),
+          subDomain.trim().toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, ""),
         );
       const q = params.toString() ? `?${params.toString()}` : "";
       const rows = await api<EpSubDomainRow[]>(`/ep/sub-domain-master/search${q}`);
@@ -129,7 +129,7 @@ export function SubDomainMaster() {
       title="SUB DOMAIN MASTER"
       footer={
         <>
-          <Button disabled={busy} onClick={() => void handleSave()}>
+          <Button disabled={busy || !eqptCatId || !subDomain.trim()} onClick={() => void handleSave()}>
             Save
           </Button>
           <Button variant="secondary" disabled={busy} onClick={handleClear}>
@@ -141,7 +141,7 @@ export function SubDomainMaster() {
         </>
       }
     >
-      <div className="w-full space-y-3">
+      <div className="w-full flex flex-col gap-3">
         <FormGrid style={{ gridTemplateColumns: "280px 1fr" }}>
           <FormRow label="EQPT CAT" required>
             <Select
@@ -173,7 +173,7 @@ export function SubDomainMaster() {
             <Input
               value={subDomain}
               onChange={(e) =>
-                setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ""))
+                setSubDomain(e.target.value.toUpperCase().replace(/[^A-Z0-9\s\-/&]/g, ""))
               }
               placeholder="Enter Sub Domain"
               disabled={busy}
@@ -224,7 +224,7 @@ export function SubDomainMaster() {
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="sm"
                   className="h-7.5 px-3 text-xs rounded-md"
                   disabled={currentPage >= totalPages}

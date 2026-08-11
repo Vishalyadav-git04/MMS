@@ -102,9 +102,9 @@ export function GenerateRo() {
 
   return (
     <FormPanel title="MMS RO GENERATION" fill>
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         <div className="grid gap-3 lg:grid-cols-[1fr_1fr_minmax(220px,0.9fr)]">
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <FormRow label="Type of RO" required>
               <SelectField
                 value={form.typeOfRo}
@@ -113,10 +113,10 @@ export function GenerateRo() {
               />
             </FormRow>
             <FormRow label="RO No" required>
-              <Input value={form.roNo} onChange={(e) => upd("roNo", e.target.value)} />
+              <Input value={form.roNo} onChange={(e) => upd("roNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))} />
             </FormRow>
             <FormRow label="File NO" required>
-              <Input value={form.fileNo} onChange={(e) => upd("fileNo", e.target.value)} />
+              <Input value={form.fileNo} onChange={(e) => upd("fileNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))} />
             </FormRow>
           </div>
           <div>
@@ -136,7 +136,7 @@ export function GenerateRo() {
                 className="h-7 max-w-[160px] bg-card"
                 placeholder="Search Depo"
                 value={form.depoSearch}
-                onChange={(e) => upd("depoSearch", e.target.value)}
+                onChange={(e) => upd("depoSearch", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
             }
           />
@@ -203,7 +203,12 @@ export function GenerateRo() {
           <Button variant="secondary" onClick={handleClear}>
             Clear
           </Button>
-          <Button onClick={handleSubmit}>Submit</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={JSON.stringify(form) === JSON.stringify(emptyForm)}
+          >
+            Submit
+          </Button>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">
@@ -234,7 +239,7 @@ export function GenerateRo() {
           <Textarea
             rows={2}
             value={form.remarks}
-            onChange={(e) => upd("remarks", e.target.value)}
+            onChange={(e) => upd("remarks", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             placeholder="Enter remarks..."
           />
         </FormRow>
@@ -248,7 +253,7 @@ export function GenerateRo() {
           </Button>
         </div>
 
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <div className="flex justify-end text-xs font-semibold text-foreground">
             Total Count : 0
           </div>

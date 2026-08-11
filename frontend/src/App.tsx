@@ -27,6 +27,7 @@ import { AddNewEqpt } from "@/components/unit-holding/AddNewEqpt";
 import { ApproveNewEqpt } from "@/components/unit-holding/ApproveNewEqpt";
 import { UpdateEqptData } from "@/components/unit-holding/UpdateEqptData";
 import { UpdateArtyEqptData } from "@/components/unit-holding/UpdateArtyEqptData";
+import { MonthlyCensusReturn } from "@/components/unit-holding/MonthlyCensusReturn";
 import { AllIndiaHolding } from "@/components/reports/AllIndiaHolding";
 import { UnitWiseHoldingData } from "@/components/reports/UnitWiseHoldingData";
 import { WpnsAndEqptStatus } from "@/components/reports/WpnsAndEqptStatus";
@@ -70,6 +71,7 @@ import {
   Building2,
   ListChecks,
   Share2,
+  CalendarCheck,
 } from "lucide-react";
 
 const MMS_TILES = [
@@ -148,6 +150,12 @@ const HOLDING_TILES = [
     label: "UPDATE ARTY EQPT DATA",
     icon: Crosshair,
     description: "Update artillery OH, barrel and strip inspection data",
+  },
+  {
+    id: "monthly-census-return",
+    label: "MONTHLY CENSUS RETURN",
+    icon: CalendarCheck,
+    description: "Monthly census return reports and holdings summary",
   },
 ];
 
@@ -584,6 +592,7 @@ export default function App() {
             {activeHolding === "approve-new-eqpt" && <ApproveNewEqpt />}
             {activeHolding === "update-eqpt-data" && <UpdateEqptData />}
             {activeHolding === "update-arty-eqpt-data" && <UpdateArtyEqptData />}
+            {activeHolding === "monthly-census-return" && <MonthlyCensusReturn />}
           </FormScreen>
         )}
         {active === "weapon" && activeSub === "reports" && !activeReport && (

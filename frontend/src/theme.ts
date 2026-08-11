@@ -48,6 +48,8 @@ export const palette = {
   inkSoft: "#54606c",
   /** Holds 4.5:1 on tinted blue surfaces. */
   inkFaint: "#616d79",
+  /** Form field label / placeholder / table-header colour — "icy blue" (= accentHi). */
+  label: "#1d74b8",
 } as const;
 
 /** Six blues for charts — anomaly red is the only non-blue categorical colour. */

@@ -61,26 +61,26 @@ export function SearchRo() {
     >
       <FormGrid>
         <FormRow label="SUS No">
-          <Input value={form.susNo} onChange={(e) => upd("susNo", e.target.value)} />
+          <Input value={form.susNo} onChange={(e) => upd("susNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))} />
         </FormRow>
         <FormRow label="Unit Name">
           <Textarea
             rows={2}
             value={form.unitName}
-            onChange={(e) => upd("unitName", e.target.value)}
+            onChange={(e) => upd("unitName", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           />
         </FormRow>
         <FormRow label="Depot SUS No">
           <Input
             value={form.depotSusNo}
-            onChange={(e) => upd("depotSusNo", e.target.value)}
+            onChange={(e) => upd("depotSusNo", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           />
         </FormRow>
         <FormRow label="Depot Name">
           <Textarea
             rows={2}
             value={form.depotName}
-            onChange={(e) => upd("depotName", e.target.value)}
+            onChange={(e) => upd("depotName", e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
           />
         </FormRow>
         <FormRow label="Command">

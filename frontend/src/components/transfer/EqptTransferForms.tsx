@@ -340,7 +340,21 @@ function TransferForm({
       fill
       footer={
         <>
-          <Button type="button" onClick={handleGetRegn}>
+          <Button
+            type="button"
+            onClick={handleGetRegn}
+            disabled={
+              !parentUnit ||
+              !parentHolding ||
+              !parentEqpt ||
+              !prfGroup ||
+              !nomenclature ||
+              !receivingUnit ||
+              !receivingHolding ||
+              !receivingEqpt ||
+              (showRvFields && (!rvNo || !rvDate))
+            }
+          >
             Get Regn List
           </Button>
           {listLoaded && (
@@ -359,7 +373,7 @@ function TransferForm({
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <FormSection title="Parent unit details" />
         <UnitLookup
           label={parentLabel}
@@ -404,7 +418,7 @@ function TransferForm({
                 <Input
                   placeholder="Enter RV No..."
                   value={rvNo}
-                  onChange={(e) => setRvNo(e.target.value)}
+                  onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 />
               </FormRow>
               <FormRow label="RV Date" required>
@@ -464,7 +478,7 @@ function TransferForm({
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value)}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -884,7 +898,23 @@ export function InterUnitTransfer() {
       fill
       footer={
         <>
-          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
+          <Button
+            type="button"
+            onClick={handleGetRegn}
+            disabled={
+              loadingRegn ||
+              !parentSusNo ||
+              !parentHolding ||
+              !parentEqpt ||
+              !prfCode ||
+              !censusNo ||
+              !receivingSusNo ||
+              !receivingHolding ||
+              !receivingEqpt ||
+              !rvNo ||
+              !rvDate
+            }
+          >
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -903,7 +933,7 @@ export function InterUnitTransfer() {
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <FormSection title="Parent unit details" />
         <FormRow label="Parent Unit" required>
           <div className="flex gap-1">
@@ -911,7 +941,7 @@ export function InterUnitTransfer() {
               <Input
                 placeholder="Search..."
                 value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value)}
+                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
               <Button
                 type="button"
@@ -1004,7 +1034,7 @@ export function InterUnitTransfer() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value)}
+              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
 
@@ -1034,7 +1064,7 @@ export function InterUnitTransfer() {
               <Input
                 placeholder="Search..."
                 value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value)}
+                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -1121,7 +1151,7 @@ export function InterUnitTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value)}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -1470,7 +1500,21 @@ export function DepotToDepotTransfer() {
       fill
       footer={
         <>
-          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
+          <Button
+            type="button"
+            onClick={handleGetRegn}
+            disabled={
+              loadingRegn ||
+              !parentSusNo ||
+              !parentHolding ||
+              !parentEqpt ||
+              !prfCode ||
+              !censusNo ||
+              !receivingSusNo ||
+              !receivingHolding ||
+              !receivingEqpt
+            }
+          >
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -1486,7 +1530,7 @@ export function DepotToDepotTransfer() {
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <FormSection title="PARENT UNIT DETAILS" />
         <FormRow label="Parent Depot" required>
           <div className="flex gap-1">
@@ -1494,7 +1538,7 @@ export function DepotToDepotTransfer() {
               <Input
                 placeholder="Search..."
                 value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value)}
+                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
               <Button
                 type="button"
@@ -1592,7 +1636,7 @@ export function DepotToDepotTransfer() {
               <Input
                 placeholder="Search..."
                 value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value)}
+                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -1679,7 +1723,7 @@ export function DepotToDepotTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value)}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -2073,7 +2117,23 @@ export function UnitToDepotDeposit() {
       fill
       footer={
         <>
-          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
+          <Button
+            type="button"
+            onClick={handleGetRegn}
+            disabled={
+              loadingRegn ||
+              !parentSusNo ||
+              !parentHolding ||
+              !parentEqpt ||
+              !prfCode ||
+              !censusNo ||
+              !receivingSusNo ||
+              !receivingHolding ||
+              !receivingEqpt ||
+              !rvNo ||
+              !rvDate
+            }
+          >
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -2092,7 +2152,7 @@ export function UnitToDepotDeposit() {
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <FormSection title="Parent unit details" />
         <FormRow label="Parent Unit" required>
           <div className="flex gap-1">
@@ -2100,7 +2160,7 @@ export function UnitToDepotDeposit() {
               <Input
                 placeholder="Search..."
                 value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value)}
+                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
               <Button
                 type="button"
@@ -2193,7 +2253,7 @@ export function UnitToDepotDeposit() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value)}
+              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
             />
           </FormRow>
 
@@ -2223,7 +2283,7 @@ export function UnitToDepotDeposit() {
               <Input
                 placeholder="Search..."
                 value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value)}
+                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -2300,7 +2360,7 @@ export function UnitToDepotDeposit() {
                 placeholder="Search Regn No..."
                 className="h-7 w-48 text-xs"
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value)}
+                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
               />
             </div>
             <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2 pt-1">
