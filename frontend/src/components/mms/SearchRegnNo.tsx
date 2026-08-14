@@ -41,6 +41,7 @@ interface RegnRecord {
   census_no?: string | null;
   prf_code?: string | null;
   prf_group?: string | null;
+  nomenclature?: string | null;
   sus_no?: string | null;
   type_of_hldg?: string | null;
   type_of_hldg_label?: string | null;
@@ -268,7 +269,7 @@ export function SearchRegnNo() {
                   <TableRow>
                     <TableHead>Regn No</TableHead>
                     <TableHead>Census</TableHead>
-                    <TableHead>PRF Group</TableHead>
+                    <TableHead>Nomenclature</TableHead>
                     <TableHead>SUS</TableHead>
                     <TableHead>Holding</TableHead>
                     <TableHead>Serviceability</TableHead>
@@ -280,7 +281,7 @@ export function SearchRegnNo() {
                     <TableRow key={rowKey(r)}>
                       <TableCell>{r.eqpt_regn_no || "-"}</TableCell>
                       <TableCell>{r.census_no || "-"}</TableCell>
-                      <TableCell>{r.prf_group || r.prf_code || "-"}</TableCell>
+                      <TableCell>{r.nomenclature || "-"}</TableCell>
                       <TableCell>{r.sus_no || "-"}</TableCell>
                       <TableCell>{r.type_of_hldg_label || r.type_of_hldg || "-"}</TableCell>
                       <TableCell>

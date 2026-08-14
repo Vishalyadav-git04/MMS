@@ -1,4 +1,4 @@
-"""Gen EP Census — allocate census numbers and persist MMS_EP_MSTR using Native SQL."""
+"""Gen EP Census — allocate census numbers and persist MMS_EP_MASTER using Native SQL."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ def _next_census_no(
     # lookup silently return zero rows and always restart the sequence at 0001.
     # The prefix already encodes domain + sub domain, so this is unambiguous.
     sql = """
-        SELECT census_no FROM MMS_EP_MSTR
+        SELECT census_no FROM MMS_EP_MASTER
         WHERE UPPER(census_no) LIKE :prefix_pattern
     """
     rows = fetch_all(
@@ -222,7 +222,7 @@ def save_census(
         raise HTTPException(status_code=400, detail="Invalid Sub Domain selected")
 
     census_no = body.census_no.strip().upper()
-    clash = fetch_one(session, "SELECT id FROM MMS_EP_MSTR WHERE UPPER(census_no) = :c", {"c": census_no})
+    clash = fetch_one(session, "SELECT id FROM MMS_EP_MASTER WHERE UPPER(census_no) = :c", {"c": census_no})
     if clash is not None:
         raise HTTPException(
             status_code=409,
@@ -244,7 +244,7 @@ def save_census(
             detail="OPSTATUS domain has no APPROVED value configured",
         )
 
-    next_id = next_int_id(session, "MMS_EP_MSTR")
+    next_id = next_int_id(session, "MMS_EP_MASTER")
 
     now = datetime.now()
     params = {
@@ -277,7 +277,7 @@ def save_census(
     }
 
     insert_sql = """
-        INSERT INTO MMS_EP_MSTR (
+        INSERT INTO MMS_EP_MASTER (
             id, domain_id, sub_domain_id, census_no, auth_letter_no, auth_date,
             cat_part_no, brief_description, accounting_unit, item_stauts, item_category,
             class_of_equipment, nodal_directorate, digest_category, equipment_category,

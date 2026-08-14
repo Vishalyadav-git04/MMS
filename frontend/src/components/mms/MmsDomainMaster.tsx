@@ -227,11 +227,12 @@ export function MmsDomainMaster() {
     }
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideDomain?: string) => {
     setBusy(true);
+    const targetDomain = overrideDomain !== undefined ? overrideDomain : searchDomain;
     try {
-      const q = searchDomain
-        ? `?domain_name=${encodeURIComponent(searchDomain)}`
+      const q = targetDomain
+        ? `?domain_name=${encodeURIComponent(targetDomain)}`
         : "";
       const rows = await api<DomainRow[]>(`/admin/mms-domain-master/search${q}`);
       setResults(rows);
@@ -431,7 +432,11 @@ export function MmsDomainMaster() {
           <FormRow label="Domain Name" className="sm:grid-cols-[120px_minmax(0,1fr)]">
             <Select
               value={searchDomain || "__all__"}
-              onValueChange={(v) => setSearchDomain(v === "__all__" ? "" : v)}
+              onValueChange={(v) => {
+                const selected = v === "__all__" ? "" : v;
+                setSearchDomain(selected);
+                void handleSearch(selected);
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="-- ALL --" />

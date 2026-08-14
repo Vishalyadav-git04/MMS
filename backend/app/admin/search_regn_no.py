@@ -27,7 +27,7 @@ _SOURCE_LABEL = {
 }
 
 _TABLE_MAP = {
-    _SOURCE_UNIT: "MMS_UNIT_MSTR_DETL",
+    _SOURCE_UNIT: "MMS_UNIT_MASTER",
     _SOURCE_DEPOT: "MMS_DEPOT_MASTER",
     _SOURCE_OTH: "MMS_OTH_MASTER",
 }
@@ -47,6 +47,7 @@ class RegnRecord(BaseModel):
     census_no: str | None = None
     prf_code: str | None = None
     prf_group: str | None = None
+    nomenclature: str | None = None
     sus_no: str | None = None
     type_of_hldg: str | None = None
     type_of_hldg_label: str | None = None
@@ -200,7 +201,7 @@ def _get_prf_group_labels(session: Session, rows: list[dict]) -> dict[tuple[str,
         params_c = {f"c_{i}": c for i, c in enumerate(census_nos)}
         c_rows = fetch_all(
             session,
-            f"SELECT UPPER(TRIM(census_no)) as cno, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(census_no)) IN ({in_c}) AND prf_group IS NOT NULL",
+            f"SELECT UPPER(TRIM(census_no)) as cno, prf_group FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(TRIM(census_no)) IN ({in_c}) AND prf_group IS NOT NULL",
             params_c,
         )
         for cr in c_rows:
@@ -226,7 +227,7 @@ def _get_prf_group_labels(session: Session, rows: list[dict]) -> dict[tuple[str,
         params_ps = {f"ps_{i}": c.upper() for i, c in enumerate(prf_codes)}
         ps_rows = fetch_all(
             session,
-            f"SELECT UPPER(TRIM(prf_code)) as pcode, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(prf_code)) IN ({in_ps}) AND prf_group IS NOT NULL",
+            f"SELECT UPPER(TRIM(prf_code)) as pcode, prf_group FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(TRIM(prf_code)) IN ({in_ps}) AND prf_group IS NOT NULL",
             params_ps,
         )
         for ps in ps_rows:
@@ -244,12 +245,108 @@ def _get_prf_group_labels(session: Session, rows: list[dict]) -> dict[tuple[str,
     return out
 
 
+import re
+
+
+def _clean_key(val: Any) -> str:
+    if val is None:
+        return ""
+    return re.sub(r"[\s\-]", "", str(val)).upper()
+
+
+def _get_nomenclatures(session: Session, raw_tuples: list[tuple[str, dict]]) -> dict[tuple[str, str], str]:
+    rows = [r for _, r in raw_tuples]
+    census_list = [str(r.get("census_no")).strip() for r in rows if r.get("census_no") and str(r.get("census_no")).strip()]
+    prf_list = [str(r.get("prf_code")).strip() for r in rows if r.get("prf_code") and str(r.get("prf_code")).strip()]
+
+    census_map: dict[str, str] = {}
+
+    # 1. Look up MMS_MLCCS_EQPT_MASTER by census_no
+    if census_list:
+        unique_census = list(set(census_list))
+        in_c = ", ".join(f":c_{i}" for i in range(len(unique_census)))
+        params_c = {f"c_{i}": c.upper() for i, c in enumerate(unique_census)}
+        sql_c = f"""
+            SELECT census_no, nomen, brief_desc, cat_part_no
+            FROM MMS_MLCCS_EQPT_MASTER
+            WHERE UPPER(TRIM(census_no)) IN ({in_c})
+               OR UPPER(census_no) IN ({in_c})
+        """
+        c_rows = fetch_all(session, sql_c, params_c)
+        for cr in c_rows:
+            cno = cr.get("census_no")
+            nomen_val = str(cr.get("nomen") or cr.get("brief_desc") or cr.get("cat_part_no") or "").strip()
+            if cno and nomen_val:
+                ckey = _clean_key(cno)
+                if ckey:
+                    census_map[ckey] = nomen_val
+
+    # 2. Look up MMS_EP_MASTER by census_no for remaining missing census numbers
+    missing_c = [c for c in census_list if _clean_key(c) not in census_map]
+    if missing_c:
+        unique_ep = list(set(missing_c))
+        in_ep = ", ".join(f":ep_{i}" for i in range(len(unique_ep)))
+        params_ep = {f"ep_{i}": c.upper() for i, c in enumerate(unique_ep)}
+        sql_ep = f"""
+            SELECT census_no, brief_description, cat_part_no
+            FROM MMS_EP_MASTER
+            WHERE UPPER(TRIM(census_no)) IN ({in_ep})
+               OR UPPER(census_no) IN ({in_ep})
+        """
+        ep_rows = fetch_all(session, sql_ep, params_ep)
+        for er in ep_rows:
+            cno = er.get("census_no")
+            nomen_val = str(er.get("brief_description") or er.get("cat_part_no") or "").strip()
+            if cno and nomen_val:
+                ckey = _clean_key(cno)
+                if ckey and ckey not in census_map:
+                    census_map[ckey] = nomen_val
+
+    # 3. Secondary lookup by prf_code from MMS_MLCCS_EQPT_MASTER if census_no was not found
+    prf_map: dict[str, str] = {}
+    if prf_list:
+        unique_prf = list(set(prf_list))
+        in_p = ", ".join(f":p_{i}" for i in range(len(unique_prf)))
+        params_p = {f"p_{i}": p.upper() for i, p in enumerate(unique_prf)}
+        sql_p = f"""
+            SELECT prf_code, nomen, brief_desc
+            FROM MMS_MLCCS_EQPT_MASTER
+            WHERE (UPPER(TRIM(prf_code)) IN ({in_p}) OR UPPER(prf_code) IN ({in_p}))
+              AND (nomen IS NOT NULL OR brief_desc IS NOT NULL)
+        """
+        p_rows = fetch_all(session, sql_p, params_p)
+        for pr in p_rows:
+            pcode = pr.get("prf_code")
+            nomen_val = str(pr.get("nomen") or pr.get("brief_desc") or "").strip()
+            if pcode and nomen_val:
+                pkey = _clean_key(pcode)
+                if pkey and pkey not in prf_map:
+                    prf_map[pkey] = nomen_val
+
+    out: dict[tuple[str, str], str] = {}
+    for source, r in raw_tuples:
+        rid = str(r.get("id") or "")
+        raw_nomen = str(r.get("nomen") or r.get("nomenclature") or r.get("item_name") or "").strip()
+        cno_key = _clean_key(r.get("census_no"))
+        pcode_key = _clean_key(r.get("prf_code"))
+
+        if raw_nomen:
+            out[(source, rid)] = raw_nomen
+        elif cno_key and cno_key in census_map:
+            out[(source, rid)] = census_map[cno_key]
+        elif pcode_key and pcode_key in prf_map:
+            out[(source, rid)] = prf_map[pcode_key]
+
+    return out
+
+
 def _row_to_record(
     source: str,
     row: dict,
     svc_labels: dict[str, str],
     hldg_labels: dict[str, str],
     prf_groups: dict[tuple[str, str], str],
+    nomenclatures: dict[tuple[str, str], str],
 ) -> RegnRecord:
     svc = str(row.get("service_status") or "").strip()
     hldg = str(row.get("type_of_hldg") or "").strip()
@@ -258,15 +355,18 @@ def _row_to_record(
     cno = str(row.get("census_no") or "").strip().upper()
     pcode = str(row.get("prf_code") or "").strip()
     prf_grp = prf_groups.get((cno, pcode))
+    rid = str(row.get("id") or "")
+    nomen = nomenclatures.get((source, rid))
 
     return RegnRecord(
-        id=str(row.get("id") or ""),
+        id=rid,
         source_table=source,
         source_label=_SOURCE_LABEL.get(source, source),
         eqpt_regn_no=row.get("eqpt_regn_no"),
         census_no=row.get("census_no"),
         prf_code=row.get("prf_code"),
         prf_group=prf_grp,
+        nomenclature=nomen,
         sus_no=sus,
         type_of_hldg=row.get("type_of_hldg"),
         type_of_hldg_label=hldg_labels.get(hldg.upper(), hldg) if hldg else None,
@@ -375,10 +475,11 @@ def search_regn(
         )
 
     prf_groups = _get_prf_group_labels(session, [r for _, r in raw_rows])
+    nomenclatures = _get_nomenclatures(session, raw_rows)
 
     out: list[RegnRecord] = []
     for source, r in raw_rows:
-        out.append(_row_to_record(source, r, svc_labels, hldg_labels, prf_groups))
+        out.append(_row_to_record(source, r, svc_labels, hldg_labels, prf_groups, nomenclatures))
 
     return out
 

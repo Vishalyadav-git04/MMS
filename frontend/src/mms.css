@@ -409,7 +409,7 @@
 .mms-form table thead tr.bg-primary,
 .mms-panel table thead tr.bg-primary:hover,
 .mms-form table thead tr.bg-primary:hover {
-  background-color: var(--surface-alt, #eff5fb) !important;
+  background-color: hsl(var(--primary)) !important;
 }
 
 .mms-panel table th,
@@ -422,12 +422,15 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--label-color, #1d74b8);
-  background-color: var(--surface-alt, #eff5fb) !important;
+  background-color: var(--surface-alt, #eff5fb);
 }
 
+.mms-panel table thead tr.bg-primary th,
+.mms-form table thead tr.bg-primary th,
 .mms-panel table th.text-primary-foreground,
 .mms-form table th.text-primary-foreground {
-  color: var(--label-color, #1d74b8) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  background-color: transparent !important;
 }
 
 .mms-panel table td,
@@ -716,14 +719,13 @@ textarea::placeholder {
 }
 
 .mms-breadcrumb {
-  background-color: var(--surface-alt, #eff5fb);
-  background-image: none;
-  color: var(--ink-soft, #54606c);
-  border-bottom: 1px solid var(--line-soft, #dfe9f4);
+  background-color: var(--accent, #14568c);
+  background-image: linear-gradient(120deg, #14568c, #1d74b8);
+  color: #ffffff;
 }
 
 .mms-breadcrumb__accent {
-  color: var(--accent, #14568c);
+  color: #ffffff;
 }
 
 /* ── Sidebar (existing structure, design-system colours) ── */
@@ -830,4 +832,16 @@ textarea::placeholder {
   letter-spacing: -0.035em;
   color: var(--accent, #14568c);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Media Print Rules ── */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, nav, aside, [role="navigation"], .no-print, button {
+    display: none !important;
+  }
 }

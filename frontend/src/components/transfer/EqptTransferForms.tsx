@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormPanel, FormRow, FormGrid, FormSection } from "@/components/FormPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -96,6 +97,7 @@ function UnitLookup({
   onUnitChange,
   options,
   onSearch,
+  className,
 }: {
   label: string;
   search: string;
@@ -104,9 +106,10 @@ function UnitLookup({
   onUnitChange: (v: string) => void;
   options: string[];
   onSearch: () => void;
+  className?: string;
 }) {
   return (
-    <FormRow label={label} required>
+    <FormRow label={label} required className={className}>
       <div className="flex gap-1">
         <div className="flex min-w-0 flex-1 gap-1">
           <Input
@@ -168,6 +171,157 @@ function RegnListBox({
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Single-field unit/depot picker: type to filter, pick from up to 10 live
+ * suggestions. Replaces the old "search box + search button + separate
+ * select dropdown" combo everywhere a Parent/Receiving Unit is chosen.
+ *
+ * Filtering itself is always local (against sus_no / unit_name / display in
+ * `options`), so it works immediately even for screens that only ever load
+ * one full list. Pass `onQueryChange` when the screen also wants to refresh
+ * `options` from the server as the user types (e.g. Receiving Unit, which
+ * re-queries `?search=`) — it's called debounced, 300ms after the user stops
+ * typing.
+ */
+function UnitAutocomplete<T extends { sus_no: string; unit_name: string; display: string }>({
+  value,
+  onChange,
+  options,
+  onQueryChange,
+  placeholder = "Search unit...",
+  disabled = false,
+}: {
+  value: string;
+  onChange: (susNo: string) => void;
+  options: T[];
+  onQueryChange?: (query: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Right after picking a suggestion the box keeps focus, and without this
+  // guard that focus (plus Radix returning focus on close) briefly reopens
+  // the popover a beat after it closes — a visible open/close "flicker".
+  const suppressReopenRef = useRef(false);
+
+  const selected = useMemo(() => options.find((o) => o.sus_no === value), [options, value]);
+
+  // Reflect the selected unit's label whenever it changes from outside
+  // (a fresh pick, or the parent clearing it) as long as the user isn't
+  // mid-edit in this box.
+  useEffect(() => {
+    if (!open) setText(selected ? selected.display : "");
+  }, [selected, open]);
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
+  );
+
+  const suggestions = useMemo(() => {
+    const q = text.trim().toUpperCase();
+    const isSelectedText = selected && q === selected.display.trim().toUpperCase();
+    const matches = !q || isSelectedText
+      ? options
+      : options.filter(
+          (o) =>
+            o.sus_no.toUpperCase().includes(q) ||
+            o.unit_name.toUpperCase().includes(q) ||
+            o.display.toUpperCase().includes(q),
+        );
+    return matches.slice(0, 10);
+  }, [options, text, selected]);
+
+  return (
+    // Popover renders its content in a portal on document.body (same as the
+    // date-picker calendar), so the suggestion list floats above the panel
+    // and its footer instead of getting clipped by the panel's own
+    // `overflow: hidden` — a plain absolutely-positioned <div> here would
+    // still get cut off at the panel edge no matter what z-index it has.
+    <Popover open={open && !disabled} onOpenChange={(next) => !disabled && setOpen(next)}>
+      <PopoverAnchor asChild>
+        <div ref={containerRef} className="relative w-full">
+          <Input
+            placeholder={placeholder}
+            value={text}
+            disabled={disabled}
+            onChange={(e) => {
+              const next = e.target.value;
+              setText(next);
+              setOpen(true);
+              if (value) onChange("");
+              if (onQueryChange) {
+                if (debounceRef.current) clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => onQueryChange(next), 300);
+              }
+            }}
+            onFocus={() => {
+              if (suppressReopenRef.current) return;
+              setOpen(true);
+            }}
+            onClick={() => {
+              if (suppressReopenRef.current) return;
+              setOpen(true);
+            }}
+          />
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          if (containerRef.current?.contains(e.target as Node)) {
+            e.preventDefault();
+          }
+        }}
+      >
+        {suggestions.length === 0 ? (
+          <p className="px-2.5 py-2 text-[12px] text-muted-foreground">No matching units</p>
+        ) : (
+          <ul className="max-h-64 overflow-y-auto py-1">
+            {suggestions.map((o) => (
+              <li key={o.sus_no}>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center px-2.5 py-1.5 text-left text-[13px] hover:bg-muted",
+                    o.sus_no === value && "bg-muted font-medium",
+                  )}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onChange(o.sus_no);
+                    setText(o.display);
+                    setOpen(false);
+                    suppressReopenRef.current = true;
+                    setTimeout(() => {
+                      suppressReopenRef.current = false;
+                    }, 250);
+                  }}
+                >
+                  <span className="truncate">{o.display}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -340,21 +494,7 @@ function TransferForm({
       fill
       footer={
         <>
-          <Button
-            type="button"
-            onClick={handleGetRegn}
-            disabled={
-              !parentUnit ||
-              !parentHolding ||
-              !parentEqpt ||
-              !prfGroup ||
-              !nomenclature ||
-              !receivingUnit ||
-              !receivingHolding ||
-              !receivingEqpt ||
-              (showRvFields && (!rvNo || !rvDate))
-            }
-          >
+          <Button type="button" onClick={handleGetRegn}>
             Get Regn List
           </Button>
           {listLoaded && (
@@ -383,6 +523,7 @@ function TransferForm({
           onUnitChange={setParentUnit}
           options={parentOptions}
           onSearch={() => toast.success(`Searching ${parentLabel}...`)}
+          className="mb-5"
         />
         <FormGrid cols={2}>
           <FormRow label="Type of Holding" required>
@@ -418,7 +559,7 @@ function TransferForm({
                 <Input
                   placeholder="Enter RV No..."
                   value={rvNo}
-                  onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+                  onChange={(e) => setRvNo(e.target.value)}
                 />
               </FormRow>
               <FormRow label="RV Date" required>
@@ -440,6 +581,7 @@ function TransferForm({
           onUnitChange={setReceivingUnit}
           options={receivingOptions}
           onSearch={() => toast.success(`Searching ${receivingLabel}...`)}
+          className="mb-5"
         />
         <FormGrid cols={2}>
           <FormRow label="Type of Holding" required>
@@ -478,7 +620,7 @@ function TransferForm({
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+                onChange={(e) => setRegnSearch(e.target.value)}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -556,7 +698,6 @@ interface ReceivingUnitOption {
 }
 
 export function InterUnitTransfer() {
-  const [parentSearch, setParentSearch] = useState("");
   const [parentSusNo, setParentSusNo] = useState("");
   const [parentUnits, setParentUnits] = useState<ParentUnitOption[]>([]);
 
@@ -712,6 +853,15 @@ export function InterUnitTransfer() {
       toast.error("Failed to search receiving units");
     }
   };
+
+  // Re-query the server as the user types in the Receiving Unit box (debounced
+  // by the input itself firing this on a 300ms delay) so suggestions stay
+  // fresh beyond whatever was loaded on mount.
+  useEffect(() => {
+    if (!receivingSearch) return;
+    void handleReceivingSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receivingSearch]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -870,51 +1020,13 @@ export function InterUnitTransfer() {
     }
   };
 
-  const filteredParentUnits = useMemo(() => {
-    const q = parentSearch.trim().toUpperCase();
-    if (!q) return parentUnits;
-    return parentUnits.filter(
-      (o) =>
-        o.sus_no.toUpperCase().includes(q) ||
-        o.unit_name.toUpperCase().includes(q) ||
-        o.display.toUpperCase().includes(q)
-    );
-  }, [parentUnits, parentSearch]);
-
-  const filteredReceivingUnits = useMemo(() => {
-    const q = receivingSearch.trim().toUpperCase();
-    if (!q) return receivingUnits;
-    return receivingUnits.filter(
-      (o) =>
-        o.sus_no.toUpperCase().includes(q) ||
-        o.unit_name.toUpperCase().includes(q) ||
-        o.display.toUpperCase().includes(q)
-    );
-  }, [receivingUnits, receivingSearch]);
-
   return (
     <FormPanel
       title="INTER UNIT TRANSFER : UNIT TO UNIT"
-      fill
+      fill={listLoaded}
       footer={
         <>
-          <Button
-            type="button"
-            onClick={handleGetRegn}
-            disabled={
-              loadingRegn ||
-              !parentSusNo ||
-              !parentHolding ||
-              !parentEqpt ||
-              !prfCode ||
-              !censusNo ||
-              !receivingSusNo ||
-              !receivingHolding ||
-              !receivingEqpt ||
-              !rvNo ||
-              !rvDate
-            }
-          >
+          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -935,38 +1047,13 @@ export function InterUnitTransfer() {
     >
       <div className="flex flex-col gap-1">
         <FormSection title="Parent unit details" />
-        <FormRow label="Parent Unit" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={parentSusNo} onValueChange={setParentSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredParentUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Parent Unit" required className="mb-5">
+          <UnitAutocomplete
+            value={parentSusNo}
+            onChange={setParentSusNo}
+            options={parentUnits}
+            placeholder="Search parent unit..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -1034,7 +1121,7 @@ export function InterUnitTransfer() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+              onChange={(e) => setRvNo(e.target.value)}
             />
           </FormRow>
 
@@ -1058,45 +1145,14 @@ export function InterUnitTransfer() {
         </FormGrid>
 
         <FormSection title="Receiving unit details" />
-        <FormRow label="Receiving Unit" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleReceivingSearch();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-                onClick={handleReceivingSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={receivingSusNo} onValueChange={setReceivingSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredReceivingUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Receiving Unit" required className="mb-5">
+          <UnitAutocomplete
+            value={receivingSusNo}
+            onChange={setReceivingSusNo}
+            options={receivingUnits}
+            onQueryChange={setReceivingSearch}
+            placeholder="Search receiving unit..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -1151,7 +1207,7 @@ export function InterUnitTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+                onChange={(e) => setRegnSearch(e.target.value)}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -1201,7 +1257,6 @@ export function InterUnitTransfer() {
 }
 
 export function DepotToDepotTransfer() {
-  const [parentSearch, setParentSearch] = useState("");
   const [parentSusNo, setParentSusNo] = useState("");
   const [parentUnits, setParentUnits] = useState<ParentUnitOption[]>([]);
 
@@ -1352,6 +1407,13 @@ export function DepotToDepotTransfer() {
     }
   };
 
+  // Re-query the server as the user types in the Receiving Depot box.
+  useEffect(() => {
+    if (!receivingSearch) return;
+    void handleReceivingSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receivingSearch]);
+
   const filteredAvailable = useMemo(() => {
     const q = regnSearch.trim().toLowerCase();
     if (!q) return availableRegns;
@@ -1482,39 +1544,13 @@ export function DepotToDepotTransfer() {
     }
   };
 
-  const filteredParentUnits = useMemo(() => {
-    if (!parentSearch.trim()) return parentUnits;
-    const q = parentSearch.trim().toLowerCase();
-    return parentUnits.filter((u) => u.display.toLowerCase().includes(q));
-  }, [parentUnits, parentSearch]);
-
-  const filteredReceivingUnits = useMemo(() => {
-    if (!receivingSearch.trim()) return receivingUnits;
-    const q = receivingSearch.trim().toLowerCase();
-    return receivingUnits.filter((u) => u.display.toLowerCase().includes(q));
-  }, [receivingUnits, receivingSearch]);
-
   return (
     <FormPanel
       title="EQPT TRANSFER : DEPOT TO DEPOT"
-      fill
+      fill={listLoaded}
       footer={
         <>
-          <Button
-            type="button"
-            onClick={handleGetRegn}
-            disabled={
-              loadingRegn ||
-              !parentSusNo ||
-              !parentHolding ||
-              !parentEqpt ||
-              !prfCode ||
-              !censusNo ||
-              !receivingSusNo ||
-              !receivingHolding ||
-              !receivingEqpt
-            }
-          >
+          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -1532,39 +1568,13 @@ export function DepotToDepotTransfer() {
     >
       <div className="flex flex-col gap-1">
         <FormSection title="PARENT UNIT DETAILS" />
-        <FormRow label="Parent Depot" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-                onClick={() => {}}
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={parentSusNo} onValueChange={setParentSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredParentUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Parent Depot" required className="mb-5">
+          <UnitAutocomplete
+            value={parentSusNo}
+            onChange={setParentSusNo}
+            options={parentUnits}
+            placeholder="Search parent depot..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -1630,45 +1640,14 @@ export function DepotToDepotTransfer() {
         </FormGrid>
 
         <FormSection title="RECEIVING UNIT DETAILS" />
-        <FormRow label="Receiving Depot" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleReceivingSearch();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-                onClick={handleReceivingSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={receivingSusNo} onValueChange={setReceivingSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredReceivingUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Receiving Depot" required className="mb-5">
+          <UnitAutocomplete
+            value={receivingSusNo}
+            onChange={setReceivingSusNo}
+            options={receivingUnits}
+            onQueryChange={setReceivingSearch}
+            placeholder="Search receiving depot..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -1723,7 +1702,7 @@ export function DepotToDepotTransfer() {
               <Input
                 placeholder="Search Regd .."
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+                onChange={(e) => setRegnSearch(e.target.value)}
                 className="ml-auto h-7 max-w-[180px] bg-background"
               />
               <span className="text-[13px] font-semibold text-foreground">
@@ -1773,7 +1752,6 @@ export function DepotToDepotTransfer() {
 }
 
 export function UnitToDepotDeposit() {
-  const [parentSearch, setParentSearch] = useState("");
   const [parentSusNo, setParentSusNo] = useState("");
   const [parentUnits, setParentUnits] = useState<ParentUnitOption[]>([]);
 
@@ -1932,6 +1910,13 @@ export function UnitToDepotDeposit() {
     }
   };
 
+  // Re-query the server as the user types in the Receiving Depot box.
+  useEffect(() => {
+    if (!receivingSearch) return;
+    void handleReceivingSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receivingSearch]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2089,51 +2074,13 @@ export function UnitToDepotDeposit() {
     }
   };
 
-  const filteredParentUnits = useMemo(() => {
-    const q = parentSearch.trim().toUpperCase();
-    if (!q) return parentUnits;
-    return parentUnits.filter(
-      (o) =>
-        o.sus_no.toUpperCase().includes(q) ||
-        o.unit_name.toUpperCase().includes(q) ||
-        o.display.toUpperCase().includes(q)
-    );
-  }, [parentUnits, parentSearch]);
-
-  const filteredReceivingUnits = useMemo(() => {
-    const q = receivingSearch.trim().toUpperCase();
-    if (!q) return receivingUnits;
-    return receivingUnits.filter(
-      (o) =>
-        o.sus_no.toUpperCase().includes(q) ||
-        o.unit_name.toUpperCase().includes(q) ||
-        o.display.toUpperCase().includes(q)
-    );
-  }, [receivingUnits, receivingSearch]);
-
   return (
     <FormPanel
       title="DEPOSIT TO DEPOT : UNIT TO DEPOT"
-      fill
+      fill={listLoaded}
       footer={
         <>
-          <Button
-            type="button"
-            onClick={handleGetRegn}
-            disabled={
-              loadingRegn ||
-              !parentSusNo ||
-              !parentHolding ||
-              !parentEqpt ||
-              !prfCode ||
-              !censusNo ||
-              !receivingSusNo ||
-              !receivingHolding ||
-              !receivingEqpt ||
-              !rvNo ||
-              !rvDate
-            }
-          >
+          <Button type="button" onClick={handleGetRegn} disabled={loadingRegn}>
             {loadingRegn ? "Loading..." : "Get Regn List"}
           </Button>
           {listLoaded && (
@@ -2154,38 +2101,13 @@ export function UnitToDepotDeposit() {
     >
       <div className="flex flex-col gap-1">
         <FormSection title="Parent unit details" />
-        <FormRow label="Parent Unit" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={parentSearch}
-                onChange={(e) => setParentSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={parentSusNo} onValueChange={setParentSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredParentUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Parent Unit" required className="mb-5">
+          <UnitAutocomplete
+            value={parentSusNo}
+            onChange={setParentSusNo}
+            options={parentUnits}
+            placeholder="Search parent unit..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -2253,7 +2175,7 @@ export function UnitToDepotDeposit() {
             <Input
               placeholder="Enter RV No..."
               value={rvNo}
-              onChange={(e) => setRvNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+              onChange={(e) => setRvNo(e.target.value)}
             />
           </FormRow>
 
@@ -2277,45 +2199,14 @@ export function UnitToDepotDeposit() {
         </FormGrid>
 
         <FormSection title="Receiving unit details" />
-        <FormRow label="Receiving Depot" required>
-          <div className="flex gap-1">
-            <div className="flex min-w-0 flex-1 gap-1">
-              <Input
-                placeholder="Search..."
-                value={receivingSearch}
-                onChange={(e) => setReceivingSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleReceivingSearch();
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="h-7 w-7 shrink-0"
-                onClick={handleReceivingSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-[1.4]">
-              <Select value={receivingSusNo} onValueChange={setReceivingSusNo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="--Select Unit--" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {filteredReceivingUnits.map((o) => (
-                    <SelectItem key={o.sus_no} value={o.sus_no}>
-                      {o.display}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <FormRow label="Receiving Depot" required className="mb-5">
+          <UnitAutocomplete
+            value={receivingSusNo}
+            onChange={setReceivingSusNo}
+            options={receivingUnits}
+            onQueryChange={setReceivingSearch}
+            placeholder="Search receiving depot..."
+          />
         </FormRow>
 
         <FormGrid cols={2}>
@@ -2360,7 +2251,7 @@ export function UnitToDepotDeposit() {
                 placeholder="Search Regn No..."
                 className="h-7 w-48 text-xs"
                 value={regnSearch}
-                onChange={(e) => setRegnSearch(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
+                onChange={(e) => setRegnSearch(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2 pt-1">

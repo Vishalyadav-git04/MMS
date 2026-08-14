@@ -26,3 +26,15 @@ backend/offline_packages/
 dist/
 frontend/dist/
 *.log
+frontend/_to_delete/
+tsconfig.check*.json
+.git.zip
+doc/
+docs/
+
+# Claude / IDE config
+.claude/
+
+# MCP server config — contains API keys, never commit
+.mcp.json
+

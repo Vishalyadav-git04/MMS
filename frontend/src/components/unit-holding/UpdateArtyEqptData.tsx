@@ -28,7 +28,7 @@ import {
 import { Plus, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { pageHasInvalidDateInputs, toIsoDate } from "@/lib/date";
+import { pageHasInvalidDateInputs, toDmyDisplay, toIsoDate } from "@/lib/date";
 import { api, ApiError } from "@/lib/api";
 
 interface Option {
@@ -98,8 +98,78 @@ interface EqptDetail extends EqptRow {
   has_barrels: boolean;
 }
 
-const OH_TYPE_OPTIONS = ["Minor OH", "Major OH", "Base OH", "Intermediate OH"];
-const OP_CLEARANCE_OPTIONS = ["Cleared", "Not Cleared", "Pending"];
+// UI shows "OH 1" / "OH 2" / "OH 3"; MMS_OH_DETL.OH_TYPE stores just the number.
+const OH_TYPE_OPTIONS = ["OH 1", "OH 2", "OH 3"];
+const OH_TYPE_CODE: Record<string, "1" | "2" | "3"> = {
+  "OH 1": "1",
+  "OH 2": "2",
+  "OH 3": "3",
+};
+const OH_TYPE_LABEL: Record<string, string> = {
+  "1": "OH 1",
+  "2": "OH 2",
+  "3": "OH 3",
+};
+
+// Today's date as yyyy-mm-dd, computed from local date parts (not UTC) so it
+// never shifts a day off around midnight in IST.
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// UI shows "Yes" / "No"; MMS_BARREL_DETL.OP_CLEAR stores it as-is.
+const OP_CLEARANCE_OPTIONS = ["Yes", "No"];
+
+interface OhRecord {
+  id: number | string;
+  eqpt_regn_no: string;
+  sus_no: string | null;
+  oh_type: string | null;
+  oh_due_dt: string | null;
+  oh_done_dt: string | null;
+  wksp_name: string | null;
+  wksp_in_dt: string | null;
+  dispatch_dt: string | null;
+  boh_compl_dt: string | null;
+  gun_recd_dt: string | null;
+  dt_of_intro: string | null;
+  created_by: string | null;
+  created_on: string | null;
+}
+
+interface BarrelRecord {
+  id: number | string;
+  eqpt_regn_no: string;
+  sus_no: string | null;
+  barrel_regn_no: string | null;
+  op_clear: string | null;
+  op_clear_dt: string | null;
+  wksp_name: string | null;
+  wksp_in_dt: string | null;
+  cofr_vertical: string | null;
+  cofr_horizontal: string | null;
+  qtr_of_life: string | null;
+  efc: string | null;
+  total_rds_fired: string | null;
+  last_fired_dt: string | null;
+  created_by: string | null;
+  created_on: string | null;
+}
+
+interface StripRecord {
+  id: number | string;
+  eqpt_regn_no: string;
+  recoil_sys_regd_no: string;
+  periodicity: string | null;
+  dt_of_insp: string | null;
+  dt_of_next_insp: string | null;
+  created_by: string | null;
+  created_on: string | null;
+}
 
 const emptyForm = {
   unitSearch: "",
@@ -196,10 +266,18 @@ function DetailField({
 
 function ViewEqptDialog({
   detail,
+  ohLatest,
+  barrelLatest,
+  stripLatest,
+  loadingArty,
   open,
   onClose,
 }: {
   detail: EqptDetail;
+  ohLatest: OhRecord | null;
+  barrelLatest: BarrelRecord | null;
+  stripLatest: StripRecord | null;
+  loadingArty: boolean;
   open: boolean;
   onClose: () => void;
 }) {
@@ -264,18 +342,63 @@ function ViewEqptDialog({
             </div>
           </div>
 
-          <FormSection title="3. Serviceability & Barrel Details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <DetailField
-              label="Serviceability Status"
-              value={detail.service_status_label || detail.service_status}
-            />
-            <DetailField label="Special Remarks" value={detail.spl_remarks} />
-            <DetailField label="Barrel - I" value={detail.barrel1_detl} />
-            <DetailField label="Barrel - II" value={detail.barrel2_detl} />
-            <DetailField label="Barrel - III" value={detail.barrel3_detl} />
-            <DetailField label="Barrel - IV" value={detail.barrel4_detl} />
-          </div>
+          <FormSection title="3. OH / Barrel / Strip Details (latest entry)" />
+          {loadingArty ? (
+            <p className="text-xs text-muted-foreground">Loading OH / Barrel / Strip details…</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Latest OH Details
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <DetailField
+                    label="OH Type"
+                    value={ohLatest ? OH_TYPE_LABEL[ohLatest.oh_type || ""] || ohLatest.oh_type : null}
+                  />
+                  <DetailField label="OH Due Dt" value={toDmyDisplay(ohLatest?.oh_due_dt || "")} />
+                  <DetailField label="OH Done Dt" value={toDmyDisplay(ohLatest?.oh_done_dt || "")} />
+                  <DetailField label="WKSP Name" value={ohLatest?.wksp_name} />
+                  <DetailField label="WKSP In Dt" value={toDmyDisplay(ohLatest?.wksp_in_dt || "")} />
+                  <DetailField label="Dispatch Dt" value={toDmyDisplay(ohLatest?.dispatch_dt || "")} />
+                  <DetailField label="BOH Compl Dt" value={toDmyDisplay(ohLatest?.boh_compl_dt || "")} />
+                  <DetailField label="Gun Recd Dt" value={toDmyDisplay(ohLatest?.gun_recd_dt || "")} />
+                  <DetailField label="Dt of Intro" value={toDmyDisplay(ohLatest?.dt_of_intro || "")} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Latest Barrel Details
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <DetailField label="Barrel Regn No" value={barrelLatest?.barrel_regn_no} />
+                  <DetailField label="Op Clearance" value={barrelLatest?.op_clear} />
+                  <DetailField label="Op Clearance Dt" value={toDmyDisplay(barrelLatest?.op_clear_dt || "")} />
+                  <DetailField label="WKSP Name" value={barrelLatest?.wksp_name} />
+                  <DetailField label="WKSP In Dt" value={toDmyDisplay(barrelLatest?.wksp_in_dt || "")} />
+                  <DetailField label="CoFR Vertical (mm)" value={barrelLatest?.cofr_vertical} />
+                  <DetailField label="CoFR Horizontal (mm)" value={barrelLatest?.cofr_horizontal} />
+                  <DetailField label="Qtr of Life" value={barrelLatest?.qtr_of_life} />
+                  <DetailField label="EFC" value={barrelLatest?.efc} />
+                  <DetailField label="Total Rds Fired" value={barrelLatest?.total_rds_fired} />
+                  <DetailField label="Last Fired Dt" value={toDmyDisplay(barrelLatest?.last_fired_dt || "")} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Latest Strip Inspection
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <DetailField label="Recoil Sys Regn No" value={stripLatest?.recoil_sys_regd_no} />
+                  <DetailField label="Periodicity (yrs)" value={stripLatest?.periodicity} />
+                  <DetailField label="Dt of Insp" value={toDmyDisplay(stripLatest?.dt_of_insp || "")} />
+                  <DetailField label="Dt of Next Insp" value={toDmyDisplay(stripLatest?.dt_of_next_insp || "")} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -431,24 +554,71 @@ function OhDetailsForm({
   const [gunRecdDt, setGunRecdDt] = useState("");
   const [dtOfIntro, setDtOfIntro] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingLast, setLoadingLast] = useState(false);
+  // Snapshot of the values the form opened with (last entry, or today's date
+  // in the date fields when there's no prior entry) — the Update button stays
+  // disabled until something differs from this snapshot.
+  const initialRef = useRef<Record<string, string> | null>(null);
+
+  // Pre-fill from the most recent OH entry for this equipment, if any, so the
+  // form opens showing what was last recorded rather than a blank slate. If
+  // there's no previous entry, default the date fields to today instead of
+  // leaving them blank.
+  useEffect(() => {
+    if (!record.eqpt_regn_no) return;
+    setLoadingLast(true);
+    void api<OhRecord[]>(
+      `/unit-holding/update-arty-eqpt-data/oh-detail?eqpt_regn_no=${encodeURIComponent(record.eqpt_regn_no)}`,
+    )
+      .then((rows) => {
+        const last = rows[rows.length - 1];
+        const today = todayIso();
+        const next = {
+          ohType: last ? OH_TYPE_LABEL[last.oh_type || ""] || "" : "",
+          ohDueDt: last ? last.oh_due_dt || "" : today,
+          ohDoneDt: last ? last.oh_done_dt || "" : today,
+          wkspName: last ? last.wksp_name || "" : "",
+          wkspInDt: last ? last.wksp_in_dt || "" : today,
+          dispatchDt: last ? last.dispatch_dt || "" : today,
+          bohComplDt: last ? last.boh_compl_dt || "" : today,
+          gunRecdDt: last ? last.gun_recd_dt || "" : today,
+          dtOfIntro: last ? last.dt_of_intro || "" : today,
+        };
+        setOhType(next.ohType);
+        setOhDueDt(next.ohDueDt);
+        setOhDoneDt(next.ohDoneDt);
+        setWkspName(next.wkspName);
+        setWkspInDt(next.wkspInDt);
+        setDispatchDt(next.dispatchDt);
+        setBohComplDt(next.bohComplDt);
+        setGunRecdDt(next.gunRecdDt);
+        setDtOfIntro(next.dtOfIntro);
+        initialRef.current = next;
+      })
+      .catch(() => toast.error("Failed to load last OH entry"))
+      .finally(() => setLoadingLast(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.eqpt_regn_no]);
 
   const isDirty =
-    ohType ||
-    ohDueDt ||
-    ohDoneDt ||
-    wkspName ||
-    wkspInDt ||
-    dispatchDt ||
-    bohComplDt ||
-    gunRecdDt ||
-    dtOfIntro;
+    !!initialRef.current &&
+    (ohType !== initialRef.current.ohType ||
+      ohDueDt !== initialRef.current.ohDueDt ||
+      ohDoneDt !== initialRef.current.ohDoneDt ||
+      wkspName !== initialRef.current.wkspName ||
+      wkspInDt !== initialRef.current.wkspInDt ||
+      dispatchDt !== initialRef.current.dispatchDt ||
+      bohComplDt !== initialRef.current.bohComplDt ||
+      gunRecdDt !== initialRef.current.gunRecdDt ||
+      dtOfIntro !== initialRef.current.dtOfIntro);
 
   const handleUpdate = async () => {
     if (pageHasInvalidDateInputs()) {
       toast.error("Please enter a valid date (dd/mm/yyyy)");
       return;
     }
-    if (!ohType) {
+    const ohTypeCode = OH_TYPE_CODE[ohType];
+    if (!ohTypeCode) {
       toast.error("OH Type is required");
       return;
     }
@@ -463,7 +633,7 @@ function OhDetailsForm({
         body: JSON.stringify({
           eqpt_regn_no: record.eqpt_regn_no,
           sus_no: record.sus_no || null,
-          oh_type: ohType,
+          oh_type: ohTypeCode,
           oh_due_dt: toIsoDate(ohDueDt) || null,
           oh_done_dt: toIsoDate(ohDoneDt) || null,
           wksp_name: wkspName || null,
@@ -485,6 +655,9 @@ function OhDetailsForm({
 
   return (
     <div className="flex flex-col gap-3.5 pt-1">
+      {loadingLast && (
+        <p className="text-xs text-muted-foreground">Loading last OH entry…</p>
+      )}
       <FormRow label="OH Type" required className={pairRow}>
         <SimpleSelectField
           value={ohType}
@@ -550,19 +723,68 @@ function BarrelDetailsForm({
   const [totalRdsFired, setTotalRdsFired] = useState("");
   const [lastFiredDt, setLastFiredDt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingLast, setLoadingLast] = useState(false);
+  // Snapshot of the values the form opened with (last entry, or today's date
+  // in the date fields when there's no prior entry) — the Update button stays
+  // disabled until something differs from this snapshot.
+  const initialRef = useRef<Record<string, string> | null>(null);
+
+  // Pre-fill from the most recent Barrel entry for this equipment, if any. If
+  // there's no previous entry, default the date fields to today instead of
+  // leaving them blank.
+  useEffect(() => {
+    if (!record.eqpt_regn_no) return;
+    setLoadingLast(true);
+    void api<BarrelRecord[]>(
+      `/unit-holding/update-arty-eqpt-data/barrel-detail?eqpt_regn_no=${encodeURIComponent(record.eqpt_regn_no)}`,
+    )
+      .then((rows) => {
+        const last = rows[rows.length - 1];
+        const today = todayIso();
+        const next = {
+          barrelRegnNo: last ? last.barrel_regn_no || "" : "",
+          opClearance: last ? last.op_clear || "" : "",
+          opClearanceDt: last ? last.op_clear_dt || "" : today,
+          wkspName: last ? last.wksp_name || "" : "",
+          wkspInDt: last ? last.wksp_in_dt || "" : today,
+          cofrVertical: last ? last.cofr_vertical || "" : "",
+          cofrHorizontal: last ? last.cofr_horizontal || "" : "",
+          qtrOfLife: last ? last.qtr_of_life || "" : "",
+          efc: last ? last.efc || "" : "",
+          totalRdsFired: last ? last.total_rds_fired || "" : "",
+          lastFiredDt: last ? last.last_fired_dt || "" : today,
+        };
+        setBarrelRegnNo(next.barrelRegnNo);
+        setOpClearance(next.opClearance);
+        setOpClearanceDt(next.opClearanceDt);
+        setWkspName(next.wkspName);
+        setWkspInDt(next.wkspInDt);
+        setCofrVertical(next.cofrVertical);
+        setCofrHorizontal(next.cofrHorizontal);
+        setQtrOfLife(next.qtrOfLife);
+        setEfc(next.efc);
+        setTotalRdsFired(next.totalRdsFired);
+        setLastFiredDt(next.lastFiredDt);
+        initialRef.current = next;
+      })
+      .catch(() => toast.error("Failed to load last barrel entry"))
+      .finally(() => setLoadingLast(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.eqpt_regn_no]);
 
   const isDirty =
-    barrelRegnNo ||
-    opClearance ||
-    opClearanceDt ||
-    wkspName ||
-    wkspInDt ||
-    cofrVertical ||
-    cofrHorizontal ||
-    qtrOfLife ||
-    efc ||
-    totalRdsFired ||
-    lastFiredDt;
+    !!initialRef.current &&
+    (barrelRegnNo !== initialRef.current.barrelRegnNo ||
+      opClearance !== initialRef.current.opClearance ||
+      opClearanceDt !== initialRef.current.opClearanceDt ||
+      wkspName !== initialRef.current.wkspName ||
+      wkspInDt !== initialRef.current.wkspInDt ||
+      cofrVertical !== initialRef.current.cofrVertical ||
+      cofrHorizontal !== initialRef.current.cofrHorizontal ||
+      qtrOfLife !== initialRef.current.qtrOfLife ||
+      efc !== initialRef.current.efc ||
+      totalRdsFired !== initialRef.current.totalRdsFired ||
+      lastFiredDt !== initialRef.current.lastFiredDt);
 
   const handleUpdate = async () => {
     if (pageHasInvalidDateInputs()) {
@@ -613,6 +835,9 @@ function BarrelDetailsForm({
 
   return (
     <div className="flex flex-col gap-3.5 pt-1">
+      {loadingLast && (
+        <p className="text-xs text-muted-foreground">Loading last barrel entry…</p>
+      )}
       <FormRow label="Barrel Regn no" required className={pairRow}>
         <Input value={barrelRegnNo} onChange={(e) => setBarrelRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))} />
       </FormRow>
@@ -786,57 +1011,63 @@ function StripInspectionForm({
 
   return (
     <div className="flex flex-col gap-3.5 pt-1">
-      <div className="overflow-auto rounded-md border border-border">
-        <Table>
+      <div className="overflow-x-auto rounded-md border border-[var(--line,#cddcec)]">
+        <Table className="w-full table-fixed">
           <TableHeader>
-            <TableRow className="bg-primary hover:bg-primary">
-              <TableHead className="text-primary-foreground text-[12px]">
+            <TableRow className="bg-[var(--surface-alt,#eff5fb)] hover:bg-[var(--surface-alt,#eff5fb)] border-b border-[var(--line,#cddcec)]">
+              <TableHead className="text-[var(--label-color,#1d74b8)] font-bold text-[12px] whitespace-nowrap w-[28%] px-2">
                 <span className="text-destructive mr-0.5">*</span>
                 Recoil Sys Regn No
               </TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">
+              <TableHead className="text-[var(--label-color,#1d74b8)] font-bold text-[12px] whitespace-nowrap w-[22%] px-2">
                 Periodicity (in years)
               </TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">Dt of insp</TableHead>
-              <TableHead className="text-primary-foreground text-[12px]">Dt of next insp</TableHead>
-              <TableHead className="text-primary-foreground text-[12px] w-14">Action</TableHead>
+              <TableHead className="text-[var(--label-color,#1d74b8)] font-bold text-[12px] whitespace-nowrap w-[22%] px-2">
+                Dt of insp
+              </TableHead>
+              <TableHead className="text-[var(--label-color,#1d74b8)] font-bold text-[12px] whitespace-nowrap w-[22%] px-2">
+                Dt of next insp
+              </TableHead>
+              <TableHead className="text-[var(--label-color,#1d74b8)] font-bold text-[12px] whitespace-nowrap w-[6%] px-1 text-center">
+                Action
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             <TableRow>
               <TableCell className="p-1">
                 <Input
-                  className="h-7"
+                  className="h-7 w-full min-w-0 text-xs"
                   value={recoilSysRegnNo}
                   onChange={(e) => setRecoilSysRegnNo(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 />
               </TableCell>
               <TableCell className="p-1">
                 <Input
-                  className="h-7"
+                  className="h-7 w-full min-w-0 text-xs"
                   value={periodicity}
                   onChange={(e) => setPeriodicity(e.target.value.replace(/[^a-zA-Z0-9\s\-/&]/g, ""))}
                 />
               </TableCell>
               <TableCell className="p-1">
                 <DateInput
-                  className="h-7 min-w-[9rem]"
+                  className="h-7 w-full min-w-0 text-xs"
                   value={dtOfInsp}
                   onChange={setDtOfInsp}
                 />
               </TableCell>
               <TableCell className="p-1">
                 <DateInput
-                  className="h-7 min-w-[9rem]"
+                  className="h-7 w-full min-w-0 text-xs"
                   value={dtOfNextInsp}
                   onChange={setDtOfNextInsp}
                 />
               </TableCell>
-              <TableCell className="p-1">
+              <TableCell className="p-1 text-center">
                 <Button
                   type="button"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 mx-auto flex items-center justify-center shrink-0"
                   onClick={() => void handleAdd()}
                   disabled={!recoilSysRegnNo.trim() || adding}
                 >
@@ -853,10 +1084,10 @@ function StripInspectionForm({
             ) : (
               rows.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="text-xs">{r.recoilSysRegnNo}</TableCell>
-                  <TableCell className="text-xs">{r.periodicity}</TableCell>
-                  <TableCell className="text-xs">{r.dtOfInsp}</TableCell>
-                  <TableCell className="text-xs">{r.dtOfNextInsp}</TableCell>
+                  <TableCell className="text-xs px-2 py-1.5 truncate">{r.recoilSysRegnNo}</TableCell>
+                  <TableCell className="text-xs px-2 py-1.5 truncate">{r.periodicity}</TableCell>
+                  <TableCell className="text-xs px-2 py-1.5 truncate">{toDmyDisplay(r.dtOfInsp)}</TableCell>
+                  <TableCell className="text-xs px-2 py-1.5 truncate">{toDmyDisplay(r.dtOfNextInsp)}</TableCell>
                   <TableCell />
                 </TableRow>
               ))
@@ -882,12 +1113,21 @@ function ArtilleryUpdateDialog({
   record,
   open,
   onClose,
+  initialTab = "oh",
 }: {
-  record: EqptRow;
+  record: EqptRow | null;
   open: boolean;
   onClose: () => void;
+  initialTab?: ArtilleryTab;
 }) {
-  const [tab, setTab] = useState<ArtilleryTab>("oh");
+  const [tab, setTab] = useState<ArtilleryTab>(initialTab);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab, open]);
+
+  if (!record) return null;
+
   const code = shortCode(record.eqpt_regn_no);
 
   const title =
@@ -899,7 +1139,7 @@ function ArtilleryUpdateDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto gap-2 p-3 sm:p-4">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto gap-2 p-3 sm:p-4">
         <DialogHeader className="flex flex-col gap-1">
           <DialogTitle className="text-center text-sm font-bold uppercase tracking-wide underline underline-offset-2">
             {title}
@@ -937,6 +1177,10 @@ export function UpdateArtyEqptData() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [updateRecord, setUpdateRecord] = useState<EqptRow | null>(null);
   const [viewDetail, setViewDetail] = useState<EqptDetail | null>(null);
+  const [viewOhLatest, setViewOhLatest] = useState<OhRecord | null>(null);
+  const [viewBarrelLatest, setViewBarrelLatest] = useState<BarrelRecord | null>(null);
+  const [viewStripLatest, setViewStripLatest] = useState<StripRecord | null>(null);
+  const [viewArtyLoading, setViewArtyLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -1167,6 +1411,30 @@ export function UpdateArtyEqptData() {
         `/unit-holding/update-arty-eqpt-data/detail?id=${encodeURIComponent(r.id)}&source_table=${encodeURIComponent(r.source_table)}`,
       );
       setViewDetail(detail);
+      setViewOhLatest(null);
+      setViewBarrelLatest(null);
+      setViewStripLatest(null);
+      if (detail.eqpt_regn_no) {
+        setViewArtyLoading(true);
+        const regn = encodeURIComponent(detail.eqpt_regn_no);
+        void Promise.all([
+          api<OhRecord[]>(`/unit-holding/update-arty-eqpt-data/oh-detail?eqpt_regn_no=${regn}`).catch(
+            () => [] as OhRecord[],
+          ),
+          api<BarrelRecord[]>(
+            `/unit-holding/update-arty-eqpt-data/barrel-detail?eqpt_regn_no=${regn}`,
+          ).catch(() => [] as BarrelRecord[]),
+          api<StripRecord[]>(
+            `/unit-holding/update-arty-eqpt-data/strip-detail?eqpt_regn_no=${regn}`,
+          ).catch(() => [] as StripRecord[]),
+        ])
+          .then(([ohRows, barrelRows, stripRows]) => {
+            setViewOhLatest(ohRows[ohRows.length - 1] || null);
+            setViewBarrelLatest(barrelRows[barrelRows.length - 1] || null);
+            setViewStripLatest(stripRows[stripRows.length - 1] || null);
+          })
+          .finally(() => setViewArtyLoading(false));
+      }
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Failed to load equipment detail");
     } finally {
@@ -1205,8 +1473,8 @@ export function UpdateArtyEqptData() {
             showResults && "min-h-0 flex-1",
           )}
         >
-          <FormGrid cols={3} className="shrink-0">
-            <FormRow label="Unit" required>
+          <FormGrid cols={2} className="shrink-0">
+            <FormRow label="Unit" required className="col-span-full">
               <SuggestInput
                 placeholder="Search artillery unit by SUS or name..."
                 value={form.unitSearch}
@@ -1250,17 +1518,20 @@ export function UpdateArtyEqptData() {
               />
             </FormRow>
 
-            <FormRow label="Type of Holding" className="md:col-span-2">
+            <FormRow label="Type of Holding">
               <SelectField
                 value={form.typeOfHolding}
-                onChange={(v) => upd("typeOfHolding", v)}
+                onChange={(v) => {
+                  upd("typeOfHolding", v);
+                  void handleSearch({ overrideTypeOfHolding: v });
+                }}
                 options={holdingOptions}
                 placeholder="--Select Type of Holding (or ALL)--"
                 disabled={!form.censusNo}
               />
             </FormRow>
 
-            <FormRow label="Registered No Search" className="md:col-start-3">
+            <FormRow label="Registered No Search">
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}
@@ -1414,8 +1685,17 @@ export function UpdateArtyEqptData() {
       {viewDetail && (
         <ViewEqptDialog
           detail={viewDetail}
+          ohLatest={viewOhLatest}
+          barrelLatest={viewBarrelLatest}
+          stripLatest={viewStripLatest}
+          loadingArty={viewArtyLoading}
           open
-          onClose={() => setViewDetail(null)}
+          onClose={() => {
+            setViewDetail(null);
+            setViewOhLatest(null);
+            setViewBarrelLatest(null);
+            setViewStripLatest(null);
+          }}
         />
       )}
     </>

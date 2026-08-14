@@ -885,8 +885,8 @@ export function UpdateEqptData() {
             showResults && "min-h-0 flex-1",
           )}
         >
-          <FormGrid cols={3} className="shrink-0">
-            <FormRow label="Unit" required>
+          <FormGrid cols={2} className="shrink-0">
+            <FormRow label="Unit" required className="col-span-full">
               <SuggestInput
                 placeholder="Search unit by SUS or name..."
                 value={form.unitSearch}
@@ -930,17 +930,20 @@ export function UpdateEqptData() {
               />
             </FormRow>
 
-            <FormRow label="Type of Holding" className="md:col-span-2">
+            <FormRow label="Type of Holding">
               <SelectField
                 value={form.typeOfHolding}
-                onChange={(v) => upd("typeOfHolding", v)}
+                onChange={(v) => {
+                  upd("typeOfHolding", v);
+                  void handleSearch({ overrideTypeOfHolding: v });
+                }}
                 options={holdingOptions}
                 placeholder="--Select Type of Holding (or ALL)--"
                 disabled={!form.censusNo}
               />
             </FormRow>
 
-            <FormRow label="Registered No Search" className="md:col-start-3">
+            <FormRow label="Registered No Search">
               <Input
                 placeholder="Enter Regd No"
                 value={form.regdNo}

@@ -45,15 +45,31 @@ def _generate_sample_pdf(filename: str) -> bytes:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    module: str | None = None,
+    screen: str | None = None,
+    subfolder: str | None = None,
+):
     """Upload a document file to the configured file system UPLOAD_PATH."""
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No filename provided in upload request",
         )
+    target_subfolder = ""
+    if subfolder and subfolder.strip():
+        target_subfolder = subfolder.strip().strip("/")
+    elif module and module.strip():
+        mod_clean = module.strip().strip("/")
+        scr_clean = screen.strip().strip("/") if screen else ""
+        if scr_clean and scr_clean.lower() != mod_clean.lower():
+            target_subfolder = f"{mod_clean}/{scr_clean}"
+        else:
+            target_subfolder = mod_clean
+
     try:
-        saved_info = save_uploaded_document(file)
+        saved_info = save_uploaded_document(file, subfolder=target_subfolder)
         return {
             "message": "Document uploaded successfully to file system",
             "file_name": saved_info.file_name,
@@ -68,30 +84,49 @@ async def upload_document(file: UploadFile = File(...)):
         ) from exc
 
 
-@router.get("/{filename}")
-async def get_document(filename: str):
+@router.get("/{filepath:path}")
+async def get_document(filepath: str):
     """Serve/download an uploaded document file from UPLOAD_PATH."""
     settings = get_settings()
-    base_upload_dir = Path(settings.upload_path)
+    base_upload_dir = Path(settings.upload_path).resolve()
     base_upload_dir.mkdir(parents=True, exist_ok=True)
-    safe_filename = Path(filename).name
-    file_path = base_upload_dir / safe_filename
+
+    cleaned_rel_path = filepath.lstrip("/\\")
+    file_path = (base_upload_dir / cleaned_rel_path).resolve()
+
+    try:
+        file_path.relative_to(base_upload_dir)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path provided",
+        )
 
     if not file_path.is_file():
-        try:
-            sample_data = _generate_sample_pdf(safe_filename)
-            file_path.write_bytes(sample_data)
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File '{safe_filename}' not found in upload directory",
-            )
+        legacy_path = base_upload_dir / Path(filepath).name
+        if legacy_path.is_file():
+            file_path = legacy_path
+        else:
+            found_matches = list(base_upload_dir.rglob(Path(filepath).name))
+            if found_matches and found_matches[0].is_file():
+                file_path = found_matches[0]
+            else:
+                try:
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    sample_data = _generate_sample_pdf(Path(filepath).name)
+                    file_path.write_bytes(sample_data)
+                except Exception:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"File '{filepath}' not found in upload directory",
+                    )
 
-    mime_type, _ = mimetypes.guess_type(safe_filename)
+    mime_type, _ = mimetypes.guess_type(file_path.name)
     return FileResponse(
         path=file_path,
-        filename=safe_filename,
+        filename=file_path.name,
         media_type=mime_type or "application/pdf",
         content_disposition_type="inline",
     )
+
 

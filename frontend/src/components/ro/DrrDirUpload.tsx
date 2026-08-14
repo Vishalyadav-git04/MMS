@@ -19,8 +19,8 @@ export function DrrDirUpload() {
     }
     setUploading(true);
     try {
-      const res = await uploadFileApi(selectedFile);
-      toast.success(`${type} uploaded successfully to D:/miso/ (${res.file_name})`);
+      const res = await uploadFileApi(selectedFile, { module: "ro", screen: "drr-dir-upload" });
+      toast.success(`${type} uploaded successfully to D:/MISO/MMS/${res.relative_path}`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "File upload failed");
     } finally {

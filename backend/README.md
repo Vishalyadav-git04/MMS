@@ -48,7 +48,7 @@ The service loads configuration parameters via environment variables or `.env` f
 |---|---|---|
 | **API Base URL** | `http://localhost:8000/` | `http://131.3.54.120/` |
 | **API Prefix** | `""` | `""` |
-| **Upload Path** | `D:/miso/` | `/srv/` |
+| **Upload Path** | `D:/MISO/MMS/` | `/srv/` |
 | **DB DSN** | `localhost:1521/FREEPDB1` | `131.3.54.122:1521/ORCLPDB1` |
 | **DB User / Schema** | `MMS` / `MMS` | `MMS` / `ORCLPDB1` |
 | **CORS Origins** | `http://localhost:3000`, `http://localhost:8000`, `http://131.3.54.120`, `https://131.3.54.120` | `http://131.3.54.120`, `https://131.3.54.120` |
@@ -80,7 +80,7 @@ The API will be live at:
 
 ## Document Upload to File System
 
-Uploaded documents are saved to the file system at `UPLOAD_PATH` (`D:/miso/` locally, `/srv/` on staging).
+Uploaded documents are saved to the file system at `UPLOAD_PATH` (`D:/MISO/MMS/` locally, `/srv/` on staging).
 
 - **Upload Endpoint**: `POST /upload`
 - **Request**: Multipart Form Data (`file`)

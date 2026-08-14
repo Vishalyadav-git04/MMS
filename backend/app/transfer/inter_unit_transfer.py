@@ -96,7 +96,13 @@ def get_parent_units(session: Session = Depends(get_db_session)) -> list[ParentU
     in_clause = ", ".join(f":ac_{i}" for i in range(len(approved_codes)))
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
 
-    sql = f"SELECT DISTINCT to_sus_no FROM MMS_UNIT_MSTR_DETL WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    sql = f"""
+        SELECT DISTINCT to_sus_no FROM MMS_UNIT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+        UNION
+        SELECT DISTINCT to_sus_no FROM MMS_DEPOT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+        UNION
+        SELECT DISTINCT to_sus_no FROM MMS_OTH_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+    """
     rows = fetch_all(session, sql, params)
     clean_suses = [str(r["to_sus_no"]).strip().upper() for r in rows if r.get("to_sus_no")]
     if not clean_suses:
@@ -132,7 +138,13 @@ def get_parent_holding_types(
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
     params["sus"] = parent_sus_no.strip().upper()
 
-    sql = f"SELECT DISTINCT type_of_hldg FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    sql = f"""
+        SELECT DISTINCT type_of_hldg FROM MMS_UNIT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+        UNION
+        SELECT DISTINCT type_of_hldg FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+        UNION
+        SELECT DISTINCT type_of_hldg FROM MMS_OTH_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_hldg IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})
+    """
     rows = fetch_all(session, sql, params)
     clean_types = [str(r["type_of_hldg"]).strip() for r in rows if r.get("type_of_hldg")]
     if not clean_types:
@@ -159,10 +171,18 @@ def get_parent_eqpt_types(
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
     params["sus"] = parent_sus_no.strip().upper()
 
-    sql = f"SELECT DISTINCT type_of_eqpt FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    ht_clause = ""
     if holding_type and holding_type.strip():
-        sql += " AND UPPER(type_of_hldg) = :htype"
+        ht_clause = " AND UPPER(type_of_hldg) = :htype"
         params["htype"] = holding_type.strip().upper()
+
+    sql = f"""
+        SELECT DISTINCT type_of_eqpt FROM MMS_UNIT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){ht_clause}
+        UNION
+        SELECT DISTINCT type_of_eqpt FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){ht_clause}
+        UNION
+        SELECT DISTINCT type_of_eqpt FROM MMS_OTH_MASTER WHERE UPPER(to_sus_no) = :sus AND type_of_eqpt IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){ht_clause}
+    """
 
     rows = fetch_all(session, sql, params)
     clean_types = [str(r["type_of_eqpt"]).strip() for r in rows if r.get("type_of_eqpt")]
@@ -191,13 +211,21 @@ def get_parent_prf_groups(
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
     params["sus"] = parent_sus_no.strip().upper()
 
-    sql = f"SELECT DISTINCT prf_code FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    extra_clause = ""
     if holding_type and holding_type.strip():
-        sql += " AND UPPER(type_of_hldg) = :htype"
+        extra_clause += " AND UPPER(type_of_hldg) = :htype"
         params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        sql += " AND UPPER(type_of_eqpt) = :etype"
+        extra_clause += " AND UPPER(type_of_eqpt) = :etype"
         params["etype"] = eqpt_type.strip().upper()
+
+    sql = f"""
+        SELECT DISTINCT prf_code FROM MMS_UNIT_MASTER WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT DISTINCT prf_code FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT DISTINCT prf_code FROM MMS_OTH_MASTER WHERE UPPER(to_sus_no) = :sus AND prf_code IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+    """
 
     rows = fetch_all(session, sql, params)
     clean_codes = [str(r["prf_code"]).strip() for r in rows if r.get("prf_code")]
@@ -218,7 +246,7 @@ def get_parent_prf_groups(
     if unmapped:
         umin_clause = ", ".join(f":u_{i}" for i in range(len(unmapped)))
         uparams = {f"u_{i}": u for i, u in enumerate(unmapped)}
-        mlccs_rows = fetch_all(session, f"SELECT prf_code, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE prf_code IN ({umin_clause})", uparams)
+        mlccs_rows = fetch_all(session, f"SELECT prf_code, prf_group FROM MMS_MLCCS_EQPT_MASTER WHERE prf_code IN ({umin_clause})", uparams)
         for r in mlccs_rows:
             if r.get("prf_code") and r.get("prf_group"):
                 prf_map[str(r["prf_code"]).strip()] = str(r["prf_group"]).strip()
@@ -244,16 +272,24 @@ def get_parent_nomenclatures(
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
     params["sus"] = parent_sus_no.strip().upper()
 
-    sql = f"SELECT DISTINCT census_no FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    extra_clause = ""
     if holding_type and holding_type.strip():
-        sql += " AND UPPER(type_of_hldg) = :htype"
+        extra_clause += " AND UPPER(type_of_hldg) = :htype"
         params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        sql += " AND UPPER(type_of_eqpt) = :etype"
+        extra_clause += " AND UPPER(type_of_eqpt) = :etype"
         params["etype"] = eqpt_type.strip().upper()
     if prf_code and prf_code.strip():
-        sql += " AND UPPER(prf_code) = :pcode"
+        extra_clause += " AND UPPER(prf_code) = :pcode"
         params["pcode"] = prf_code.strip().upper()
+
+    sql = f"""
+        SELECT DISTINCT census_no FROM MMS_UNIT_MASTER WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT DISTINCT census_no FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT DISTINCT census_no FROM MMS_OTH_MASTER WHERE UPPER(to_sus_no) = :sus AND census_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+    """
 
     rows = fetch_all(session, sql, params)
     clean_censuses = [str(r["census_no"]).strip() for r in rows if r.get("census_no")]
@@ -262,7 +298,7 @@ def get_parent_nomenclatures(
 
     cin_clause = ", ".join(f":c_{i}" for i in range(len(clean_censuses)))
     cparams = {f"c_{i}": c for i, c in enumerate(clean_censuses)}
-    mlccs_rows = fetch_all(session, f"SELECT census_no, nomen FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE census_no IN ({cin_clause})", cparams)
+    mlccs_rows = fetch_all(session, f"SELECT census_no, nomen FROM MMS_MLCCS_EQPT_MASTER WHERE census_no IN ({cin_clause})", cparams)
     mlccs_map = {str(r["census_no"]).strip(): str(r["nomen"]).strip() for r in mlccs_rows if r.get("census_no") and r.get("nomen")}
 
     res: list[CensusOptionOut] = []
@@ -374,19 +410,27 @@ def get_regn_list(
     params = {f"ac_{i}": c for i, c in enumerate(approved_codes)}
     params["sus"] = parent_sus_no.strip().upper()
 
-    sql = f"SELECT eqpt_regn_no FROM MMS_UNIT_MSTR_DETL WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause})"
+    extra_clause = ""
     if holding_type and holding_type.strip():
-        sql += " AND UPPER(type_of_hldg) = :htype"
+        extra_clause += " AND UPPER(type_of_hldg) = :htype"
         params["htype"] = holding_type.strip().upper()
     if eqpt_type and eqpt_type.strip():
-        sql += " AND UPPER(type_of_eqpt) = :etype"
+        extra_clause += " AND UPPER(type_of_eqpt) = :etype"
         params["etype"] = eqpt_type.strip().upper()
     if prf_code and prf_code.strip():
-        sql += " AND UPPER(prf_code) = :pcode"
+        extra_clause += " AND UPPER(prf_code) = :pcode"
         params["pcode"] = prf_code.strip().upper()
     if census_no and census_no.strip():
-        sql += " AND UPPER(census_no) = :cno"
+        extra_clause += " AND UPPER(census_no) = :cno"
         params["cno"] = census_no.strip().upper()
+
+    sql = f"""
+        SELECT eqpt_regn_no FROM MMS_UNIT_MASTER WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT eqpt_regn_no FROM MMS_DEPOT_MASTER WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+        UNION
+        SELECT eqpt_regn_no FROM MMS_OTH_MASTER WHERE UPPER(to_sus_no) = :sus AND eqpt_regn_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({in_clause}){extra_clause}
+    """
 
     rows = fetch_all(session, sql, params)
     regns = sorted(list({str(r["eqpt_regn_no"]).strip() for r in rows if r.get("eqpt_regn_no") and str(r["eqpt_regn_no"]).strip()}))
@@ -422,27 +466,35 @@ def submit_transfer(
         **{f"r_{i}": r for i, r in enumerate(body.regn_numbers)},
     }
 
-    find_sql = f"""
-        SELECT id, eqpt_regn_no FROM MMS_UNIT_MSTR_DETL
-        WHERE UPPER(to_sus_no) = :psus
-        AND eqpt_regn_no IN ({r_clause})
-        AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
-    """
+    extra_clause = ""
     if body.type_of_hldg and body.type_of_hldg.strip():
-        find_sql += " AND UPPER(type_of_hldg) = :htype"
+        extra_clause += " AND UPPER(type_of_hldg) = :htype"
         params["htype"] = body.type_of_hldg.strip().upper()
     if body.type_of_eqpt and body.type_of_eqpt.strip():
-        find_sql += " AND UPPER(type_of_eqpt) = :etype"
+        extra_clause += " AND UPPER(type_of_eqpt) = :etype"
         params["etype"] = body.type_of_eqpt.strip().upper()
     if body.prf_code and body.prf_code.strip():
-        find_sql += " AND UPPER(prf_code) = :pcode"
+        extra_clause += " AND UPPER(prf_code) = :pcode"
         params["pcode"] = body.prf_code.strip().upper()
     if body.census_no and body.census_no.strip():
-        find_sql += " AND UPPER(census_no) = :cno"
+        extra_clause += " AND UPPER(census_no) = :cno"
         params["cno"] = body.census_no.strip().upper()
 
-    rows = fetch_all(session, find_sql, params)
-    if not rows:
+    master_tables = ["MMS_UNIT_MASTER", "MMS_DEPOT_MASTER", "MMS_OTH_MASTER"]
+    all_matched_rows: list[dict] = []
+
+    for tbl in master_tables:
+        find_sql = f"""
+            SELECT id, eqpt_regn_no, '{tbl}' AS source_table FROM {tbl}
+            WHERE UPPER(to_sus_no) = :psus
+            AND eqpt_regn_no IN ({r_clause})
+            AND UPPER(TRIM(COALESCE(op_status, ''))) IN ({ac_clause})
+            {extra_clause}
+        """
+        tbl_rows = fetch_all(session, find_sql, params)
+        all_matched_rows.extend(tbl_rows)
+
+    if not all_matched_rows:
         raise HTTPException(status_code=404, detail="No approved equipment records found for transfer")
 
     now = datetime.now()
@@ -452,10 +504,11 @@ def submit_transfer(
         rv_dt = now
 
     transferred: list[str] = []
-    for r in rows:
+    for r in all_matched_rows:
         rec_id = r["id"]
-        update_sql = """
-            UPDATE MMS_UNIT_MSTR_DETL
+        source_tbl = r["source_table"]
+        update_sql = f"""
+            UPDATE {source_tbl}
             SET from_sus_no = :psus,
                 from_form_code = :pform,
                 to_sus_no = :rsus,

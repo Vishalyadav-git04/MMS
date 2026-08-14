@@ -116,7 +116,11 @@ function SuggestInput({
           setOpen(Boolean(val.trim()));
         }}
         onFocus={() => {
-          setOpen(Boolean(value.trim()));
+          setOpen(true);
+          updateCoords();
+        }}
+        onClick={() => {
+          setOpen(true);
           updateCoords();
         }}
         onBlur={() => {
@@ -462,8 +466,8 @@ export function EpIutTransfer() {
       setSubmitting(true);
       let uploadedRvName = rvFile ? rvFile.name : null;
       if (rvFile) {
-        const uploadRes = await uploadFileApi(rvFile);
-        uploadedRvName = uploadRes.file_name;
+        const uploadRes = await uploadFileApi(rvFile, { module: "ep", screen: "ep-iut-transfer" });
+        uploadedRvName = uploadRes.relative_path;
       }
       const res = await api<{ count: number; transferred_regns: string[] }>("/ep/iut/transfer", {
         method: "POST",
@@ -526,7 +530,7 @@ export function EpIutTransfer() {
     >
       <div className="flex flex-col gap-3">
         <FormSection title="Parent unit details" />
-        <FormRow label="Parent Unit" required>
+        <FormRow label="Parent Unit" required className="mb-5">
           <SuggestInput
             placeholder="Search..."
             value={parentSearch}
@@ -598,7 +602,7 @@ export function EpIutTransfer() {
         </FormGrid>
 
         <FormSection title="Receiving unit details" />
-        <FormRow label="Receiving Unit" required>
+        <FormRow label="Receiving Unit" required className="mb-5">
           <SuggestInput
             placeholder="Search..."
             value={receivingSearch}

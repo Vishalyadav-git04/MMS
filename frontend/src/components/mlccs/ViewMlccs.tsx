@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FormPanel, FormSection } from "@/components/FormPanel";
 import { CaptureMlccs } from "@/components/mms/CaptureMlccs";
 import { Button } from "@/components/ui/button";
@@ -25,12 +25,16 @@ import { buildPrintWatermarkParts, resolveClientIp } from "@/lib/session-waterma
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No";
+type SearchField = "Nomenclature" | "Census No" | "Material No" | "Cat Part No" | "COS Sec" | "PRF Group" | "Status";
 
 type OptionsMap = Record<string, { value: string; label: string }[]>;
 
 interface MlccsRow {
   id: string;
+  cosSec: string;
+  prfGroup: string;
+  itemCode: string;
+  itemName: string;
   materialNo: string;
   censusNo: string;
   nomenclature: string;
@@ -99,6 +103,10 @@ function DetailField({ label, value }: { label: string; value?: string | null })
 
 interface MlccsListItem {
   id: number | string;
+  cos_sec?: string | null;
+  prf_group?: string | null;
+  item_code?: string | null;
+  item_name?: string | null;
   material_no?: string | null;
   census_no?: string | null;
   nomenclature?: string | null;
@@ -123,6 +131,10 @@ const EXPORT_PAGE_SIZE = 5000;
 function mapRow(r: MlccsListItem): MlccsRow {
   return {
     id: String(r.id),
+    cosSec: r.cos_sec ?? "",
+    prfGroup: r.prf_group ?? "",
+    itemCode: r.item_code ?? "",
+    itemName: r.item_name ?? "",
     materialNo: r.material_no ?? "",
     censusNo: r.census_no ?? "",
     nomenclature: r.nomenclature ?? "",
@@ -135,6 +147,10 @@ function mapRow(r: MlccsListItem): MlccsRow {
 
 function exportCsv(rows: MlccsRow[]) {
   const headers = [
+    "COS Sec",
+    "PRF Group",
+    "Item Code",
+    "Item Name",
     "Material No",
     "Census No",
     "Nomenclature",
@@ -143,11 +159,15 @@ function exportCsv(rows: MlccsRow[]) {
     "A/U",
     "Status",
   ];
-  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const escape = (v: string) => `"${(v || "").replace(/"/g, '""')}"`;
   const lines = [
     headers.join(","),
     ...rows.map((r) =>
       [
+        r.cosSec,
+        r.prfGroup,
+        r.itemCode,
+        r.itemName,
         r.materialNo,
         r.censusNo,
         r.nomenclature,
@@ -178,9 +198,32 @@ function escapeHtml(value: string) {
 }
 
 function buildPrintHtml(rows: MlccsRow[]) {
-  const bodyRows = rows
-    .map(
-      (r, i) => `
+  let lastGroupKey = "";
+  const bodyRowsParts: string[] = [];
+
+  rows.forEach((r, i) => {
+    const groupKey = `${r.cosSec}__${r.prfGroup}__${r.itemCode}`;
+    if (groupKey !== lastGroupKey) {
+      lastGroupKey = groupKey;
+      const ueName = r.itemName || r.prfGroup || r.nomenclature || "";
+      bodyRowsParts.push(`
+        <tr class="group-header">
+          <td colspan="7" style="background: #edf3f9; font-weight: bold; color: #14568c; padding: 6px 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center;">
+              <div style="text-align: left;">COS Sec : ${escapeHtml(r.cosSec || "—")}</div>
+              <div style="text-align: center;">PRF Group : ${escapeHtml(r.prfGroup || "—")}</div>
+              <div></div>
+            </div>
+          </td>
+        </tr>
+        <tr class="subgroup-header">
+          <td colspan="7" style="background: #f6f9fc; font-weight: bold; color: #14568c; text-decoration: underline; padding: 4px 8px;">
+            UE Name : (${escapeHtml(r.itemCode || "—")}) ${escapeHtml(ueName || "—")}
+          </td>
+        </tr>
+      `);
+    }
+    bodyRowsParts.push(`
       <tr class="${i % 2 === 1 ? "alt" : ""}">
         <td>${escapeHtml(r.materialNo)}</td>
         <td>${escapeHtml(r.censusNo)}</td>
@@ -189,10 +232,11 @@ function buildPrintHtml(rows: MlccsRow[]) {
         <td>${escapeHtml(r.catPartNo)}</td>
         <td>${escapeHtml(r.au)}</td>
         <td>${escapeHtml(r.status)}</td>
-      </tr>`,
-    )
-    .join("");
+      </tr>
+    `);
+  });
 
+  const bodyRows = bodyRowsParts.join("");
   const watermark = buildPrintWatermarkParts();
 
   return `<!DOCTYPE html>
@@ -210,6 +254,8 @@ function buildPrintHtml(rows: MlccsRow[]) {
     th, td { border: 1px solid #333; padding: 4px 6px; text-align: left; vertical-align: top; }
     th { background: #2f4f2f; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     tr.alt td { background: #f3f3f3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr.group-header td { border-bottom: none; }
+    tr.subgroup-header td { border-top: none; }
     ${watermark.styles}
   </style>
 </head>
@@ -423,7 +469,7 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
     if (!resultFilter.trim()) return rows;
     const terms = resultFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
-      const rowText = `${r.materialNo} ${r.censusNo} ${r.nomenclature} ${r.classOfEqpt} ${r.catPartNo} ${r.au} ${r.status}`.toLowerCase();
+      const rowText = `${r.cosSec} ${r.prfGroup} ${r.itemCode} ${r.itemName} ${r.materialNo} ${r.censusNo} ${r.nomenclature} ${r.classOfEqpt} ${r.catPartNo} ${r.au} ${r.status}`.toLowerCase();
       return terms.every((term) => rowText.includes(term));
     });
   }, [rows, resultFilter]);
@@ -539,6 +585,7 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
     <FormPanel
       title="VIEW MLCCS"
       fill={false}
+      lockBodyScroll={true}
       footer={
         <>
           {admin && (
@@ -576,7 +623,7 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
         </>
       }
     >
-      <div className="flex flex-col gap-3 p-3.5">
+      <div className="flex flex-col gap-3 p-3.5 h-full min-h-0 flex-1 overflow-hidden">
         <div className="shrink-0 rounded-[10px] border border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)] p-3 shadow-xs">
           <div className="flex flex-wrap items-center gap-3">
             <Input
@@ -598,6 +645,9 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
                 <SelectItem className="py-2" value="Census No">Census No</SelectItem>
                 <SelectItem className="py-2" value="Material No">Material No</SelectItem>
                 <SelectItem className="py-2" value="Cat Part No">Cat Part No</SelectItem>
+                <SelectItem className="py-2" value="COS Sec">COS Sec</SelectItem>
+                <SelectItem className="py-2" value="PRF Group">PRF Group</SelectItem>
+                <SelectItem className="py-2" value="Status">Status</SelectItem>
               </SelectContent>
             </Select>
             <span className="shrink-0 font-semibold text-[var(--ink-soft,#54606c)]">
@@ -641,8 +691,8 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
           </div>
         </div>
 
-        <div className="rounded-[10px] border border-[var(--line,#cddcec)] bg-card shadow-xs overflow-hidden">
-          <div style={{ maxHeight: "calc(100vh - 380px)", minHeight: "300px", overflowY: "scroll", overscrollBehavior: "contain" }}>
+        <div className="flex flex-1 min-h-0 flex-col rounded-[10px] border border-[var(--line,#cddcec)] bg-card shadow-xs overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <table className="w-full caption-bottom border-collapse">
               <thead className="sticky top-0 z-10 border-b border-[var(--line,#cddcec)] bg-[var(--surface-alt,#eff5fb)]">
                 <tr>
@@ -657,62 +707,98 @@ export function ViewMlccs({ onBack }: { onBack?: () => void } = {}) {
                 </tr>
               </thead>
               <tbody>
-                {displayedRows.map((row, idx) => {
-                  const selected = selectedId === row.id;
-                  return (
-                    <tr
-                      key={row.id}
-                      onClick={() => setSelectedId(row.id)}
-                      className={cn(
-                        "cursor-pointer border-b border-[var(--line-soft,#dfe9f4)]",
-                        selected ? "bg-primary/15" : idx % 2 === 1 ? "bg-muted/40" : undefined,
-                      )}
-                    >
-                      <td className="w-10 px-3.5 py-2 align-middle">
-                        <span
-                          role="radio"
-                          aria-checked={selected}
-                          aria-label={`Select ${row.censusNo || row.id}`}
+                {(() => {
+                  let lastGroupKey = "";
+                  return displayedRows.map((row, idx) => {
+                    const selected = selectedId === row.id;
+                    const groupKey = `${row.cosSec}__${row.prfGroup}__${row.itemCode}`;
+                    const isNewGroup = groupKey !== lastGroupKey;
+                    if (isNewGroup) {
+                      lastGroupKey = groupKey;
+                    }
+                    const ueName = row.itemName || row.prfGroup || row.nomenclature || "";
+
+                    return (
+                      <Fragment key={row.id}>
+                        {isNewGroup && (
+                          <>
+                            <tr key={`gh1-${row.id}-${idx}`} className="border-t border-[var(--line,#cddcec)] bg-[#edf3f9] dark:bg-muted/40 font-bold text-[13px]">
+                              <td colSpan={8} className="px-3.5 py-1.5 text-[var(--accent,#14568c)] dark:text-primary">
+                                <div className="grid grid-cols-3 items-center font-bold">
+                                  <div className="text-left">
+                                    COS Sec : <span className="font-semibold text-foreground">{row.cosSec || "—"}</span>
+                                  </div>
+                                  <div className="text-center">
+                                    PRF Group : <span className="font-semibold text-foreground underline">{row.prfGroup || "—"}</span>
+                                  </div>
+                                  <div />
+                                </div>
+                              </td>
+                            </tr>
+                            <tr key={`gh2-${row.id}-${idx}`} className="border-b border-[var(--line-soft,#dfe9f4)] bg-[#f6f9fc] dark:bg-muted/20 font-bold text-[12.5px]">
+                              <td colSpan={8} className="px-3.5 py-1 text-[var(--accent,#14568c)] dark:text-primary">
+                                <span className="font-bold underline tracking-wide">
+                                  UE Name : ({row.itemCode || "—"}) {ueName || "—"}
+                                </span>
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                        <tr
+                          key={row.id}
+                          onClick={() => setSelectedId(row.id)}
                           className={cn(
-                            "inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-primary bg-card shadow-sm",
-                            selected && "border-primary bg-primary/10",
+                            "cursor-pointer border-b border-[var(--line-soft,#dfe9f4)]",
+                            selected ? "bg-primary/15" : idx % 2 === 1 ? "bg-muted/40" : undefined,
                           )}
                         >
-                          {selected && (
-                            <span className="block h-2 w-2 rounded-full bg-primary" />
-                          )}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.materialNo}</td>
-                      <td className="whitespace-nowrap px-3.5 py-2 align-middle font-semibold">{row.censusNo}</td>
-                      <td className="min-w-[220px] px-3.5 py-2 align-middle">{row.nomenclature}</td>
-                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">
-                        {resolveDomainLabel(options.class_of_eqpt, row.classOfEqpt)}
-                      </td>
-                      <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.catPartNo}</td>
-                      <td className="px-3.5 py-2 align-middle">
-                        {resolveDomainLabel(options.accounting_unit, row.au)}
-                      </td>
-                      <td className="px-3.5 py-2 align-middle">
-                        <div className="flex items-center justify-between gap-2 min-w-[100px]">
-                          <span>{resolveDomainLabel(options.item_status, row.status)}</span>
-                          <button
-                            type="button"
-                            title="View Details"
-                            aria-label={`View details for ${row.censusNo}`}
-                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/20 text-primary hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleViewDetails(row);
-                            }}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          <td className="w-10 px-3.5 py-2 align-middle">
+                            <span
+                              role="radio"
+                              aria-checked={selected}
+                              aria-label={`Select ${row.censusNo || row.id}`}
+                              className={cn(
+                                "inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-primary bg-card shadow-sm",
+                                selected && "border-primary bg-primary/10",
+                              )}
+                            >
+                              {selected && (
+                                <span className="block h-2 w-2 rounded-full bg-primary" />
+                              )}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.materialNo}</td>
+                          <td className="whitespace-nowrap px-3.5 py-2 align-middle font-semibold">{row.censusNo}</td>
+                          <td className="min-w-[220px] px-3.5 py-2 align-middle">{row.nomenclature}</td>
+                          <td className="whitespace-nowrap px-3.5 py-2 align-middle">
+                            {resolveDomainLabel(options.class_of_eqpt, row.classOfEqpt)}
+                          </td>
+                          <td className="whitespace-nowrap px-3.5 py-2 align-middle">{row.catPartNo}</td>
+                          <td className="px-3.5 py-2 align-middle">
+                            {resolveDomainLabel(options.accounting_unit, row.au)}
+                          </td>
+                          <td className="px-3.5 py-2 align-middle">
+                            <div className="flex items-center justify-between gap-2 min-w-[100px]">
+                              <span>{resolveDomainLabel(options.item_status, row.status)}</span>
+                              <button
+                                type="button"
+                                title="View Details"
+                                aria-label={`View details for ${row.censusNo}`}
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/20 text-primary hover:bg-primary/10 hover:border-primary transition-colors cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleViewDetails(row);
+                                }}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  });
+                })()}
                 {!busy && displayedRows.length === 0 && (
                   <tr>
                     <td colSpan={8} className="h-16 text-center text-muted-foreground">

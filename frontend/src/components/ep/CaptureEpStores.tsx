@@ -430,13 +430,13 @@ export function CaptureEpStores() {
 
       let uploadedAuthLetter = issuer.authLetterFile || null;
       if (authLetterFileObj) {
-        const uploadRes = await uploadFileApi(authLetterFileObj);
-        uploadedAuthLetter = uploadRes.file_name;
+        const uploadRes = await uploadFileApi(authLetterFileObj, { module: "ep", screen: "capture-ep-stores" });
+        uploadedAuthLetter = uploadRes.relative_path;
       }
       let uploadedVoucher = holding.voucherFile || null;
       if (voucherFileObj) {
-        const uploadRes = await uploadFileApi(voucherFileObj);
-        uploadedVoucher = uploadRes.file_name;
+        const uploadRes = await uploadFileApi(voucherFileObj, { module: "ep", screen: "capture-ep-stores" });
+        uploadedVoucher = uploadRes.relative_path;
       }
 
       const result = await api<{ ids: string[]; count: number }>("/ep/capture/", {

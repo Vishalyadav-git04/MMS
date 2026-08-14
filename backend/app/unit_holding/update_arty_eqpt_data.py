@@ -13,7 +13,7 @@ append-only history log persisted to its own table:
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.principal import Principal
 from app.deps import get_db_session, require_unit_or_admin
-from app.db.native_utils import execute_sql, fetch_all
+from app.db.native_utils import execute_sql, fetch_all, fetch_one
 from app.utils.ids import next_int_id
 from app.unit_holding import update_eqpt_data as base
 
@@ -31,6 +31,18 @@ router = APIRouter(
 )
 
 _ARTY_ARM_PREFIX = "02"
+
+# `id` on these history tables is stored as text (next_int_id skips non-numeric
+# leftover rows when computing the next value), so a plain `ORDER BY id` sorts
+# lexicographically — "10" sorts before "2" — and once a table passes 9 rows
+# the "last row = most recent entry" convention used by the View dialog and
+# the pre-fill forms silently picks the wrong row. Sort numeric ids by value
+# and push any non-numeric legacy id to the end instead.
+_ID_ORDER_SQL = (
+    "CASE WHEN REGEXP_LIKE(id, '^[0-9]+$') THEN 0 ELSE 1 END, "
+    "CASE WHEN REGEXP_LIKE(id, '^[0-9]+$') THEN TO_NUMBER(id) END, "
+    "id"
+)
 
 
 def _fmt_date(value: Any) -> str | None:
@@ -71,7 +83,7 @@ def search_arty_units(
 ) -> list[base.HoldingUnitOut]:
     """Same holding units as update-eqpt-data, restricted to Artillery units."""
     sql = """
-        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_UNIT_MSTR_DETL WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_UNIT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
         UNION
         SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_DEPOT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
         UNION
@@ -149,7 +161,9 @@ def get_eqpt_detail(
 class OhDetailIn(BaseModel):
     eqpt_regn_no: str = Field(..., min_length=1, max_length=25)
     sus_no: str | None = Field(None, max_length=50)
-    oh_type: str = Field(..., min_length=1, max_length=50)
+    # UI shows "OH 1" / "OH 2" / "OH 3"; MMS_OH_DETL.OH_TYPE (VARCHAR2(2)) stores
+    # just the number as confirmed by the user.
+    oh_type: Literal["1", "2", "3"] = Field(...)
     oh_due_dt: date | None = None
     oh_done_dt: date | None = None
     wksp_name: str | None = Field(None, max_length=150)
@@ -166,6 +180,57 @@ class OhDetailOut(BaseModel):
     oh_type: str
     created_by: str | None = None
     created_on: str | None = None
+
+
+class OhDetailRecordOut(BaseModel):
+    id: str
+    eqpt_regn_no: str
+    sus_no: str | None = None
+    oh_type: str | None = None
+    oh_due_dt: str | None = None
+    oh_done_dt: str | None = None
+    wksp_name: str | None = None
+    wksp_in_dt: str | None = None
+    dispatch_dt: str | None = None
+    boh_compl_dt: str | None = None
+    gun_recd_dt: str | None = None
+    dt_of_intro: str | None = None
+    created_by: str | None = None
+    created_on: str | None = None
+
+
+@router.get("/oh-detail", response_model=list[OhDetailRecordOut])
+def list_oh_detail(
+    eqpt_regn_no: str = Query(..., min_length=1),
+    session: Session = Depends(get_db_session),
+) -> list[OhDetailRecordOut]:
+    """History of OH entries for this equipment, oldest → newest. The last item
+    is the most recent entry — used both to show it in the View dialog and to
+    pre-fill the OH Details form when it's reopened."""
+    rows = fetch_all(
+        session,
+        f"SELECT * FROM MMS_OH_DETL WHERE UPPER(eqpt_regn_no) = :rno ORDER BY {_ID_ORDER_SQL}",
+        {"rno": eqpt_regn_no.strip().upper()},
+    )
+    return [
+        OhDetailRecordOut(
+            id=str(r.get("id")),
+            eqpt_regn_no=str(r.get("eqpt_regn_no") or ""),
+            sus_no=r.get("sus_no"),
+            oh_type=r.get("oh_type"),
+            oh_due_dt=_fmt_date(r.get("oh_due_dt")),
+            oh_done_dt=_fmt_date(r.get("oh_done_dt")),
+            wksp_name=r.get("wksp_name"),
+            wksp_in_dt=_fmt_date(r.get("wksp_in_dt")),
+            dispatch_dt=_fmt_date(r.get("dispatch_dt")),
+            boh_compl_dt=_fmt_date(r.get("boh_compl_dt")),
+            gun_recd_dt=_fmt_date(r.get("gun_recd_dt")),
+            dt_of_intro=_fmt_date(r.get("dt_of_intro")),
+            created_by=r.get("created_by"),
+            created_on=_fmt_date(r.get("created_on")),
+        )
+        for r in rows
+    ]
 
 
 @router.post("/oh-detail", response_model=OhDetailOut)
@@ -192,7 +257,7 @@ def add_oh_detail(
         """,
         {
             "id": new_id,
-            "oh_type": body.oh_type.strip()[:50],
+            "oh_type": body.oh_type,
             "oh_due_dt": _to_dt(body.oh_due_dt),
             "oh_done_dt": _to_dt(body.oh_done_dt),
             "wksp_name": (body.wksp_name or "").strip()[:150] or None,
@@ -220,7 +285,9 @@ class BarrelDetailIn(BaseModel):
     eqpt_regn_no: str = Field(..., min_length=1, max_length=25)
     sus_no: str | None = Field(None, max_length=15)
     barrel_regn_no: str = Field(..., min_length=1, max_length=25)
-    op_clear: str | None = Field(None, max_length=20)
+    # UI shows "Yes" / "No"; MMS_BARREL_DETL.OP_CLEAR (VARCHAR2(3)) stores it
+    # as-is, as confirmed by the user.
+    op_clear: Literal["Yes", "No"] | None = None
     op_clear_dt: date | None = None
     wksp_name: str | None = Field(None, max_length=150)
     wksp_in_dt: date | None = None
@@ -238,6 +305,60 @@ class BarrelDetailOut(BaseModel):
     barrel_regn_no: str
     created_by: str | None = None
     created_on: str | None = None
+
+
+class BarrelDetailRecordOut(BaseModel):
+    id: str
+    eqpt_regn_no: str
+    sus_no: str | None = None
+    barrel_regn_no: str | None = None
+    op_clear: str | None = None
+    op_clear_dt: str | None = None
+    wksp_name: str | None = None
+    wksp_in_dt: str | None = None
+    cofr_vertical: str | None = None
+    cofr_horizontal: str | None = None
+    qtr_of_life: str | None = None
+    efc: str | None = None
+    total_rds_fired: str | None = None
+    last_fired_dt: str | None = None
+    created_by: str | None = None
+    created_on: str | None = None
+
+
+@router.get("/barrel-detail", response_model=list[BarrelDetailRecordOut])
+def list_barrel_detail(
+    eqpt_regn_no: str = Query(..., min_length=1),
+    session: Session = Depends(get_db_session),
+) -> list[BarrelDetailRecordOut]:
+    """History of Barrel entries for this equipment, oldest → newest — same
+    last-item-is-latest convention as /oh-detail and /strip-detail."""
+    rows = fetch_all(
+        session,
+        f"SELECT * FROM MMS_BARREL_DETL WHERE UPPER(eqpt_regn_no) = :rno ORDER BY {_ID_ORDER_SQL}",
+        {"rno": eqpt_regn_no.strip().upper()},
+    )
+    return [
+        BarrelDetailRecordOut(
+            id=str(r.get("id")),
+            eqpt_regn_no=str(r.get("eqpt_regn_no") or ""),
+            sus_no=r.get("sus_no"),
+            barrel_regn_no=r.get("barrel_regn_no"),
+            op_clear=r.get("op_clear"),
+            op_clear_dt=_fmt_date(r.get("op_clear_dt")),
+            wksp_name=r.get("wksp_name"),
+            wksp_in_dt=_fmt_date(r.get("wksp_in_dt")),
+            cofr_vertical=r.get("cofr_vertical"),
+            cofr_horizontal=r.get("cofr_horizontal"),
+            qtr_of_life=r.get("qtr_of_life"),
+            efc=r.get("efc"),
+            total_rds_fired=r.get("total_rds_fired"),
+            last_fired_dt=_fmt_date(r.get("last_fired_dt")),
+            created_by=r.get("created_by"),
+            created_on=_fmt_date(r.get("created_on")),
+        )
+        for r in rows
+    ]
 
 
 def _str_or_zero_default(raw: str | None, max_len: int) -> str:
@@ -274,7 +395,7 @@ def add_barrel_detail(
         {
             "id": new_id,
             "barrel_regn_no": body.barrel_regn_no.strip()[:25],
-            "op_clear": (body.op_clear or "").strip()[:20] or None,
+            "op_clear": body.op_clear,
             "op_clear_dt": _to_dt(body.op_clear_dt),
             "wksp_name": (body.wksp_name or "").strip()[:150] or None,
             "wksp_in_dt": _to_dt(body.wksp_in_dt),
@@ -325,7 +446,7 @@ def list_strip_detail(
 ) -> list[StripDetailOut]:
     rows = fetch_all(
         session,
-        "SELECT * FROM MMS_STRIP_DETL WHERE UPPER(eqpt_regn_no) = :rno ORDER BY id",
+        f"SELECT * FROM MMS_STRIP_DETL WHERE UPPER(eqpt_regn_no) = :rno ORDER BY {_ID_ORDER_SQL}",
         {"rno": eqpt_regn_no.strip().upper()},
     )
     return [
@@ -376,6 +497,26 @@ def add_strip_detail(
             "created_on": now,
         },
     )
+    # Read the row back rather than echoing what was submitted, so the response
+    # (and thus what the UI shows right after Add) always reflects what's
+    # actually persisted — surfaces any insert/column mismatch immediately
+    # instead of only on the next reopen.
+    saved = fetch_one(
+        session,
+        "SELECT * FROM MMS_STRIP_DETL WHERE id = :id",
+        {"id": new_id},
+    )
+    if saved:
+        return StripDetailOut(
+            id=str(saved.get("id")),
+            eqpt_regn_no=str(saved.get("eqpt_regn_no") or ""),
+            recoil_sys_regd_no=str(saved.get("recoil_sys_regd_no") or ""),
+            periodicity=saved.get("periodicity"),
+            dt_of_insp=_fmt_date(saved.get("done_dt")),
+            dt_of_next_insp=_fmt_date(saved.get("due_dt")),
+            created_by=saved.get("created_by"),
+            created_on=_fmt_date(saved.get("created_on")),
+        )
     return StripDetailOut(
         id=new_id,
         eqpt_regn_no=body.eqpt_regn_no,

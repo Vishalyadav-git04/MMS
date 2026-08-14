@@ -171,7 +171,7 @@ def _holding_bucket(session: Session, type_of_hldg_code: str) -> str:
 
 def _table_for_bucket(bucket: str) -> str:
     if bucket == "unit":
-        return "MMS_UNIT_MSTR_DETL"
+        return "MMS_UNIT_MASTER"
     if bucket == "oth":
         return "MMS_OTH_MASTER"
     return "MMS_DEPOT_MASTER"
@@ -314,7 +314,7 @@ def search_prf_groups(
     q: str = Query(""),
     session: Session = Depends(get_db_session),
 ) -> list[PrfGroupOut]:
-    sql = "SELECT DISTINCT prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE prf_group IS NOT NULL"
+    sql = "SELECT DISTINCT prf_group FROM MMS_MLCCS_EQPT_MASTER WHERE prf_group IS NOT NULL"
     params: dict = {}
     term = q.strip().upper()
     if term:
@@ -338,7 +338,7 @@ def search_census_items(
 ) -> list[CensusItemOut]:
     sql = """
         SELECT census_no, nomen, prf_group, prf_code, material_no
-        FROM MMS_MLCCS_EQUIPMENT_MASTER
+        FROM MMS_MLCCS_EQPT_MASTER
         WHERE UPPER(TRIM(prf_group)) = :grp
         AND census_no IS NOT NULL
     """
@@ -384,7 +384,7 @@ def build_items(
 
     mlccs = fetch_one(
         session,
-        "SELECT id FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(census_no)) = :cno AND UPPER(TRIM(prf_group)) = :pgrp",
+        "SELECT id FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(TRIM(census_no)) = :cno AND UPPER(TRIM(prf_group)) = :pgrp",
         {"cno": body.census_no.strip().upper(), "pgrp": body.prf_group.strip().upper()},
     )
     if mlccs is None:

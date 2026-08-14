@@ -37,7 +37,7 @@ _SOURCE_LABEL = {
 }
 
 _TABLE_MAP = {
-    _SOURCE_UNIT: "MMS_UNIT_MSTR_DETL",
+    _SOURCE_UNIT: "MMS_UNIT_MASTER",
     _SOURCE_DEPOT: "MMS_DEPOT_MASTER",
     _SOURCE_OTH: "MMS_OTH_MASTER",
 }
@@ -209,7 +209,7 @@ def _orbat_name_map(session: Session, sus_nos: set[str]) -> dict[str, str]:
     params = {f"s_{i}": s.upper() for i, s in enumerate(sus_nos) if s}
     rows = fetch_all(
         session,
-        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause}) AND UPPER(status) = 'ACTIVE'",
+        f"SELECT sus_no, unit_name FROM MMS_ORBAT_UNIT_DETL WHERE UPPER(sus_no) IN ({in_clause})",
         params,
     )
     return {
@@ -226,7 +226,7 @@ def _nomen_for_census(session: Session, census_nos: set[str]) -> dict[str, str]:
     params = {f"c_{i}": c.upper() for i, c in enumerate(census_nos) if c}
     rows = fetch_all(
         session,
-        f"SELECT census_no, nomen FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) IN ({in_clause})",
+        f"SELECT census_no, nomen FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) IN ({in_clause})",
         params,
     )
     return {
@@ -243,7 +243,7 @@ def _mlccs_prf_by_census(session: Session, census_nos: set[str]) -> dict[str, st
     params = {f"c_{i}": c.upper() for i, c in enumerate(census_nos) if c}
     rows = fetch_all(
         session,
-        f"SELECT census_no, prf_group FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) IN ({in_clause}) AND prf_group IS NOT NULL",
+        f"SELECT census_no, prf_group FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) IN ({in_clause}) AND prf_group IS NOT NULL",
         params,
     )
     out: dict[str, str] = {}
@@ -308,7 +308,7 @@ def _collect_holding_census_rows(
 def _census_nos_for_prf_group(session: Session, prf_group: str) -> set[str]:
     rows = fetch_all(
         session,
-        "SELECT census_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(TRIM(prf_group)) = :grp AND census_no IS NOT NULL",
+        "SELECT census_no FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(TRIM(prf_group)) = :grp AND census_no IS NOT NULL",
         {"grp": prf_group.strip().upper()},
     )
     return {str(r["census_no"]).strip().upper() for r in rows if r.get("census_no")}
@@ -330,7 +330,7 @@ def search_holding_units(
     session: Session = Depends(get_db_session),
 ) -> list[HoldingUnitOut]:
     sql = """
-        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_UNIT_MSTR_DETL WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
+        SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_UNIT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
         UNION
         SELECT DISTINCT UPPER(TRIM(to_sus_no)) AS sus FROM MMS_DEPOT_MASTER WHERE to_sus_no IS NOT NULL AND UPPER(TRIM(COALESCE(op_status, ''))) IN ('1', 'A')
         UNION

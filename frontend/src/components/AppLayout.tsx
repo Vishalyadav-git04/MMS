@@ -229,24 +229,24 @@ export function AppLayout({
           </div>
         </div>
 
-        <div className="mms-breadcrumb px-4 py-1.5 text-[16px] font-semibold flex items-center gap-2">
+        <div className="mms-breadcrumb px-4 py-1.5 text-[15px] flex items-center gap-2 text-white">
           <button
             type="button"
             onClick={() => onSelect("dashboard")}
-            className="mms-breadcrumb__accent hover:opacity-80"
+            className="text-white/90 hover:text-white transition-opacity p-0.5 rounded focus:outline-none focus:ring-1 focus:ring-white/40"
             aria-label="Home"
           >
-            <LayoutDashboard className="h-3.5 w-3.5" />
+            <LayoutDashboard className="h-4 w-4 text-white" />
           </button>
           {breadcrumb.map((b, i) => {
             const isLast = i === breadcrumb.length - 1;
             return (
               <span key={`${b.label}-${i}`} className="flex items-center gap-2">
-                {i > 0 && <span className="text-[var(--ink-faint,#616d79)]">/</span>}
+                {i > 0 && <span className="text-white/60 text-[14px] select-none font-normal">/</span>}
                 {isLast || !b.onClick ? (
                   <span
                     className={cn(
-                      isLast ? "font-semibold mms-breadcrumb__accent" : "text-[var(--ink-soft,#54606c)]",
+                      isLast ? "font-bold text-white tracking-wide" : "text-white/85 font-medium",
                     )}
                   >
                     {b.label}
@@ -255,7 +255,7 @@ export function AppLayout({
                   <button
                     type="button"
                     onClick={b.onClick}
-                    className="text-[var(--ink-soft,#54606c)] hover:text-[var(--accent,#14568c)] hover:underline underline-offset-2"
+                    className="text-white/85 hover:text-white hover:underline underline-offset-2 font-medium transition-colors cursor-pointer"
                   >
                     {b.label}
                   </button>

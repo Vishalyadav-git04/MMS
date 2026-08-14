@@ -6,7 +6,7 @@ Material / Master List Management.
 
 | Area | Decision |
 |------|----------|
-| Frontend | **`frontend/`** — TanStack Start / React app (existing screens preserved) |
+| Frontend | **`frontend/`** — React 19 + Vite app (existing screens preserved) |
 | Backend | **FastAPI MMS service** under `backend/`, with `app/` as the package |
 | Shared lib | Auth, DB, and utils live inside `backend/app` (no separate core package) |
 | Database | Oracle via `python-oracledb` + SQLAlchemy 2 + Alembic; local FreeDB tables owned by **SYSTEM** (`MMS_*`) |
@@ -16,7 +16,7 @@ Material / Master List Management.
 
 ```
 MMS/
-├── frontend/                 # React + TanStack Start + TS
+├── frontend/                 # React 19 + Vite + TS
 │   ├── src/
 │   │   └── components/
 │   │       ├── ep/

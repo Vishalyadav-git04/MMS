@@ -1,4 +1,4 @@
-"""Link Census No with Item Code — update ITEM_CODE on MMS_MLCCS_EQUIPMENT_MASTER using Native SQL."""
+"""Link Census No with Item Code — update ITEM_CODE on MMS_MLCCS_EQPT_MASTER using Native SQL."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def suggest_census(
     session: Session = Depends(get_db_session),
 ) -> list[CensusSuggestion]:
     term = q.strip().upper()
-    sql = "SELECT census_no, nomen, cat_part_no, prf_group, item_code, cos_sec FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE census_no IS NOT NULL"
+    sql = "SELECT census_no, nomen, cat_part_no, prf_group, item_code, cos_sec FROM MMS_MLCCS_EQPT_MASTER WHERE census_no IS NOT NULL"
     params: dict = {}
     if term:
         sql += " AND (UPPER(census_no) LIKE :term OR UPPER(COALESCE(nomen, '')) LIKE :term)"
@@ -131,7 +131,7 @@ def link_item_code(
 ) -> LinkResult:
     row = fetch_one(
         session,
-        "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) = :key",
+        "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) = :key",
         {"key": body.census_no.strip().upper()},
     )
     if row is None:
@@ -143,7 +143,7 @@ def link_item_code(
     rec_id = str(row["id"])
     execute_sql(
         session,
-        "UPDATE MMS_MLCCS_EQUIPMENT_MASTER SET item_code = :icode, data_upd_by = :upd_by, data_upd_date = :upd_dt WHERE id = :rid OR TO_CHAR(id) = :rid_str",
+        "UPDATE MMS_MLCCS_EQPT_MASTER SET item_code = :icode, data_upd_by = :upd_by, data_upd_date = :upd_dt WHERE id = :rid OR TO_CHAR(id) = :rid_str",
         {
             "icode": body.item_code.strip(),
             "upd_by": principal.username,
@@ -152,7 +152,7 @@ def link_item_code(
             "rid_str": rec_id,
         },
     )
-    updated_row = fetch_one(session, "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": rec_id, "rid_str": rec_id})
+    updated_row = fetch_one(session, "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": rec_id, "rid_str": rec_id})
     return _to_result(updated_row or {})
 
 
@@ -163,7 +163,7 @@ def lookup_by_census(
 ) -> LinkResult:
     row = fetch_one(
         session,
-        "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) = :key",
+        "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) = :key",
         {"key": census_no.strip().upper()},
     )
     if row is None:

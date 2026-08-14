@@ -32,7 +32,7 @@ class MmsSettings(BaseSettings):
     db_pool_timeout: int = 30
     db_echo: bool = False
 
-    upload_path: str = "D:/miso/"
+    upload_path: str = "D:/MISO/MMS/"
 
     api_prefix: str = ""
     cors_origins: list[str] = [

@@ -311,7 +311,7 @@ def submit_capture(
     census_row = fetch_one(
         session,
         """
-        SELECT census_no FROM MMS_EP_MSTR
+        SELECT census_no FROM MMS_EP_MASTER
         WHERE (domain_id = :did OR TO_CHAR(domain_id) = :did OR domain_id = :d_id OR TO_CHAR(domain_id) = :d_id)
         AND (sub_domain_id = :sid OR TO_CHAR(sub_domain_id) = :sid OR sub_domain_id = :s_id OR TO_CHAR(sub_domain_id) = :s_id)
         ORDER BY census_no DESC
@@ -327,7 +327,7 @@ def submit_capture(
     if not census_no:
         raise HTTPException(
             status_code=400,
-            detail="No census number found in MMS_EP_MSTR for the selected domain and sub domain",
+            detail="No census number found in MMS_EP_MASTER for the selected domain and sub domain",
         )
 
     issuer_form_code: str | None = None

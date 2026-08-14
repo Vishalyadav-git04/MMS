@@ -168,7 +168,7 @@ export function SwitchTabs<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="tablist" className="flex flex-wrap gap-1 -mb-px">
+    <div role="tablist" className="flex flex-wrap gap-1.5 -mb-px">
       {tabs.map((t) => {
         const active = value === t.id;
         return (
@@ -179,10 +179,10 @@ export function SwitchTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(t.id)}
             className={cn(
-              "h-8 px-3 text-[12px] font-semibold rounded-t-[8px] border border-b-0 transition-[color,background-color,border-color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "h-8 px-3.5 text-[12px] font-bold rounded-t-md border transition-all duration-200 cursor-pointer shadow-xs",
               active
-                ? "bg-[var(--surface,#fff)] text-[var(--accent,#14568c)] border-[var(--line,#cddcec)] border-t-2 border-t-[var(--accent,#14568c)]"
-                : "bg-transparent text-[var(--ink-soft,#54606c)] border-transparent hover:text-[var(--accent,#14568c)]",
+                ? "bg-white text-[var(--accent,#14568c)] border-[var(--line,#cddcec)] border-b-white border-t-2 border-t-[var(--accent,#14568c)]"
+                : "bg-[var(--surface-alt,#eff5fb)] text-[var(--label-color,#1d74b8)] border-[var(--line-soft,#dfe9f4)] hover:bg-white hover:text-[var(--accent,#14568c)] hover:border-[var(--line,#cddcec)]",
             )}
           >
             {t.label}

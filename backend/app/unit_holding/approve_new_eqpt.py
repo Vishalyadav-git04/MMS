@@ -41,7 +41,7 @@ _SOURCE_DEPOT = "depot"
 _SOURCE_OTH = "oth"
 
 _TABLE_MAP = {
-    _SOURCE_UNIT: "MMS_UNIT_MSTR_DETL",
+    _SOURCE_UNIT: "MMS_UNIT_MASTER",
     _SOURCE_DEPOT: "MMS_DEPOT_MASTER",
     _SOURCE_OTH: "MMS_OTH_MASTER",
 }
@@ -188,7 +188,7 @@ def _mlccs_details_for_census(session: Session, census_nos: set[str]) -> dict[st
     params = {f"c_{i}": c.upper() for i, c in enumerate(census_nos) if c}
     rows = fetch_all(
         session,
-        f"SELECT census_no, material_no, nomen, prf_group, prf_code FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) IN ({in_clause})",
+        f"SELECT census_no, material_no, nomen, prf_group, prf_code FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) IN ({in_clause})",
         params,
     )
     out: dict[str, dict[str, str]] = {}

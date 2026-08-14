@@ -66,11 +66,27 @@ export interface UploadResponse {
   size_bytes: number;
 }
 
-export async function uploadFileApi(file: File): Promise<UploadResponse> {
+export interface UploadOptions {
+  module?: string;
+  screen?: string;
+  subfolder?: string;
+}
+
+export async function uploadFileApi(
+  file: File,
+  options?: UploadOptions,
+): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  return api<UploadResponse>("/upload", {
+  const params = new URLSearchParams();
+  if (options?.subfolder) params.append("subfolder", options.subfolder);
+  if (options?.module) params.append("module", options.module);
+  if (options?.screen) params.append("screen", options.screen);
+  const queryString = params.toString();
+  const endpoint = queryString ? `/upload?${queryString}` : "/upload";
+  return api<UploadResponse>(endpoint, {
     method: "POST",
     body: formData,
   });
 }
+

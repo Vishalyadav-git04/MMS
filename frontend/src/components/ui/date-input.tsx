@@ -213,6 +213,7 @@ export function DateInput({
             aria-invalid={invalid || undefined}
             className={cn(
               "pr-7",
+              className,
               invalid && "border-destructive focus-visible:ring-destructive",
             )}
             onChange={(e) => commitText(e.target.value)}

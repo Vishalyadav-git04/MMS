@@ -1,6 +1,6 @@
 """Capture MLCCS Details — MMS Admin using Native SQL.
 
-Persists to Oracle table MMS_MLCCS_EQUIPMENT_MASTER.
+Persists to Oracle table MMS_MLCCS_EQPT_MASTER.
 """
 
 from __future__ import annotations
@@ -97,12 +97,12 @@ def _parse_cost(value: str | None) -> Decimal | None:
 
 
 def _next_census_seq_no(session: Session) -> float:
-    row = fetch_one(session, "SELECT NVL(MAX(census_seq_no), 0) AS max_val FROM MMS_MLCCS_EQUIPMENT_MASTER")
+    row = fetch_one(session, "SELECT NVL(MAX(census_seq_no), 0) AS max_val FROM MMS_MLCCS_EQPT_MASTER")
     return float(row.get("max_val") if row else 0) + 1.0
 
 
 def _next_item_seq_no(session: Session) -> str:
-    rows = fetch_all(session, "SELECT item_seq_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE item_seq_no IS NOT NULL")
+    rows = fetch_all(session, "SELECT item_seq_no FROM MMS_MLCCS_EQPT_MASTER WHERE item_seq_no IS NOT NULL")
     max_seq = 0
     for r in rows:
         s = str(r.get("item_seq_no") or "").strip()
@@ -178,7 +178,7 @@ def _backfill_missing_prf_codes(session: Session) -> None:
     try:
         rows = fetch_all(
             session,
-            "SELECT id, cos_sec, prf_group, item_code FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE prf_code IS NULL",
+            "SELECT id, cos_sec, prf_group, item_code FROM MMS_MLCCS_EQPT_MASTER WHERE prf_code IS NULL",
         )
         for r in rows:
             rec_id = r.get("id")
@@ -193,7 +193,7 @@ def _backfill_missing_prf_codes(session: Session) -> None:
             if resolved:
                 execute_sql(
                     session,
-                    "UPDATE MMS_MLCCS_EQUIPMENT_MASTER SET prf_code = :pcode WHERE id = :rid OR TO_CHAR(id) = :rid_str",
+                    "UPDATE MMS_MLCCS_EQPT_MASTER SET prf_code = :pcode WHERE id = :rid OR TO_CHAR(id) = :rid_str",
                     {"pcode": resolved, "rid": rec_id, "rid_str": str(rec_id)},
                 )
     except Exception:
@@ -305,7 +305,7 @@ def _encode_cos_sec(cos_section: str) -> str:
 def _next_sequence_for_cos(session: Session, cos_prefix: str) -> int:
     rows = fetch_all(
         session,
-        "SELECT census_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE census_no IS NOT NULL AND UPPER(census_no) LIKE :pre",
+        "SELECT census_no FROM MMS_MLCCS_EQPT_MASTER WHERE census_no IS NOT NULL AND UPPER(census_no) LIKE :pre",
         {"pre": f"{cos_prefix}%"},
     )
     max_seq = 0
@@ -377,7 +377,7 @@ def generate_census(
     cos_section = _validate_cos_section(body.cos_section)
     existing = fetch_one(
         session,
-        "SELECT census_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(nomen) = :nomen",
+        "SELECT census_no FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(nomen) = :nomen",
         {"nomen": body.nomenclature.strip().upper()},
     )
     if existing is not None:
@@ -408,7 +408,7 @@ def lookup_census(
     key = body.census_no.strip().upper()
     row = fetch_one(
         session,
-        "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) = :key",
+        "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) = :key",
         {"key": key},
     )
     if row is None:
@@ -428,7 +428,7 @@ def lookup_census(
         _backfill_missing_prf_codes(session)
         row = fetch_one(
             session,
-            "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) = :key",
+            "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) = :key",
             {"key": key},
         ) or row
 
@@ -473,7 +473,7 @@ def save_mlccs(
     key = body.census_no.strip().upper()
     row = fetch_one(
         session,
-        "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(census_no) = :key",
+        "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(census_no) = :key",
         {"key": key},
     )
     now = datetime.now()
@@ -513,7 +513,7 @@ def save_mlccs(
     }
 
     if row is None:
-        rec_id = str(next_int_id(session, "MMS_MLCCS_EQUIPMENT_MASTER"))
+        rec_id = str(next_int_id(session, "MMS_MLCCS_EQPT_MASTER"))
         params.update({
             "id": rec_id,
             "census_seq_no": _next_census_seq_no(session),
@@ -522,7 +522,7 @@ def save_mlccs(
             "data_cr_date": now,
         })
         insert_sql = """
-            INSERT INTO MMS_MLCCS_EQUIPMENT_MASTER (
+            INSERT INTO MMS_MLCCS_EQPT_MASTER (
                 id, auth_lett_no, auth_date, cos_sec, prf_code, prf_group, cat_part_no,
                 census_no, nomen, brief_desc, au, item_status, item_category, origin_country,
                 manuf_agency, ahsp_agency, induc_year, nato_stk_no, def_cat_no_dcan, spl_remarks,
@@ -541,7 +541,7 @@ def save_mlccs(
         rec_id = str(row["id"])
         clash = fetch_one(
             session,
-            "SELECT census_no FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE UPPER(nomen) = :nomen AND id != :rid AND TO_CHAR(id) != :rid_str",
+            "SELECT census_no FROM MMS_MLCCS_EQPT_MASTER WHERE UPPER(nomen) = :nomen AND id != :rid AND TO_CHAR(id) != :rid_str",
             {"nomen": body.nomenclature.strip().upper(), "rid": rec_id, "rid_str": rec_id},
         )
         if clash is not None:
@@ -557,7 +557,7 @@ def save_mlccs(
             "data_upd_date": now,
         })
         update_sql = """
-            UPDATE MMS_MLCCS_EQUIPMENT_MASTER SET
+            UPDATE MMS_MLCCS_EQPT_MASTER SET
                 auth_lett_no = :auth_lett_no, auth_date = :auth_date, cos_sec = :cos_sec,
                 prf_code = :prf_code, prf_group = :prf_group, cat_part_no = :cat_part_no,
                 census_no = :census_no, nomen = :nomen, brief_desc = :brief_desc, au = :au,
@@ -574,7 +574,7 @@ def save_mlccs(
 
     _backfill_missing_prf_codes(session)
 
-    saved_row = fetch_one(session, "SELECT * FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": rec_id, "rid_str": rec_id})
+    saved_row = fetch_one(session, "SELECT * FROM MMS_MLCCS_EQPT_MASTER WHERE id = :rid OR TO_CHAR(id) = :rid_str", {"rid": rec_id, "rid_str": rec_id})
     return _to_record(saved_row or {})
 
 
@@ -676,7 +676,7 @@ def suggest_census(
     session: Session = Depends(get_db_session),
 ) -> list[CensusSuggestion]:
     term = q.strip().upper()
-    sql = "SELECT census_no, nomen, cos_sec FROM MMS_MLCCS_EQUIPMENT_MASTER WHERE census_no IS NOT NULL"
+    sql = "SELECT census_no, nomen, cos_sec FROM MMS_MLCCS_EQPT_MASTER WHERE census_no IS NOT NULL"
     params: dict = {}
     if term:
         sql += " AND (UPPER(census_no) LIKE :term OR UPPER(COALESCE(nomen, '')) LIKE :term)"
@@ -702,7 +702,7 @@ def list_options(session: Session = Depends(get_db_session)) -> dict[str, list[d
         "item_status": _option_list(session, "ITEMSTATUS"),
         "item_category": _option_list(session, "TYPEOFEQPT"),
         "class_of_eqpt": _option_list(session, "MMSCLASSA"),
-        "country_of_origin": _distinct_column(session, "MMS_MLCCS_EQUIPMENT_MASTER", "origin_country"),
+        "country_of_origin": _distinct_column(session, "MMS_MLCCS_EQPT_MASTER", "origin_country"),
         "nodal_dte": _option_list(session, "SPONSERDTE"),
         "eqpt_category": _option_list(session, "DTEEQPTCATEGORY"),
         "digest_category": _option_list(session, "DIGESTCATEGORY"),

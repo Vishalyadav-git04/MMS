@@ -499,8 +499,8 @@ export function AddNewEqpt() {
     try {
       let uploadedIvName = form.uploadIv.trim() || null;
       if (ivFile) {
-        const uploadRes = await uploadFileApi(ivFile);
-        uploadedIvName = uploadRes.file_name;
+        const uploadRes = await uploadFileApi(ivFile, { module: "unit-holding" });
+        uploadedIvName = uploadRes.relative_path;
       }
       const res = await api<{ count: number; target_table: string }>(
         "/unit-holding/add-new-eqpt/submit",

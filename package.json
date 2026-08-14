@@ -1,7 +1,7 @@
 {
   "name": "mms",
   "private": true,
-  "description": "MMS monorepo — frontend (TanStack) + backend (FastAPI)",
+  "description": "MMS monorepo — frontend (Vite + React) + backend (FastAPI)",
   "scripts": {
     "dev": "npm run dev --prefix frontend",
     "dev:frontend": "npm run dev --prefix frontend",

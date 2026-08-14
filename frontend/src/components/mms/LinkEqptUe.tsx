@@ -62,7 +62,7 @@ export function LinkEqptUe() {
     cosSection: "",
   });
 
-  // Census No typeahead — from MMS_MLCCS_EQUIPMENT_MASTER
+  // Census No typeahead — from MMS_MLCCS_EQPT_MASTER
   useEffect(() => {
     if (fetched) return;
     if (suppressCensusSuggestRef.current) {
@@ -95,7 +95,7 @@ export function LinkEqptUe() {
     return () => window.clearTimeout(handle);
   }, [censusNo, fetched]);
 
-  // Nomenclature typeahead — from MMS_MLCCS_EQUIPMENT_MASTER
+  // Nomenclature typeahead — from MMS_MLCCS_EQPT_MASTER
   useEffect(() => {
     if (fetched) return;
     if (suppressNomSuggestRef.current) {
